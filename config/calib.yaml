@@ -1,0 +1,26 @@
+dataset:
+  path: "/home/franklin/data/hand_teleop/left_glove_to_inspire_0718_merged/"
+  input_keys: "glove.left.tensile_data"
+  output_keys: "robot.left.target_angles"
+  side: "left"
+  augmentations:
+    x_noise_scale: 0.001
+    y_noise_scale: 0.001
+    x_dropout: 0.0
+  
+model:
+  type: "MLP"
+  input_size: 19
+  hidden_layers: [256, 256, 256]
+  output_size: 6
+
+trainer:
+  expname: "MLP_0721"
+  num_epochs: 25
+  batch_size: 64
+  learning_rate: 0.001
+  val_split: 0.2
+  device: 'xpu'
+  calib_finetune: False
+  # save_path: "/home/franklin/expdata/teleop_models/calib"
+

@@ -1,0 +1,37 @@
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
+
+
+@dataclass
+class DatasetConfig:
+    path: str = field(default_factory=str)
+    input_keys: str = field(default_factory=str)
+    output_keys: str = field(default_factory=str)
+    side: str = 'left'
+    augmentations: Dict[str, float] = field(default_factory=dict)
+
+@dataclass
+class ModelConfig:
+    type : str = 'MLP'
+    input_size: int = field(default_factory=int)
+    hidden_layers: list = field(default_factory=lambda: [256, 256])
+    output_size: int = field(default_factory=int)
+
+@dataclass
+class TrainerConfig:
+    expname: str = field(default_factory=str)
+    batch_size: int = field(default_factory=int)
+    learning_rate: float = field(default_factory=float)
+    num_epochs: int = field(default_factory=int)
+    val_split: float = 0.2
+    device: str = 'cuda'  # 'cpu', 'cuda', or 'xpu'
+    save_path: Optional[str] = None
+    load_path: Optional[str] = None
+    save_interval: int = 5  # Save model every n epochs
+    calib_finetune: bool = False
+    
+@dataclass
+class Config:
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
+    trainer: TrainerConfig = field(default_factory=TrainerConfig)

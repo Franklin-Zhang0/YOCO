@@ -1,0 +1,24 @@
+dataset:
+  path: "/home/franklin/data/hand_teleop/left_glove_only_0721_merged"
+  input_keys: "glove.left.tensile_data"
+  output_keys: "glove.left.tensile_data"
+  side: "left"
+  augmentations:
+    x_noise_scale: 0.001
+    y_noise_scale: 0.001
+  
+model:
+  type: "MLP"
+  input_size: 19
+  hidden_layers: [256, 256, 256]
+  output_size: 19
+
+trainer:
+  expname: "VAE_3_256_layer_0721"
+  num_epochs: 50
+  batch_size: 64
+  learning_rate: 0.001
+  val_split: 0.2
+  save_interval: 5
+  device: 'xpu'
+  save_path: "/home/franklin/expdata/teleop_models/vae"
