@@ -1,0 +1,28 @@
+dataset:
+  augmentations:
+    x_dropout: 0.1
+    x_noise_scale: 0.005
+    y_noise_scale: 0.001
+  input_keys: glove.left.tensile_data
+  output_keys: robot.left.target_angles
+  path: ~/data/hand_teleop/pretrain_data/left_glove_to_inspire-continous-auto-startend-0725_0728_merged/
+  side: left
+model:
+  hidden_layers:
+  - 256
+  - 256
+  - 256
+  input_size: 19
+  output_size: 6
+  type: MLP
+trainer:
+  batch_size: 64
+  calib_finetune: false
+  device: xpu
+  expname: large_vae_pretrain_more_pinch_0728
+  learning_rate: 0.001
+  load_path: ~/expdata/teleop_models/vae/VAE_3_256_0725_20250725_233920/best/
+  num_epochs: 25
+  save_interval: 5
+  save_path: /home/franklin/expdata/teleop_models/pretrained
+  val_split: 0.05
