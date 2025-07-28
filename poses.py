@@ -1,6 +1,6 @@
 FIX_POSE_REGISTER = {
     'open':         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    # 'fist':         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    'fist':         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     'point':        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
     'pinch':        [1.0, 1.0, 1.0, 0.5, 0.4, 0.0],
     'thumb_up':     [0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
@@ -18,9 +18,17 @@ FIX_POSE_REGISTER = {
     'little_finger':[1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
     'thumb_index_middle': [0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
     'except_ring':  [1.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-    'three_little': [0.0, 0.0, 0.0, 1.0, 0.1, 1.0],
+    "fist_except_ring": [1.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+    'thumb_down_except_ring_middle': [1.0, 0.0, 0.0, 1.0, 0.1, 1.0],
+    'middle_half_down': [1.0, 1.0, 0.5, 1.0, 1.0, 1.0],
+    'except_ring_middle': [1.0, 0.0, 0.0, 1.0, 1.0, 1.0],
     'money':        [0.0, 0.2, 0.4, 0.6, 0.5, 1.0],
     'ok':           [0.8, 0.7, 0.6, 0.5, 0.4, 0.0],
+    'thumb_up_two': [0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    'thumb_down_two':[0.0, 0.0, 1.0, 1.0, 0.1, 1.0],
+    'fist_ring_little_up':[1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    'big_c':        [1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+     
     
 }
 
@@ -32,7 +40,11 @@ CONTINOUS_POSE_REGISTER = [
     'open-O_shape',
     'O_shape-open',
     'open-pinch',
-    'O_shape-pinch',
+    'pinch-big_c',
+    'big_c-O_shape',
+    'O_shape-big_c',
+    'big_c-pinch',
+    'pinch-pinch',
     'pinch-open',
     'open-thumb_up',
     'thumb_up-thumb_down',
@@ -58,6 +70,20 @@ CONTINOUS_POSE_REGISTER = [
     'open-ok',
     'ok-pinch',
     'ok-open',
+    'thumb_up-thumb_up_two',
+    'thumb_up_two-two_shape',
+    'two_shape-thumb_down_two',
+    'thumb_down_two-open',
+    'open-except_ring',
+    'except_ring-fist_except_ring',
+    'fist_except_ring-except_ring_middle',
+    'except_ring_middle-thumb_down_except_ring_middle',
+    'thumb_down_except_ring_middle-except_ring_middle',
+    'except_ring_middle-middle_half_down',
+    'middle_half_down-open',
+    'open-fist_ring_little_up',
+    'fist_ring_little_up-fist',
+    'fist-open',
 ]
 
 CONTINOUS_CRITICAL_POSE_REGISTER = [

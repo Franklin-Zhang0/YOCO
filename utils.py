@@ -47,6 +47,8 @@ def apply_angles(robot, angles:list[float]|dict[FingerID, float], wait_for_respo
             if finger_id == FingerID.THUMB_BEND:
                 angle = 1000 - angle
             robot_angle.append(angle)
+    else:
+        raise TypeError(f"Type of the angle is not valid: {type(angles)}. It should be either a dict or a list.")
     robot.modbus.write_multiple_registers(Register.ANGLE_SET, robot_angle, wait_for_response=wait_for_response)
     
 def walk_dict(d: dict, prefix: str = ''):

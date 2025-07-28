@@ -4,20 +4,23 @@ import pickle
 import argparse
 
 def pickle_data_reader(path, is_continous=False):
-    files = os.listdir(path)
-    
-    for file_name in files:
-        if not file_name.endswith(".pkl"):
-            continue
-        with open(os.path.join(path, file_name), 'rb') as f:
-            data = pickle.load(f)
+    paths = path.split(',')
+    for path in paths:
+        path = os.path.expanduser(path)
+        files = os.listdir(path)
         
-        if is_continous:
-            assert isinstance(data, list)
-            for item in data:
-                yield item
-        else:
-            yield data
+        for file_name in files:
+            if not file_name.endswith(".pkl"):
+                continue
+            with open(os.path.join(path, file_name), 'rb') as f:
+                data = pickle.load(f)
+            
+            if is_continous:
+                assert isinstance(data, list)
+                for item in data:
+                    yield item
+            else:
+                yield data
         
 def main():
     parser = argparse.ArgumentParser()

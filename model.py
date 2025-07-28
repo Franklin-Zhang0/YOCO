@@ -12,35 +12,25 @@ class Model(nn.Module):
         self.model_type = type
         self.hidden_layers = hidden_layers
         self.network = self.build_network()
-        self.calib_block = nn.Sequential(nn.Conv1d(
-            in_channels=1,
-            out_channels=128,
-            kernel_size=5,
-            stride=1,
-            padding=2
-        ),
-            nn.GELU(),
-            nn.Conv1d(
-                in_channels=128,
-                out_channels=1,
+        
+    def build_network(self):
+        if self.model_type == 'MLP':
+            self.calib_block = nn.Sequential(nn.Conv1d(
+                in_channels=1,
+                out_channels=128,
                 kernel_size=5,
                 stride=1,
                 padding=2
+            ),
+                nn.GELU(),
+                nn.Conv1d(
+                    in_channels=128,
+                    out_channels=1,
+                    kernel_size=5,
+                    stride=1,
+                    padding=2
+                )
             )
-        )
-        # self.calib_block = nn.Conv1d(
-        #     in_channels=1,
-        #     out_channels=1,
-        #     kernel_size=1,
-        #     stride=1,
-        #     padding=0
-        # )
-        # Calibration block to adjust the mean and std of the input features
-        # self.calib_block.weight.data.fill_(1.0)  # Initialize weights to 1
-        # self.calib_block.bias.data.fill_(0.0)  # Initialize bias to 0
-    
-    def build_network(self):
-        if self.model_type == 'MLP':
             layers = []
             in_features = self.input_size
             for hidden_size in self.hidden_layers:

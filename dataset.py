@@ -41,7 +41,10 @@ class TeleopDataset(Dataset):
             y += torch.randn_like(y) * self.augmentations['y_noise_scale']
         if 'x_dropout' in self.augmentations and self.augmentations['x_dropout'] > 0:
             mask = torch.rand_like(x) > self.augmentations['x_dropout']
-            x = x * mask
+            x = torch.where(mask, x, torch.zeros_like(x, dtype=x.dtype))
+        if 'x_random' in self.augmentations and self.augmentations['x_random'] > 0:
+            mask = torch.rand_like(x) > self.augmentations['x_random']
+            x = torch.where(mask, x, torch.rand_like(x, dtype=x.dtype))
         return x, y
 
     def __getitem__(self, idx):
@@ -49,8 +52,7 @@ class TeleopDataset(Dataset):
         flat_data = {k:v for k,v in walk_dict(data)}
         x = torch.tensor(flat_data[self.input_keys])
         y = torch.tensor(flat_data[self.output_keys])
-        # x = (x - self.normalization_stats['x']['mean']) / (self.normalization_stats['x']['std'] + 1e-5)
-        x = (x - self.normalization_stats['x']['min']) / (self.normalization_stats['x']['max'] - self.normalization_stats['x']['min'] + 1e-5)
+        x = (x - self.normalization_stats['x']['mean']) / (self.normalization_stats['x']['std'] + 1e-5)
         y = (y - self.normalization_stats['y']['mean']) / (self.normalization_stats['y']['std'] + 1e-5)
         
         x, y = self.__augment__(x, y)

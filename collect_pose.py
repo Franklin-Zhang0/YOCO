@@ -63,6 +63,7 @@ def apply_continous_pose(robot, pose_name):
     
     
 def data_loop(glove_sdk, left_robot, right_robot, args):
+    global CONTINOUS_POSE_REGISTER
     data = {}
     if args.type == 'critical_continous':
         args.type = 'continous'
@@ -117,6 +118,7 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                             last = current
                         
                     traj_data = []
+                    static = False
                     for t in tqdm(np.linspace(0, 1, args.collect_frequency*args.sec_per_pose), desc=f"Collecting data for {pose_name}"):
                         with FrameRateContext(args.collect_frequency):
                             angles = [(1 - t) * start_angle + t * end_angle for start_angle, end_angle in zip(start_angles, end_angles)]
@@ -125,19 +127,43 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                             if args.left_robot_port:
                                 glove_data['left'] = collect_fix_pose_data(glove_sdk, left_robot, angles, hand_type='left', open_fingers=False, wait_input=False, wait_for_response=False)
                                 # robot_data['left'] = {'angles': np.array(left_robot.get_finger_angles()), 'force': np.array(left_robot.get_finger_forces()), 'temperature': np.array(left_robot.get_finger_temperatures()), 'target_angles': np.array(angles)}
-                                robot_data['left'] = {'target_angles': np.array(angles)}
+                                # robot_data['left'] = {'target_angles': np.array(angles)}
+                                current = glove_sdk.get_data(hand_type='left').tensile_data
                             if args.right_robot_port:
                                 glove_data['right'] = collect_fix_pose_data(glove_sdk, right_robot, angles, hand_type='right', open_fingers=False, wait_input=False, wait_for_response=False)
                                 # robot_data['right'] = {'angles': np.array(right_robot.get_finger_angles()), 'force': np.array(right_robot.get_finger_forces()), 'temperature': np.array(right_robot.get_finger_temperatures()), 'target_angles': np.array(angles)}
-                                robot_data['right'] = {'target_angles': np.array(angles)}
+                                # robot_data['right'] = {'target_angles': np.array(angles)}
+                                current = glove_sdk.get_data(hand_type='right').tensile_data
 
                             robot_data['pose_name'] = pose_name
                             
                             data['glove'] = glove_data
-                            data['robot'] = robot_data
+                            # data['robot'] = robot_data
                             data['interpolated'] = False
                             traj_data.append(data)
+                            
+                            # if static for continous 2 frames, stop collecting
+                            if static:
+                                if glove_sdk.left_glove._sensors_still(current, last, threshold=10):
+                                    print(f"Glove sensors are static. Stopping data collection for {pose_name}.")
+                                    break
+                                else:
+                                    static = False
+                            else:
+                                if glove_sdk.left_glove._sensors_still(current, last, threshold=10):
+                                    static = True
+                            last = current
                     
+                    for i, data in enumerate(traj_data):
+                        np_start_angles = np.array(start_angles, dtype=np.float32)
+                        np_end_angles = np.array(end_angles, dtype=np.float32)
+                        ratio = i / (len(traj_data) - 1)
+                        if args.left_robot_port:
+                            data['robot']['left'] = {'target_angles': np_start_angles + ratio * (np_end_angles - np_start_angles)}
+                        if args.right_robot_port:
+                            data['robot']['right'] = {'target_angles': np_start_angles + ratio * (np_end_angles - np_start_angles)}
+                            
+                        
                     if args.interpolate > 0:
                         print(f"Interpolating")
                         all_interpolated_data = []
@@ -156,6 +182,7 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                 input("Press Enter to start collecting glove data...")
                 print("Collecting glove data...")
                 try:
+                    i = 0
                     while True:
                         with FrameRateContext(args.collect_frequency, verbose=False):
                             glove_data = {}
@@ -164,6 +191,10 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                             if args.right_glove_port:
                                 glove_data['right'] = collect_pose_data(glove_sdk, hand_type='right')
                             data['glove'] = glove_data
+                            if i% args.collect_frequency == 0:
+                                print(f"Collected {i} glove data points")
+                                print("Collected glove data:", glove_data, end='\r')
+                            i+=1
                             data['robot'] = {}
                             data['interpolated'] = False
                             yield data
@@ -188,7 +219,7 @@ def main():
     parser.add_argument('--robot_speed', type=float, default=0.2)
     parser.add_argument('--collect_frequency', type=int, default=20)  # points collected per traj
     parser.add_argument('--interpolate', type=int, default=2, help="Whether to interpolate between poses in continuous mode")
-    parser.add_argument('--sec_per_pose', type=int, default=2, help="Seconds to collect data for each pose")
+    parser.add_argument('--sec_per_pose', type=int, default=1, help="Seconds to collect data for each pose")
     parser.add_argument('--type', type=str, choices=['critical_continous', 'continous', 'discrete', 'glove_only'], default='discrete', help="Type of data collection")
     parser.add_argument('--rounds', type=int, default=1)
     parser.add_argument('--save_path', type=str, required=True)

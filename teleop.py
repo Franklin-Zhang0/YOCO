@@ -19,7 +19,7 @@ finger_mapping_inspire_to_glove = {
     FingerID.THUMB_ROTATE: 16,
 }
 
-def calibrate_glove(sdk, hand_type='left', samples_min_max=100):
+def calibrate_glove(sdk, hand_type='left', samples_min_max=1000):
     tensile_data = []
     print(f"[{hand_type}] Calibration Pose 1: Make a fist and open your hand, multiple times. Press Enter to continue...")
     input("")
@@ -62,7 +62,7 @@ def main():
     parser.add_argument('--right_port', type=str, default=None)
     parser.add_argument('--left_robot_port', type=str, default=None)
     parser.add_argument('--right_robot_port', type=str, default=None)
-    parser.add_argument('--robot_speed', type=float, default=0.5)
+    parser.add_argument('--robot_speed', type=float, default=0.4)
     parser.add_argument('--control_frequency', type=int, default=30)  # Hz
     parser.add_argument('--calibration', action='store_true', help="Use new calibration method")
     parser.add_argument('--model_dir', type=str)
@@ -91,6 +91,7 @@ def main():
             print(f"Right glove angle statistics: {new_norm_stats}")
         norm_stats['x'] = new_norm_stats['x']
     
+    input("Press enter to start teleop")
     try:
         while True:
             with FrameRateContext(
