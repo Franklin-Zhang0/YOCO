@@ -106,7 +106,10 @@ def main():
                     # print(angles)
                     apply_angles(left_robot, angles, wait_for_response=False)
                 if glove_sdk.right_glove is not None:
-                    angles = glove_sdk.get_angles(hand_type='right', method='model')
+                    data = glove_sdk.get_angles(hand_type='right', method='model')
+                    angles = model.predict(np.array(data), norm_stats, norm_type='meanstd').tolist()
+                    # print(angles)
+                    apply_angles(right_robot, angles, wait_for_response=False)
 
     except KeyboardInterrupt:
         print("Stopping teleoperation...")
