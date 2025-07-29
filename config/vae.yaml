@@ -6,6 +6,8 @@ dataset:
   augmentations:
     x_noise_scale: 0.001
     y_noise_scale: 0.001
+    x_dropout: 0.1
+    x_random: 0.1
   
 model:
   type: "MLP"

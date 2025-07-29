@@ -2,6 +2,7 @@
 ```
 git clone https://github.com/Franklin-Zhang0/Calibration_net.git
 cd Calibration_net
+conda creeate -n teleop python=3.11
 pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 pip install git+https://github.com/CyberOrigin2077/open_cyber_glove.git
 pip install git+https://github.com/Sentdex/inspire_hands.git
@@ -24,4 +25,9 @@ python /home/franklin/Project/Hand_teleop/code/calibration_net/teleop.py \
     --robot_speed 0.4 \
     --calibration \
     --model_dir ./model
+```
+
+### Calibration and teleop Guide
+```
+bash ./script/calibration.sh
 ```

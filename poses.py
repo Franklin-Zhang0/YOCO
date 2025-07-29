@@ -87,12 +87,21 @@ CONTINOUS_POSE_REGISTER = [
 ]
 
 CONTINOUS_CRITICAL_POSE_REGISTER = [
-    # 'open-thumb_down',
     'thumb_down-thumb_up',
     'thumb_up-thumb_front',
     'thumb_front-open',
     'open-pinch',
     'pinch-O_shape',
-    'O_shape-ok',
-    'ok-open',
+    'O_shape-big_c',  # below are for more accurate calibration
+    # 'big_c-open', 
+    # 'open-point',
+    # 'point-two_shape',
+    # 'two_shape-four_shape',
+    # 'four_shape-six_shape',
+    # 'six_shape-eight_shape',
+    # 'eight_shape-nine_shape',
+    # 'nine_shape-claw',
+    # 'claw-ok',
+    # 'ok-pinch',
+    # 'pinch-open',
 ]
