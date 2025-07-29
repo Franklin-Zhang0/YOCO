@@ -138,7 +138,10 @@ class Trainer():
         torch.save(self.model.state_dict(), model_path)
         
         with open(stats_path, 'wb') as f:
-            pickle.dump(self.dataset.normalization_stats, f)
+            norm_stats = {k: v.tolist() for k,v in walk_dict(normalization_stats)}  # convert to list for better backward compatibility for numpy versions
+            norm_stats = create_dict_from_flattened(norm_stats)
+
+            pickle.dump(norm_stats, f)
             
         # save config
         config_path = os.path.join(save_dir, 'config.yaml')

@@ -65,7 +65,7 @@ def main():
     parser.add_argument('--robot_speed', type=float, default=0.4)
     parser.add_argument('--control_frequency', type=int, default=30)  # Hz
     parser.add_argument('--calibration', action='store_true', help="Use new calibration method")
-    parser.add_argument('--model_dir', type=str)
+    parser.add_argument('--model_dir', type=str, default="model")
     args = parser.parse_args()
 
     glove_sdk = initilize_glove(left_port=args.left_port, 

@@ -30,7 +30,7 @@ def initialize_robot(port=None, speed=1.0):
     time.sleep(2)
     return robot
 
-def apply_angles(robot, angles:list[float]|dict[FingerID, float], wait_for_response: bool = True):
+def apply_angles(robot, angles, wait_for_response: bool = True):
     """
     Apply angles to the robot.
     Inputs:

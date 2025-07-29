@@ -1,7 +1,6 @@
 CALIBRATOR=$1
-python /home/franklin/Project/Hand_teleop/code/calibration_net/collect_pose.py \
+python collect_pose.py \
     --left_glove_port /dev/ttyUSB0 \
-    --left_robot_port /dev/ttyUSB2 \
     --save_path ./calibrate/$CALIBRATOR/calib_data \
     --type critical_continous \
     --round 1
@@ -12,7 +11,7 @@ python merge_dataset.py \
     --is_continous
 
 python train.py \
-    config=/home/franklin/Project/Hand_teleop/code/calibration_net/config/calib.yaml \
+    config=config/calib.yaml \
     trainer.expname=calib \
     dataset.path=./calibrate/$CALIBRATOR/calib_data_merged \
     trainer.load_path=model \

@@ -3,6 +3,8 @@ from torch import nn
 import os
 import yaml
 import pickle
+from utils import walk_dict, create_dict_from_flattened
+import numpy as np
 
 class Model(nn.Module):
     def __init__(self, input_size, output_size, type, hidden_layers=None):
@@ -80,6 +82,9 @@ def load_model(model_dir: str, device: str = 'cpu') -> Model:
     
     with open(os.path.join(model_dir, 'norm_stats.pkl'), 'rb') as f:
         normalization_stats = pickle.load(f)
+
+    normalization_stats = {k: np.array(v) for k,v in walk_dict(normalization_stats)}
+    normalization_stats = create_dict_from_flattened(normalization_stats)
 
     model = Model(**model_cfg)
     model_weight_path = os.path.join(model_dir, 'model.pth')
