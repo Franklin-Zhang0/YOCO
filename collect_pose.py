@@ -29,7 +29,8 @@ def collect_fix_pose_data(glove, robot, angles, hand_type, open_fingers=True, wa
     if open_fingers:
         robot.open_all_fingers()
         time.sleep(0.5)
-    apply_angles(robot, angles, wait_for_response=wait_for_response)
+    if robot is not None:
+        apply_angles(robot, angles, wait_for_response=wait_for_response)
     if wait_input:
         input(f"Press Enter to collect glove data for {angles}...")
     glove_data = collect_pose_data(glove, hand_type)
@@ -79,10 +80,10 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                     data['robot'] = {}
                     print(f"Applying pose: {pose_name}")
                     glove_data, robot_data = {}, {}
-                    if args.left_robot_port:
+                    if args.left_glove_port:
                         glove_data['left'] = collect_fix_pose_data(glove_sdk, left_robot, angles, hand_type='left')
                         robot_data['left'] = {'angles': np.array(left_robot.get_finger_angles()), 'force': np.array(left_robot.get_finger_forces()), 'temperature': np.array(left_robot.get_finger_temperatures()), 'target_angles': np.array(angles)}
-                    if args.right_robot_port:
+                    if args.right_glove_port:
                         glove_data['right'] = collect_fix_pose_data(glove_sdk, right_robot, angles, hand_type='right')
                         robot_data['right'] = {'angles': np.array(right_robot.get_finger_angles()), 'force': np.array(right_robot.get_finger_forces()), 'temperature': np.array(right_robot.get_finger_temperatures()), 'target_angles': np.array(angles)}
 
@@ -124,15 +125,11 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                             angles = [(1 - t) * start_angle + t * end_angle for start_angle, end_angle in zip(start_angles, end_angles)]
                             data['robot'] = {}
                             glove_data, robot_data = {}, {}
-                            if args.left_robot_port:
+                            if args.left_glove_port:
                                 glove_data['left'] = collect_fix_pose_data(glove_sdk, left_robot, angles, hand_type='left', open_fingers=False, wait_input=False, wait_for_response=False)
-                                # robot_data['left'] = {'angles': np.array(left_robot.get_finger_angles()), 'force': np.array(left_robot.get_finger_forces()), 'temperature': np.array(left_robot.get_finger_temperatures()), 'target_angles': np.array(angles)}
-                                # robot_data['left'] = {'target_angles': np.array(angles)}
                                 current = glove_sdk.get_data(hand_type='left').tensile_data
-                            if args.right_robot_port:
+                            if args.right_glove_port:
                                 glove_data['right'] = collect_fix_pose_data(glove_sdk, right_robot, angles, hand_type='right', open_fingers=False, wait_input=False, wait_for_response=False)
-                                # robot_data['right'] = {'angles': np.array(right_robot.get_finger_angles()), 'force': np.array(right_robot.get_finger_forces()), 'temperature': np.array(right_robot.get_finger_temperatures()), 'target_angles': np.array(angles)}
-                                # robot_data['right'] = {'target_angles': np.array(angles)}
                                 current = glove_sdk.get_data(hand_type='right').tensile_data
 
                             robot_data['pose_name'] = pose_name
@@ -158,9 +155,9 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                         np_start_angles = np.array(start_angles, dtype=np.float32)
                         np_end_angles = np.array(end_angles, dtype=np.float32)
                         ratio = i / (len(traj_data) - 1)
-                        if args.left_robot_port:
+                        if args.left_glove_port:
                             data['robot']['left'] = {'target_angles': np_start_angles + ratio * (np_end_angles - np_start_angles)}
-                        if args.right_robot_port:
+                        if args.right_glove_port:
                             data['robot']['right'] = {'target_angles': np_start_angles + ratio * (np_end_angles - np_start_angles)}
                             
                         
