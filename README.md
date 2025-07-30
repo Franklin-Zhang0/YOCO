@@ -37,7 +37,7 @@ sudo chmot +777 /dev/ttyUSBx
 ```
 
 ```
-python /home/franklin/Project/Hand_teleop/code/calibration_net/teleop.py \
+python -m calibration_net.teleop.teleop \
     --left_port {LEFT_GLOVE_PORT} \
     --right_port {RIGHT_GLOVE_PORT} \
     --control_frequency 60 \
@@ -56,5 +56,5 @@ bash ./script/calibration.sh {TAG} {GLOVE_PORT}
 
 ### ROS 2 node
 ```
-python teleop_glove_node.py --ros-args -p left_port:={LEFT_GLOVE_PORT} -p model_dir:={MODEL_DIR}
+python -m calibration_net.teleop.teleop_glove_node --ros-args -p left_port:={LEFT_GLOVE_PORT} -p model_dir:={MODEL_DIR}
 ```

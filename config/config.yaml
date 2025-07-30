@@ -20,7 +20,7 @@ trainer:
   batch_size: 64
   learning_rate: 0.001
   val_split: 0.05
-  device: 'xpu'
+  device: 'cpu'
   calib_finetune: False
   save_path: "/home/franklin/expdata/teleop_models/pretrained"
 

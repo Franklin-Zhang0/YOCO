@@ -89,9 +89,11 @@ class GloveTeleopNode(Node):
                 ("control_frequency", 30),
                 ("model_dir", ""),
                 ("calibration", False),
+                ("verbose", False),
             ],
         )
         p = self.get_parameter
+        self.verbose = p('verbose').value
         self.freq = p("control_frequency").value
 
         # -------------------------- SDK Initialisation ---------------------- #
@@ -149,6 +151,10 @@ class GloveTeleopNode(Node):
             qpos = [1 - np.clip(angle, 0, 1.0) for angle in angles]
             msg = Float32MultiArray()
             msg.data = qpos
+
+            if self.verbose:
+                self.get_logger().info(f'Left qpos: {qpos}')
+
             self.pub_left.publish(msg)
 
             if self.left_robot is not None:
@@ -162,6 +168,9 @@ class GloveTeleopNode(Node):
             qpos = [1 - np.clip(angle, 0, 1.0) for angle in angles]
             msg = Float32MultiArray()
             msg.data = qpos
+
+            if sefl.veerbose:
+                self.get_logger().info(f'right qpos: {qpos}')
             
             self.pub_right.publish(msg)
 

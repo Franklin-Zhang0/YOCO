@@ -25,6 +25,13 @@ classifiers = [
 ]
 urls = { "Homepage" = "" }
 
+dependencies = [
+    "datasets",
+    "transformers",
+    "Omegaconf",
+    "tqdm"
+]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 known-first-party = ["calibration_net"]

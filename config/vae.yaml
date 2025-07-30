@@ -22,5 +22,5 @@ trainer:
   learning_rate: 0.001
   val_split: 0.2
   save_interval: 5
-  device: 'xpu'
+  device: 'cpu'
   save_path: "/home/franklin/expdata/teleop_models/vae"
