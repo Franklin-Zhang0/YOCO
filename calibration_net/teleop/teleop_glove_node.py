@@ -153,6 +153,7 @@ class GloveTeleopNode(Node):
             msg.data = qpos
 
             if self.verbose:
+                self.get_logger().info(f'Left tensile data: {data}')
                 self.get_logger().info(f'Left qpos: {qpos}')
 
             self.pub_left.publish(msg)
@@ -170,7 +171,8 @@ class GloveTeleopNode(Node):
             msg.data = qpos
 
             if sefl.veerbose:
-                self.get_logger().info(f'right qpos: {qpos}')
+                self.get_logger().info(f'Right tensile data: {data}')
+                self.get_logger().info(f'Right qpos: {qpos}')
             
             self.pub_right.publish(msg)
 
