@@ -36,8 +36,8 @@ from inspire_hand.hand import FingerID
 from inspire_hand import InspireHand
 
 # Project‑specific utilities
-from model import load_model
-from utils import (
+from calibration_net.policy.model import load_model
+from calibration_net.utils import (
     initilize_glove,
     initialize_robot,
     apply_angles,

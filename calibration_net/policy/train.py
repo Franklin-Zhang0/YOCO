@@ -1,4 +1,4 @@
-from trainer import Trainer
+from .trainer import Trainer
 from omegaconf import OmegaConf
 from config.config import Config
 

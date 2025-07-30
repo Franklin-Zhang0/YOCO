@@ -5,9 +5,10 @@ from tqdm import tqdm
 import os
 import yaml
 import pickle
-from dataset import TeleopDataset
+from .dataset import TeleopDataset
 from datetime import datetime
-from model import Model, load_model
+from .model import Model, load_model
+from calibration_net.utils import walk_dict, create_dict_from_flattened
 
 class Trainer():
     def __init__(self, args):
@@ -138,7 +139,7 @@ class Trainer():
         torch.save(self.model.state_dict(), model_path)
         
         with open(stats_path, 'wb') as f:
-            norm_stats = {k: v.tolist() for k,v in walk_dict(normalization_stats)}  # convert to list for better backward compatibility for numpy versions
+            norm_stats = {k: v.tolist() for k,v in walk_dict(self.dataset.normalization_stats)}  # convert to list for better backward compatibility for numpy versions
             norm_stats = create_dict_from_flattened(norm_stats)
 
             pickle.dump(norm_stats, f)

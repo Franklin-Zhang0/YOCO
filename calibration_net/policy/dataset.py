@@ -1,7 +1,7 @@
 import datasets
 from torch.utils.data import Dataset
 import torch
-from utils import walk_dict, index_dict
+from calibration_net.utils import walk_dict, index_dict
 import numpy as np
 
 class TeleopDataset(Dataset):

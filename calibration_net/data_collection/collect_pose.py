@@ -1,7 +1,7 @@
 from open_cyber_glove.sdk import OpenCyberGlove
 from inspire_hand.hand import FingerID, Register
 from inspire_hand import InspireHand
-from poses import FIX_POSE_REGISTER, CONTINOUS_POSE_REGISTER, CONTINOUS_CRITICAL_POSE_REGISTER
+from .poses import FIX_POSE_REGISTER, CONTINOUS_POSE_REGISTER, CONTINOUS_CRITICAL_POSE_REGISTER
 import sys
 import os
 import argparse
@@ -11,7 +11,7 @@ import datetime
 import numpy as np
 from tqdm import tqdm
 
-from utils import initilize_glove, initialize_robot, apply_angles, walk_dict, create_dict_from_flattened, FrameRateContext
+from calibration_net.utils import initilize_glove, initialize_robot, apply_angles, walk_dict, create_dict_from_flattened, FrameRateContext
 
 
 def collect_pose_data(glove, hand_type):
@@ -109,7 +109,6 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                     
                     print(f"Collecting data for {pose_name} with {args.collect_frequency} points")
                     input(f"Press Enter to start collecting data for {pose_name}...")
-                    
                     last = None
                     while True:
                         if glove_sdk.left_glove:
@@ -117,7 +116,15 @@ def data_loop(glove_sdk, left_robot, right_robot, args):
                             if (last is not None) and (not glove_sdk.left_glove._sensors_still(current, last, threshold=10)):
                                 break
                             last = current
+                        if glove_sdk.right_glove:
+                            current = glove_sdk.get_data(hand_type='right').tensile_data
+                            if (last is not None) and (not glove_sdk.right_glove._sensors_still(current, last, threshold=10)):
+                                break
+                            last = current
+                        if not glove_sdk.left_glove and not glove_sdk.right_glove:
+                            raise ValueError("No glove data available. Skipping continuous pose data collection.")
                         
+                    print(f"Collecting data for {pose_name}...")
                     traj_data = []
                     static = False
                     for t in tqdm(np.linspace(0, 1, args.collect_frequency*args.sec_per_pose), desc=f"Collecting data for {pose_name}"):
@@ -222,7 +229,7 @@ def main():
     parser.add_argument('--save_path', type=str, required=True)
     args = parser.parse_args()
     if os.path.exists(args.save_path):
-        input(f"Data already exists in {args.save_path}. Press Enter to overwrite or Ctrl+C to exit.")
+        input(f"Data already exists in {args.save_path}. Press Enter to add more or Ctrl+C to exit.")
     else:
         os.makedirs(args.save_path, exist_ok=True)
         

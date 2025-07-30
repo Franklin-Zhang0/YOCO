@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "calibration_net"
+version = "1.0.0"
+description = "Neuron Network for Retargeting"
+authors = [{ name = "Yu Zhang", email = "franklin.yuzhang@gmail.com" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.7,<3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+urls = { "Homepage" = "" }
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["calibration_net"]
+split-on-trailing-comma = false
+
+[tool.ruff]
+line-length = 88
+
+[tool.pytest.ini_options]
+addopts = "--disable-warnings"
+testpaths = ["tests"]

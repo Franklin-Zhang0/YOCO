@@ -3,11 +3,11 @@ from inspire_hand.hand import FingerID, Register
 from inspire_hand import InspireHand
 import argparse
 from tqdm import tqdm
-from model import load_model
+from calibration_net.policy.model import load_model
 import numpy as np
 import torch
 
-from utils import initilize_glove, initialize_robot, apply_angles, FrameRateContext
+from calibration_net.utils import initilize_glove, initialize_robot, apply_angles, FrameRateContext
 
 
 finger_mapping_inspire_to_glove = {
@@ -75,9 +75,13 @@ def main():
     
     if args.left_robot_port:
         left_robot = initialize_robot(port=args.left_robot_port, speed=args.robot_speed)
+    else:
+        left_robot = None
         
     if args.right_robot_port:
         right_robot = initialize_robot(port=args.right_robot_port, speed=args.robot_speed)
+    else:
+        right_robot = None
     
     
     model, norm_stats, _ = load_model(args.model_dir, device='cpu')
@@ -103,13 +107,15 @@ def main():
                     # print(data)
                     
                     angles = model.predict(np.array(data), norm_stats, norm_type='meanstd').tolist()
-                    # print(angles)
-                    apply_angles(left_robot, angles, wait_for_response=False)
+                    print("left_predicted:", angles)
+                    if left_robot:
+                        apply_angles(left_robot, angles, wait_for_response=False)
                 if glove_sdk.right_glove is not None:
                     data = glove_sdk.get_angles(hand_type='right', method='model')
                     angles = model.predict(np.array(data), norm_stats, norm_type='meanstd').tolist()
-                    # print(angles)
-                    apply_angles(right_robot, angles, wait_for_response=False)
+                    print("right_predicted:", angles)
+                    if right_robot:
+                        apply_angles(right_robot, angles, wait_for_response=False)
 
     except KeyboardInterrupt:
         print("Stopping teleoperation...")

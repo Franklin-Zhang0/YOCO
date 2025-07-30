@@ -38,8 +38,8 @@ sudo chmot +777 /dev/ttyUSBx
 
 ```
 python /home/franklin/Project/Hand_teleop/code/calibration_net/teleop.py \
-    --left_port XXX \
-    --right_port XXX \
+    --left_port {LEFT_GLOVE_PORT} \
+    --right_port {RIGHT_GLOVE_PORT} \
     --control_frequency 60 \
     --robot_speed 0.4 \
     --calibration \
@@ -48,14 +48,13 @@ python /home/franklin/Project/Hand_teleop/code/calibration_net/teleop.py \
 
 ### Calibration and teleop Guide
 This will ask you to wear glove and do severl poses to train a fintuned, calibrated model.
-The model will be saved in calibrate/XXX/calib_model/best
-XXX can be any string, which is used as a tag.
+The model will be saved in calibrate/{TAG}/calib_model/best
 ```
-bash ./script/calibration.sh XXX
+bash ./script/calibration.sh {TAG} {GLOVE_PORT}
 ```
 
 
 ### ROS 2 node
 ```
-python teleop_glove_node.py --ros-args -p left_port:=/dev/ttyUSBx -p model_dir:=XXX
+python teleop_glove_node.py --ros-args -p left_port:={LEFT_GLOVE_PORT} -p model_dir:={MODEL_DIR}
 ```

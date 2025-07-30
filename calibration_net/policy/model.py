@@ -3,7 +3,7 @@ from torch import nn
 import os
 import yaml
 import pickle
-from utils import walk_dict, create_dict_from_flattened
+from calibration_net.utils import walk_dict, create_dict_from_flattened
 import numpy as np
 
 class Model(nn.Module):
