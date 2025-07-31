@@ -29,7 +29,6 @@ class Trainer():
             if loaded_cfg['model']['output_size'] != self.args.model.output_size:
                 self.switch_last_layer()
                 loaded_cfg['model']['output_size'] = self.args.model.output_size
-            self.dataset.normalization_stats['x'] = normalization_stats['x']
             # assert all other model configurations match
             assert loaded_cfg['model'] == self.args.model
             

@@ -170,7 +170,7 @@ class GloveTeleopNode(Node):
             msg = Float32MultiArray()
             msg.data = qpos
 
-            if sefl.veerbose:
+            if self.verbose:
                 self.get_logger().info(f'Right tensile data: {data}')
                 self.get_logger().info(f'Right qpos: {qpos}')
             
