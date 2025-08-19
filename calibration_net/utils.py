@@ -1,11 +1,9 @@
-from open_cyber_glove.sdk import OpenCyberGlove
-from inspire_hand.hand import FingerID, Register
-from inspire_hand import InspireHand
 import numpy as np
 import time
 from typing import Union
 
 def initilize_glove(left_port=None, right_port=None, model_path=None, calibrate=True):
+    from open_cyber_glove.sdk import OpenCyberGlove
     sdk = OpenCyberGlove(left_port=left_port, 
                          right_port=right_port,
                          model_path=model_path)
@@ -18,6 +16,7 @@ def initilize_glove(left_port=None, right_port=None, model_path=None, calibrate=
     return sdk
 
 def initialize_robot(port=None, speed=1.0):
+    from inspire_hand import InspireHand
     print(f"Initializing robot on port {port}")
     robot = InspireHand(port=port, baudrate=115200)
     robot.open()
@@ -31,6 +30,7 @@ def initialize_robot(port=None, speed=1.0):
     return robot
 
 def apply_angles(robot, angles, wait_for_response: bool = True):
+    from inspire_hand.hand import FingerID, Register
     """
     Apply angles to the robot.
     Inputs:
@@ -79,10 +79,10 @@ def index_dict(input_dict:dict, flat_key:str):
     keys = flat_key.split('.')
     value = input_dict
     for key in keys:
-        if isinstance(value, dict) and key in value:
+        try:
             value = value[key]
-        else:
-            raise KeyError(f"Key '{flat_key}' not found in dictionary.")
+        except KeyError:
+            raise KeyError(f"Key '{flat_key}' not found in {input_dict}.")
     return value
             
 def create_dict_from_flattened(flat_dict: dict) -> dict:
@@ -158,3 +158,82 @@ class FrameRateContext:
             print(
                 f"Frame time: {frame_time:.6f}s, Current FPS: {current_fps:.1f}, Sleep overhead: {self.sleep_overhead:.6f}"
             )
+
+
+
+def build_axes_from_joints3d(joints_xyz: np.ndarray):
+    """
+    Batched wrist–palm frame from 3-D hand joints.
+
+    Parameters
+    ----------
+    joints_xyz : ndarray with shape (..., 21, 3)  (any leading batch dims)
+        Landmark order must match MANO / MediaPipe so that
+        0=wrist, 5=index-MCP, 9=middle-MCP, 13=ring-MCP.
+
+    Returns
+    -------
+    T      : ndarray, shape (..., 4, 4)   – forward transform (world→hand-base)
+    T_inv  : ndarray, shape (..., 4, 4)   – inverse (hand-base→world)
+    """
+    joints_xyz = np.asarray(joints_xyz)
+    if joints_xyz.shape[-2:] != (21, 3):
+        raise ValueError("expected (..., 21, 3) input")
+
+    eps = 1e-8
+
+    z_axis = joints_xyz[..., 9, :] - joints_xyz[..., 0, :]          # middle_MCP − wrist
+    z_axis /= np.linalg.norm(z_axis, axis=-1, keepdims=True) + eps
+
+    y_aux  = joints_xyz[..., 13, :] - joints_xyz[..., 5, :]         # ring_MCP − index_MCP
+    y_aux /= np.linalg.norm(y_aux, axis=-1, keepdims=True) + eps
+
+    x_axis = np.cross(y_aux, z_axis)
+    x_axis /= np.linalg.norm(x_axis, axis=-1, keepdims=True) + eps
+
+    y_axis = np.cross(z_axis, x_axis)
+    y_axis /= np.linalg.norm(y_axis, axis=-1, keepdims=True) + eps
+
+    # ------------------------------------------------------------------ #
+    # rotation & translation                                             #
+    # ------------------------------------------------------------------ #
+    # stack as columns → (..., 3, 3)
+    R = np.stack([x_axis, y_axis, z_axis], axis=-1)
+
+    t = joints_xyz[..., 0, :]  # (..., 3)
+
+    batch_shape = R.shape[:-2]
+
+    T = np.broadcast_to(np.eye(4, dtype=R.dtype), batch_shape + (4, 4)).copy()
+    T[..., :3, :3] = R
+    T[..., :3,  3] = t
+
+    # inverse: Rᵀ and −Rᵀ·t
+    R_T = np.swapaxes(R, -2, -1)
+    t_inv = -(R_T @ t[..., None])[..., 0]
+
+    T_inv = np.broadcast_to(np.eye(4, dtype=R.dtype), batch_shape + (4, 4)).copy()
+    T_inv[..., :3, :3] = R_T
+    T_inv[..., :3, 3]  = t_inv
+
+    return T, T_inv
+
+def apply_transformation(joint_xyz: np.ndarray, transformation_matrix: np.ndarray):
+    """
+    Apply a transformation matrix to a joint pose.
+    Args:
+        joint_pose (np.ndarray): Joint pose of shape (N, 3).
+        transformation_matrix (np.ndarray): Transformation matrix of shape (4, 4).
+    Returns:
+        np.ndarray: Transformed joint pose of shape (N, 3).
+    """
+    joint_xyz = np.concatenate((joint_xyz, np.ones((*joint_xyz.shape[:-1], 1))), axis=-1)
+    transformed_joint_xyz = joint_xyz @ np.swapaxes(transformation_matrix, -2, -1)
+    return transformed_joint_xyz[..., :3]
+
+def transform_joint3d(joint_xyz: np.ndarray):
+    tran, inv_tran = build_axes_from_joints3d(joint_xyz)
+    transformed_joint_xyz = apply_transformation(joint_xyz, inv_tran)
+    return transformed_joint_xyz
+    
+    

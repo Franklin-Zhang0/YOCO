@@ -4,52 +4,40 @@ import os
 import yaml
 import pickle
 from calibration_net.utils import walk_dict, create_dict_from_flattened
+from calibration_net.policy.models import *
 import numpy as np
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, type, hidden_layers=None):
+    def __init__(self, input_size, output_size, input_channel, type, hidden_layers=None):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.model_type = type
         self.hidden_layers = hidden_layers
+        self.input_channel = input_channel
         self.network = self.build_network()
         
     def build_network(self):
         if self.model_type == 'MLP':
-            self.calib_block = nn.Sequential(nn.Conv1d(
-                in_channels=1,
-                out_channels=128,
-                kernel_size=5,
-                stride=1,
-                padding=2
-            ),
-                nn.GELU(),
-                nn.Conv1d(
-                    in_channels=128,
-                    out_channels=1,
-                    kernel_size=5,
-                    stride=1,
-                    padding=2
-                )
+            self.network = CNN_MLP(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
             )
-            layers = []
-            in_features = self.input_size
-            for hidden_size in self.hidden_layers:
-                layers.append(nn.Linear(in_features, hidden_size))
-                layers.append(nn.GELU())
-                in_features = hidden_size
-            self.fc = nn.Linear(in_features, self.output_size)
-            layers.append(self.fc)
-            return nn.Sequential(*layers)
+        elif self.model_type == 'DIT':
+            self.network = DIT(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
+            )
         
     def forward(self, x):
-        x = self.calib_block(x.unsqueeze(-2)).squeeze(-2)  # Apply calibration block
-        
         return self.network(x)
     
     @torch.no_grad()
-    def predict(self, x, normalization_stats=None, norm_type='minmax'):
+    def predict(self, x, normalization_stats=None, norm_type='meanstd'):
         self.eval()
         if normalization_stats:
             if norm_type == 'minmax':

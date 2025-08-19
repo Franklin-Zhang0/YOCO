@@ -1,7 +1,7 @@
 from open_cyber_glove.sdk import OpenCyberGlove
 from inspire_hand.hand import FingerID, Register
 from inspire_hand import InspireHand
-from .poses import FIX_POSE_REGISTER, CONTINOUS_POSE_REGISTER, CONTINOUS_CRITICAL_POSE_REGISTER
+from calibration_net.data_collection.poses import FIX_POSE_REGISTER, CONTINOUS_POSE_REGISTER, CONTINOUS_CRITICAL_POSE_REGISTER
 import sys
 import os
 import argparse

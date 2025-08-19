@@ -5,7 +5,7 @@ from tqdm import tqdm
 import os
 import yaml
 import pickle
-from .dataset import TeleopDataset
+from .dataset import TeleopDataset, SequenceDataset
 from datetime import datetime
 from .model import Model, load_model
 from calibration_net.utils import walk_dict, create_dict_from_flattened
@@ -15,14 +15,19 @@ class Trainer():
         self.args = args
         self.trainer_args = args.trainer
         
-        self.model = Model(**self.args.model)
         self.device = self.trainer_args.device
         
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.expname = self.trainer_args.expname
-        
+
         self.load_dataset()
-        
+        example = self.trainset[0]
+        print("Example input shape:", example['input'].shape)
+        self.args.model.input_size = example['input'].shape[-1]
+        self.args.model.input_channel = example['input'].shape[-2]
+
+        self.model = Model(**self.args.model)
+
         if self.trainer_args.load_path:
             print(f"Loading model from {self.trainer_args.load_path}")
             self.model, normalization_stats, loaded_cfg = load_model(self.trainer_args.load_path)
@@ -55,7 +60,7 @@ class Trainer():
         self.loss_function = nn.MSELoss()
     
     def load_dataset(self):
-        self.dataset = TeleopDataset(**self.args.dataset)
+        self.dataset = SequenceDataset(**self.args.dataset)
         val_size = int(len(self.dataset) * self.trainer_args.val_split)
         # self.trainset, self.valset = torch.utils.data.random_split(self.dataset, [len(self.dataset) - val_size, val_size])
         self.trainset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size))  # Ensure the dataset is not modified

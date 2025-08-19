@@ -9,6 +9,11 @@ class DatasetConfig:
     output_keys: str = field(default_factory=str)
     side: str = 'left'
     augmentations: Dict[str, float] = field(default_factory=dict)
+    obs_horizon: int = 1
+    action_horizon: int = 1
+    preprocessing_x: list = field(default_factory=list)
+    preprocessing_y: list = field(default_factory=list)
+    
 
 @dataclass
 class ModelConfig:
