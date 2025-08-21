@@ -32,6 +32,11 @@ def get_layout_to_5x4():
         return x.reshape(x_shape[:-2] + (5, 4, 3))
     return layout_to_5x4
 
+def get_flatten():
+    def flatten(x):
+        return x.reshape(x.shape[0], -1)
+    return flatten
+
 TRANSFORM_REGISTRY = {
     'joint_3d_world_to_local': lambda: transform_joint3d,
     'normalize': get_normalize,
@@ -39,4 +44,5 @@ TRANSFORM_REGISTRY = {
     'original_and_delta': get_original_and_delta,
     'discard_wrist': get_discard_wrist,
     'joint_layout_to_5x4': get_layout_to_5x4,
+    'flatten': get_flatten,
 }

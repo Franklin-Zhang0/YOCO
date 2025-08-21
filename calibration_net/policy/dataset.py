@@ -65,6 +65,7 @@ class SequenceDataset(Dataset):
     def __init__(self, 
                  path, 
                  input_keys, 
+                 hypernet_input_keys,
                  output_keys, 
                  side='left', 
                  augmentations={}, 
@@ -84,6 +85,11 @@ class SequenceDataset(Dataset):
 
         self.input_keys = input_keys
         self.output_keys = output_keys
+        self.hypernet_input_keys = hypernet_input_keys
+
+        assert self.input_keys in self.data.column_names, f"Input keys '{self.input_keys}' not in dataset columns {self.data.column_names}"
+        assert self.output_keys in self.data.column_names, f"Output keys '{self.output_keys}' not in dataset columns {self.data.column_names}"
+
         self.obs_horizon = obs_horizon
         self.action_horizon = action_horizon
         self.length = self.get_length()
@@ -188,13 +194,20 @@ class SequenceDataset(Dataset):
         y = torch.tensor(y[idx_in_demo], dtype=torch.float32)
         
         # x, y = self.__augment__(x, y)
-        return {'input': x, 'output': y}
+        item = {'input': x, 'output': y}
+
+        if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
+            hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))
+            hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
+            item['hypernet_input'] = hypernet_x
+        return item
     
 if __name__ == '__main__':
     dataset = SequenceDataset(
         path='/mnt/sda/yuzhang/data/dex_ycb_retargeted/val_huggingface/',
         input_keys='mano_pose',
         output_keys='inspire_joint_pose',
+        hypernet_input_keys='betas',
         preprocessing_x=[],
         preprocessing_y=['delta'],
     )

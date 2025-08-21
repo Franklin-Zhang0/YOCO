@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 class DatasetConfig:
     path: str = field(default_factory=str)
     input_keys: str = field(default_factory=str)
+    hypernet_input_keys: str = field(default_factory=str)
     output_keys: str = field(default_factory=str)
     side: str = 'left'
     augmentations: Dict[str, float] = field(default_factory=dict)
@@ -14,13 +15,21 @@ class DatasetConfig:
     preprocessing_x: list = field(default_factory=list)
     preprocessing_y: list = field(default_factory=list)
     
+@dataclass
+class HypernetCfg:
+    input_size: int = field(default_factory=int)
+    max_modules: int = -1
+    rank: int = 2
+    alpha: float = 2.0
 
 @dataclass
 class ModelConfig:
     type : str = 'MLP'
     input_size: int = field(default_factory=int)
+    input_channel: int = field(default_factory=int)
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     output_size: int = field(default_factory=int)
+    hypernet_cfg: HypernetCfg = field(default_factory=HypernetCfg)
 
 @dataclass
 class TrainerConfig:

@@ -10,9 +10,7 @@ dataset:
   
 model:
   type: "MLP"
-  input_size: 19
   hidden_layers: [256, 256, 256]
-  output_size: 6
 
 trainer:
   expname: "MLP_0721"

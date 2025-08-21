@@ -9,6 +9,7 @@ from .dataset import TeleopDataset, SequenceDataset
 from datetime import datetime
 from .model import Model, load_model
 from calibration_net.utils import walk_dict, create_dict_from_flattened
+import time
 
 class Trainer():
     def __init__(self, args):
@@ -25,6 +26,12 @@ class Trainer():
         print("Example input shape:", example['input'].shape)
         self.args.model.input_size = example['input'].shape[-1]
         self.args.model.input_channel = example['input'].shape[-2]
+        self.args.model.output_size = example['output'].shape[-1]
+        
+        if 'hypernet_input' in example:
+            self.args.model.hypernet_cfg.input_size = example['hypernet_input'].shape[-1]
+        else:
+            self.args.model.hypernet_cfg.input_size = 0
 
         self.model = Model(**self.args.model)
 
@@ -69,24 +76,31 @@ class Trainer():
     def train_step(self, data, do_backward=True):
         x, y = data['input'], data['output']
         x, y = x.float().to(self.device), y.float().to(self.device)
-        y_hat = self.model(x)
-        loss = self.loss_function(y_hat, y)
-        mae = torch.mean(torch.abs(y_hat - y))
+        if 'hypernet_input' in data:
+            hypernet_input = data['hypernet_input'].float().to(self.device)
+        else:
+            hypernet_input = None
+
+        step_info = {}
         
         if do_backward:
+            result = self.model(x, y, hypernet_input)
+            loss = result['loss']
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            
-        step_info = {
-            'loss': loss.item(),
-            'mae': mae.item()
-        }   
+        else:
+            pred_y = self.model(x, hypernet_x=hypernet_input)
+            loss = self.loss_function(pred_y, y)
+            mae = torch.mean(torch.abs(pred_y - y))
+            step_info['mae'] = mae.item()
+
+        step_info['loss'] = loss.item()
         return step_info
     
     def train_epoch(self):
         self.model.train()
-        self.dataloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True)
+        self.dataloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=16)
         data_tqdm = tqdm(self.dataloader, desc='Training')
         train_loss = []
         info = {}

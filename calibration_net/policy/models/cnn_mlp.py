@@ -1,9 +1,10 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 class CNN_MLP(nn.Module):
     def __init__(self, input_size, output_size, input_channel, hidden_layers=[]):
-        super(MLP, self).__init__()
+        super(CNN_MLP, self).__init__()
         self.calib_block = nn.Sequential(nn.Conv1d(
                 in_channels=input_channel,
                 out_channels=128,
@@ -28,9 +29,22 @@ class CNN_MLP(nn.Module):
             in_features = hidden_size
         self.fc = nn.Linear(in_features, output_size)
         layers.append(self.fc)
+        self.layers = nn.Sequential(*layers)
     
     def forward(self, x):
         x = self.calib_block(x).squeeze(-2)
-        x = self.fc(x)
+        x = self.layers(x)
         return x
+
+    def train_forward(self, x, y):
+        pred_y = self.forward(x)
+        loss = F.mse_loss(pred_y, y)
+        result = {
+            'loss': loss,
+            'pred_y': pred_y
+        }
+        return result
+
+    def predict(self, x):
+        return self.forward(x)
 

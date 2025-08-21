@@ -6,16 +6,19 @@ import pickle
 from calibration_net.utils import walk_dict, create_dict_from_flattened
 from calibration_net.policy.models import *
 import numpy as np
+from calibration_net.policy.models.hyper_lora import HyperLoRA
+from contextlib import nullcontext
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hidden_layers=None):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, hidden_layers=None):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.model_type = type
         self.hidden_layers = hidden_layers
+        self.hypernet_cfg = hypernet_cfg
         self.input_channel = input_channel
-        self.network = self.build_network()
+        self.build_network()
         
     def build_network(self):
         if self.model_type == 'MLP':
@@ -25,17 +28,31 @@ class Model(nn.Module):
                 input_channel=self.input_channel,
                 hidden_layers=self.hidden_layers
             )
-        elif self.model_type == 'DIT':
-            self.network = DIT(
-                input_size=self.input_size,
-                output_size=self.output_size,
-                input_channel=self.input_channel,
-                hidden_layers=self.hidden_layers
+            self.calib_block = self.network.calib_block
+
+        elif self.model_type == 'Flow':
+            self.network = FlowMatching(
+                input_dim=self.input_size * self.input_channel,
+                output_dim=self.output_size,
+                hidden_layers=self.hidden_layers,
             )
-        
-    def forward(self, x):
-        return self.network(x)
-    
+            self.calib_block = self.network.calib_block # dummy calib block
+        if self.hypernet_cfg.input_size > 0:
+            self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network)
+            self.calib_block = self.hyperlora
+        return self.network
+
+    def forward(self, x, y=None, hypernet_x=None):
+        context = self.hyperlora.use(hypernet_x) if self.hypernet_cfg.input_size > 0 else nullcontext()
+
+        with context:
+            if y is not None:
+                result = self.network.train_forward(x, y)
+            else:
+                result = self.network.predict(x)
+
+        return result
+
     @torch.no_grad()
     def predict(self, x, normalization_stats=None, norm_type='meanstd'):
         self.eval()
