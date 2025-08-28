@@ -36,6 +36,8 @@ class TrainerConfig:
     expname: str = field(default_factory=str)
     batch_size: int = field(default_factory=int)
     learning_rate: float = field(default_factory=float)
+    grad_clipping: float = field(default_factory=float)
+    calibnet_warmup_epochs: int = 0
     num_epochs: int = field(default_factory=int)
     val_split: float = 0.2
     device: str = 'cuda'  # 'cpu', 'cuda', or 'xpu'

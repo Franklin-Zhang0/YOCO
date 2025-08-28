@@ -9,7 +9,6 @@ from .dataset import TeleopDataset, SequenceDataset
 from datetime import datetime
 from .model import Model, load_model
 from calibration_net.utils import walk_dict, create_dict_from_flattened
-import time
 
 class Trainer():
     def __init__(self, args):
@@ -47,16 +46,18 @@ class Trainer():
         self.model.to(self.device)
         
         if self.trainer_args.calib_finetune:
-            for param in self.model.parameters():
-                param.requires_grad = False
-            for param in self.model.calib_block.parameters():
-                param.requires_grad = True
-        else:
-            for param in self.model.parameters():
-                param.requires_grad = True
-            for param in self.model.calib_block.parameters():
-                param.requires_grad = True
+            self.set_trainable(main_network=False, calib=True)
+        elif self.trainer_args.calibnet_warmup_epochs == 0:
+            self.set_trainable(main_network=True, calib=True)
+        elif self.trainer_args.calibnet_warmup_epochs > 0:
+            self.set_trainable(main_network=True, calib=False)
         self.create_optimizer()
+
+    def set_trainable(self, main_network=True, calib=True):
+        for param in self.model.parameters():
+            param.requires_grad = main_network
+        for param in self.model.calib_block.parameters():
+            param.requires_grad = calib
 
     def switch_last_layer(self):
         self.model.fc = nn.Linear(self.model.fc.in_features, self.args.model.output_size)
@@ -72,6 +73,9 @@ class Trainer():
         # self.trainset, self.valset = torch.utils.data.random_split(self.dataset, [len(self.dataset) - val_size, val_size])
         self.trainset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size))  # Ensure the dataset is not modified
         self.valset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size, len(self.dataset)))
+        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=16)
+        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=16)
+
 
     def train_step(self, data, do_backward=True):
         x, y = data['input'], data['output']
@@ -88,6 +92,7 @@ class Trainer():
             loss = result['loss']
             self.optimizer.zero_grad()
             loss.backward()
+            nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
             self.optimizer.step()
         else:
             pred_y = self.model(x, hypernet_x=hypernet_input)
@@ -100,8 +105,7 @@ class Trainer():
     
     def train_epoch(self):
         self.model.train()
-        self.dataloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=16)
-        data_tqdm = tqdm(self.dataloader, desc='Training')
+        data_tqdm = tqdm(self.trainloader, desc='Training')
         train_loss = []
         info = {}
         for data in data_tqdm:
@@ -109,22 +113,24 @@ class Trainer():
             loss = step_info['loss']
             train_loss.append(loss)
             data_tqdm.set_postfix(loss=loss)
-        info['val_loss'] = self.validate()
+
         info['train_loss'] = sum(train_loss) / len(train_loss)
+        print(f"Training Loss: {info['train_loss']}")
+        info['val_loss'] = self.validate()
         return info
 
     def validate(self):
+        print("Start Validation")
         self.model.eval()
-        self.dataloader = DataLoader(self.valset, batch_size=4, shuffle=False)
         total_loss = 0.0
         total_mae = 0.0
         with torch.no_grad():
-            for data in self.dataloader:
+            for data in tqdm(self.valloader):
                 step_info = self.train_step(data, do_backward=False)
                 total_loss += step_info['loss']
                 total_mae += step_info['mae']
-        avg_loss = total_loss / len(self.dataloader)
-        avg_mae = total_mae / len(self.dataloader)
+        avg_loss = total_loss / len(self.valloader)
+        avg_mae = total_mae / len(self.valloader)
         print(f"Validation MAE: {avg_mae}")
         print(f"Validation Loss: {avg_loss}")
         return avg_loss
@@ -134,6 +140,9 @@ class Trainer():
         best_val_loss = float('inf')
         for i in range(num_epoch):
             print(f"Epoch {i+1}/{num_epoch}")
+            if self.trainer_args.calibnet_warmup_epochs > 0 and i == self.trainer_args.calibnet_warmup_epochs:
+                self.set_trainable(main_network=True, calib=True)
+
             train_info = self.train_epoch()
             if self.trainer_args.save_path:
                 path = os.path.join(self.trainer_args.save_path, self.expname + "_" + self.timestamp, f'latest')

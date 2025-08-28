@@ -2,24 +2,59 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+import math
+
+class TimeEmbed(nn.Module):
+    def __init__(self, dim, n_fourier=32):
+        super().__init__()
+        self.B = nn.Parameter(torch.randn(n_fourier)*2.0, requires_grad=False)
+        self.proj = nn.Sequential(
+            nn.Linear(2*n_fourier, dim),
+            nn.GELU(),
+            nn.Linear(dim, dim)
+        )
+        self.dim = dim
+
+    def forward(self, t):  # t in [0,1], shape [B,1]
+        # Fourier features
+        wt = t * self.B[None, :] * 2*math.pi
+        ff = torch.cat([torch.sin(wt), torch.cos(wt)], dim=-1)
+        return self.proj(ff)
+    
+class FiLM(nn.Module):
+    def __init__(self, hdim, edim):
+        super().__init__()
+        self.to_scale = nn.Linear(edim, hdim)
+        self.to_shift = nn.Linear(edim, hdim)
+    def forward(self, h, e):
+        return h * (1 + self.to_scale(e)) + self.to_shift(e)
 
 class ResMLPBlock(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, film_dim=None):
         super(ResMLPBlock, self).__init__()
         self.linear = nn.Linear(input_dim, output_dim)
+        self.norm = nn.LayerNorm(input_dim)
         self.activation = nn.GELU()
 
-    def forward(self, x: Tensor) -> Tensor:
+        if film_dim is not None:
+            self.film = FiLM(output_dim, film_dim)
+        else:
+            self.film = None
+
+    def forward(self, x: Tensor, cond: Tensor=None) -> Tensor:
         residual = x
+        x = self.norm(x)
         x = self.linear(x)
         x = self.activation(x)
+        if self.film is not None and cond is not None:
+            x = self.film(x, cond)
         if x.shape[-1] != residual.shape[-1]:
             return x
         else:
             return x + residual
 
 class FlowMatching(nn.Module):
-    def __init__(self, input_dim, output_dim, n_steps=5, hidden_layers=[]):
+    def __init__(self, input_dim, output_dim, n_steps=10, hidden_layers=[]):
         """
         Initialize the Flow-Matching 1D Diffusion Model.
         
@@ -34,11 +69,18 @@ class FlowMatching(nn.Module):
         self.condition_dim = input_dim
         self.output_dim = output_dim
         self.n_steps = n_steps
-        self.time_dim = 1
+        self.time_dim = 128
+        self.h_dim = hidden_layers[0] if len(hidden_layers) > 0 else 256
+        self.time_embed = TimeEmbed(self.time_dim)
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(self.condition_dim, self.h_dim),
+            nn.GELU(),
+            nn.Linear(self.h_dim, self.time_dim),
+        )
         self.calib_block = nn.Linear(1,1)
 
         # MLP network for flow-matching process
-        input_dim = self.condition_dim + self.output_dim + self.time_dim
+        input_dim = self.output_dim + self.time_dim
         self.layers = []
         for layers in hidden_layers:
             self.layers.append(ResMLPBlock(input_dim, layers))
@@ -50,7 +92,10 @@ class FlowMatching(nn.Module):
         self.noise_schedule = torch.linspace(0.0, 1.0, n_steps + 1)  # Diffusion noise schedule
 
     def forward(self, t: Tensor, x_t: Tensor, cond: Tensor):
-        latent = torch.cat((t, x_t, cond), -1)
+        t_emb = self.time_embed(t)
+        cond = self.cond_mlp(cond)
+        cond = cond + t_emb
+        latent = torch.cat((x_t, cond), -1)
         for layers in self.layers:
             latent = layers(latent)
         return latent

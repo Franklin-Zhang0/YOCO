@@ -39,7 +39,7 @@ class Model(nn.Module):
             self.calib_block = self.network.calib_block # dummy calib block
         if self.hypernet_cfg.input_size > 0:
             self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network)
-            self.calib_block = self.hyperlora
+            self.calib_block = self.hyperlora.lora_modules
         return self.network
 
     def forward(self, x, y=None, hypernet_x=None):

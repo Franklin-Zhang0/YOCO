@@ -38,6 +38,7 @@ class HyperBlock(nn.Module):
 
         nn.init.kaiming_uniform_(self.linear2.weight[:in_feat * rank], a=math.sqrt(5))
         nn.init.zeros_(self.linear2.weight[in_feat * rank:])
+        nn.init.zeros_(self.linear2.bias[in_feat * rank:])
         if self.linear2.bias is not None:
             nn.init.zeros_(self.linear2.bias)
 

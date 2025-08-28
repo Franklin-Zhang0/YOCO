@@ -4,7 +4,7 @@ import torch
 from calibration_net.utils import walk_dict, index_dict
 import numpy as np
 from .preprocessing import TRANSFORM_REGISTRY
-from typing import OrderedDict
+from typing import OrderedDict, Union
 from functools import partial
 
 class TeleopDataset(Dataset):  # point-wise dataset
@@ -73,6 +73,7 @@ class SequenceDataset(Dataset):
                  preprocessing_y=[],
                  obs_horizon=1,
                  action_horizon=1,
+                 data_caching=True,
                  ):
         if ',' in path:
             path = path.split(',')
@@ -82,6 +83,7 @@ class SequenceDataset(Dataset):
         self.data:datasets.Dataset = datasets.concatenate_datasets([datasets.load_from_disk(p) for p in path])
         self.augmentations = augmentations
         self.side = side
+        self.data_caching = data_caching
 
         self.input_keys = input_keys
         self.output_keys = output_keys
@@ -103,7 +105,8 @@ class SequenceDataset(Dataset):
         self.normalization_stats = self.get_normalization_stats()
         self.preprocessing_x = self.build_preprocessing(preprocessing_x, 'x')
         self.preprocessing_y = self.build_preprocessing(preprocessing_y, 'y')
-        
+        self.data_cache = {}
+
     def build_preprocessing(self, preprocess_types, key):
         combined_fn = OrderedDict()
         for cur_type in preprocess_types:
@@ -160,12 +163,15 @@ class SequenceDataset(Dataset):
             'y': compute_stats(self.data, self.output_keys, partial(self.preprocessing_y, normalize=False)),
         }
         
-    def __chunking__(self, x:np.ndarray, chunk_range:slice):
-        seqence_length = x.shape[0]
-        chunk_indicies = np.arange(seqence_length)[:, None] + np.array(chunk_range)[None, :]
-        chunk_indicies = np.clip(chunk_indicies, 0, seqence_length - 1)
-        return x[chunk_indicies]
-    
+    def __chunking__(self, x:Union[np.ndarray, list], chunk_range:slice, idx:slice):
+        sequence_length = len(x)
+        chunk_indices = np.arange(sequence_length)[:, None] + np.array(chunk_range)[None, :]
+        chunk_indices = np.clip(chunk_indices, 0, sequence_length - 1)
+        if idx is not None:
+            return x[chunk_indices[idx]]
+        else:
+            return x[chunk_indices]
+
     def get_length(self):
         print("Calculating total length of the dataset...")
         length = self.data.map(lambda x: {'seq_len':len(index_dict(dict(x), self.input_keys))}, num_proc=16)['seq_len']
@@ -176,10 +182,21 @@ class SequenceDataset(Dataset):
     def __len__(self):
         return self.length
 
+    def fetch_demo(self, demo_id):
+        if self.data_caching: 
+            if demo_id in self.data_cache:
+                data = self.data_cache[demo_id]
+            else:
+                data = self.data[demo_id]
+                self.data_cache[demo_id] = data
+        else:
+            data = self.data[demo_id]
+        return data
+
     def __getitem__(self, idx):
         demo_id = self.mapping['idx_to_demo_id'][idx]
         idx_in_demo = self.mapping['idx_to_idx_in_demo'][idx]
-        data = self.data[demo_id]
+        data = self.fetch_demo(demo_id)
         
         x = np.array(index_dict(dict(data), self.input_keys))
         y = np.array(index_dict(dict(data), self.output_keys))
@@ -187,11 +204,11 @@ class SequenceDataset(Dataset):
         x = self.preprocessing_x(x)
         y = self.preprocessing_y(y)
         
-        x = self.__chunking__(x, range(-self.obs_horizon + 1, 1))
-        y = self.__chunking__(y, range(0, self.action_horizon))
+        x = self.__chunking__(x, range(-self.obs_horizon + 1, 1), idx_in_demo)
+        y = self.__chunking__(y, range(0, self.action_horizon), idx_in_demo)
         
-        x = torch.tensor(x[idx_in_demo], dtype=torch.float32)
-        y = torch.tensor(y[idx_in_demo], dtype=torch.float32)
+        x = torch.tensor(x, dtype=torch.float32)
+        y = torch.tensor(y, dtype=torch.float32).squeeze()
         
         # x, y = self.__augment__(x, y)
         item = {'input': x, 'output': y}
@@ -204,11 +221,14 @@ class SequenceDataset(Dataset):
     
 if __name__ == '__main__':
     dataset = SequenceDataset(
-        path='/mnt/sda/yuzhang/data/dex_ycb_retargeted/val_huggingface/',
-        input_keys='mano_pose',
+        path='/mnt/sda/yuzhang/data/InterHand/InterHand_retargeted_30fps_huggingface/',
+        input_keys='pca_mano_pose',
         output_keys='inspire_joint_pose',
         hypernet_input_keys='betas',
         preprocessing_x=[],
-        preprocessing_y=['delta'],
+        preprocessing_y=[],
     )
-    print(dataset[0])
+    from tqdm import tqdm
+    for i in tqdm(range(1000)):
+        dataset[i]
+        breakpoint()
