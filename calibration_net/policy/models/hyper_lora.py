@@ -35,8 +35,11 @@ class HyperBlock(nn.Module):
         self.linear1 = nn.Linear(input_dim, hidden_dim)
         self.gelu = nn.GELU()
         self.linear2 = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
+        self.norm = nn.LayerNorm(hidden_dim)
 
         nn.init.kaiming_uniform_(self.linear2.weight[:in_feat * rank], a=math.sqrt(5))
+        nn.init.zeros_(self.linear1.bias)
+        nn.init.zeros_(self.linear2.bias[:in_feat * rank])
         nn.init.zeros_(self.linear2.weight[in_feat * rank:])
         nn.init.zeros_(self.linear2.bias[in_feat * rank:])
         if self.linear2.bias is not None:

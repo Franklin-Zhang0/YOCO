@@ -9,6 +9,7 @@ from .dataset import TeleopDataset, SequenceDataset
 from datetime import datetime
 from .model import Model, load_model
 from calibration_net.utils import walk_dict, create_dict_from_flattened
+from copy import deepcopy
 
 class Trainer():
     def __init__(self, args):
@@ -69,10 +70,20 @@ class Trainer():
     
     def load_dataset(self):
         self.dataset = SequenceDataset(**self.args.dataset)
-        val_size = int(len(self.dataset) * self.trainer_args.val_split)
-        # self.trainset, self.valset = torch.utils.data.random_split(self.dataset, [len(self.dataset) - val_size, val_size])
-        self.trainset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size))  # Ensure the dataset is not modified
-        self.valset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size, len(self.dataset)))
+        if self.args.val_dataset.path == "" or self.args.val_dataset.path is None:
+            val_size = int(len(self.dataset) * self.trainer_args.val_split)
+            # self.trainset, self.valset = torch.utils.data.random_split(self.dataset, [len(self.dataset) - val_size, val_size])
+            self.trainset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size))  # Ensure the dataset is not modified
+            self.valset = torch.utils.data.Subset(self.dataset, range(len(self.dataset) - val_size, len(self.dataset)))
+        else:
+            self.trainset = self.dataset
+            val_dataset_args = deepcopy(self.args.dataset)
+            val_dataset_args.path = self.args.val_dataset.path
+            self.valset = SequenceDataset(**val_dataset_args)
+            self.valset.normalization_stats = self.trainset.normalization_stats  # use the same stats for validation set
+        # self.trainset = torch.utils.data.Subset(self.dataset, range(256))  
+        # self.valset = torch.utils.data.Subset(self.dataset, range(128))
+        
         self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=16)
         self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=16)
 

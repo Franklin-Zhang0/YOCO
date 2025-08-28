@@ -14,6 +14,10 @@ class DatasetConfig:
     action_horizon: int = 1
     preprocessing_x: list = field(default_factory=list)
     preprocessing_y: list = field(default_factory=list)
+
+@dataclass
+class ValDatasetConfig:
+    path: str = field(default_factory=str)
     
 @dataclass
 class HypernetCfg:
@@ -49,5 +53,6 @@ class TrainerConfig:
 @dataclass
 class Config:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    val_dataset: ValDatasetConfig = field(default_factory=ValDatasetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     trainer: TrainerConfig = field(default_factory=TrainerConfig)

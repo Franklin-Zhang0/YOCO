@@ -54,7 +54,7 @@ class ResMLPBlock(nn.Module):
             return x + residual
 
 class FlowMatching(nn.Module):
-    def __init__(self, input_dim, output_dim, n_steps=10, hidden_layers=[]):
+    def __init__(self, input_dim, output_dim, n_steps=5, hidden_layers=[]):
         """
         Initialize the Flow-Matching 1D Diffusion Model.
         
@@ -83,9 +83,9 @@ class FlowMatching(nn.Module):
         input_dim = self.output_dim + self.time_dim
         self.layers = []
         for layers in hidden_layers:
-            self.layers.append(ResMLPBlock(input_dim, layers))
+            self.layers.append(ResMLPBlock(input_dim, layers, film_dim=self.time_dim))
             input_dim = layers
-        self.layers.append(nn.Linear(input_dim, output_dim))
+        self.fc = nn.Linear(input_dim, output_dim)
         self.layers = nn.ModuleList(self.layers)
 
         # Noise schedule
@@ -97,7 +97,8 @@ class FlowMatching(nn.Module):
         cond = cond + t_emb
         latent = torch.cat((x_t, cond), -1)
         for layers in self.layers:
-            latent = layers(latent)
+            latent = layers(latent, cond)
+        latent = self.fc(latent)
         return latent
 
     
