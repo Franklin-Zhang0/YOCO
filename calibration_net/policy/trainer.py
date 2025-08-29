@@ -10,10 +10,13 @@ from datetime import datetime
 from .model import Model, load_model
 from calibration_net.utils import walk_dict, create_dict_from_flattened
 from copy import deepcopy
+from .logger import get_logger_cls 
 
 class Trainer():
     def __init__(self, args):
         self.args = args
+        self.create_logger()
+
         self.trainer_args = args.trainer
         
         self.device = self.trainer_args.device
@@ -98,20 +101,23 @@ class Trainer():
 
         step_info = {}
         
-        if do_backward:
+        if do_backward: #training
+            self.global_steps += 1
             result = self.model(x, y, hypernet_input)
             loss = result['loss']
             self.optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
             self.optimizer.step()
-        else:
+            step_info['train/loss'] = loss.item()
+            self.log_step(step_info, self.global_steps)
+        else: # evaluating
             pred_y = self.model(x, hypernet_x=hypernet_input)
             loss = self.loss_function(pred_y, y)
             mae = torch.mean(torch.abs(pred_y - y))
-            step_info['mae'] = mae.item()
+            step_info['val/mae'] = mae.item()
+            step_info['val/loss'] = loss.item()
 
-        step_info['loss'] = loss.item()
         return step_info
     
     def train_epoch(self):
@@ -121,13 +127,13 @@ class Trainer():
         info = {}
         for data in data_tqdm:
             step_info = self.train_step(data)
-            loss = step_info['loss']
+            loss = step_info['train/loss']
             train_loss.append(loss)
             data_tqdm.set_postfix(loss=loss)
 
-        info['train_loss'] = sum(train_loss) / len(train_loss)
-        print(f"Training Loss: {info['train_loss']}")
-        info['val_loss'] = self.validate()
+        info['train/loss'] = sum(train_loss) / len(train_loss)
+        print(f"Training Loss: {info['train/loss']}")
+        info['val/loss'] = self.validate()
         return info
 
     def validate(self):
@@ -138,28 +144,30 @@ class Trainer():
         with torch.no_grad():
             for data in tqdm(self.valloader):
                 step_info = self.train_step(data, do_backward=False)
-                total_loss += step_info['loss']
-                total_mae += step_info['mae']
+                total_loss += step_info['val/loss']
+                total_mae += step_info['val/mae']
         avg_loss = total_loss / len(self.valloader)
         avg_mae = total_mae / len(self.valloader)
+        self.log_step({'val/loss': avg_loss, 'val/mae': avg_mae}, self.global_steps)
         print(f"Validation MAE: {avg_mae}")
         print(f"Validation Loss: {avg_loss}")
         return avg_loss
 
     def train(self):
+        self.global_steps = 0
         num_epoch = self.trainer_args.num_epochs
         best_val_loss = float('inf')
         for i in range(num_epoch):
             print(f"Epoch {i+1}/{num_epoch}")
             if self.trainer_args.calibnet_warmup_epochs > 0 and i == self.trainer_args.calibnet_warmup_epochs:
-                self.set_trainable(main_network=True, calib=True)
+                self.set_trainable(main_network=False, calib=True)
 
             train_info = self.train_epoch()
             if self.trainer_args.save_path:
                 path = os.path.join(self.trainer_args.save_path, self.expname + "_" + self.timestamp, f'latest')
                 self.save_model(path)
-                if train_info['val_loss'] < best_val_loss:
-                    best_val_loss = train_info['val_loss']
+                if train_info['val/loss'] < best_val_loss:
+                    best_val_loss = train_info['val/loss']
                     best_path = os.path.join(self.trainer_args.save_path, self.expname + "_" + self.timestamp, f'best')
                     self.save_model(best_path)
                 if (i+1) % self.trainer_args.save_interval == 0:
@@ -167,7 +175,18 @@ class Trainer():
                     self.save_model(save_path)
                 
         print("Training complete.")
-        
+
+    def create_logger(self):
+        self.loggers = []
+        logger_cfg = self.args.trainer.logger
+        for log_type in logger_cfg.type:
+            cls = get_logger_cls(log_type)
+            self.loggers.append(cls(self.args))
+
+    def log_step(self, log_dict, step):
+        for logger in self.loggers:
+            logger.log(log_dict, step=step)
+
     def save_model(self, save_dir):
         save_dir = os.path.expanduser(save_dir)
         

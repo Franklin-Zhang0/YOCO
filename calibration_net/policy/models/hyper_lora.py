@@ -5,6 +5,8 @@ from torch import Tensor
 import math
 from functools import partial
 from contextlib import AbstractContextManager
+import numpy as np
+from tqdm import tqdm
 
 
 def lora_hook(module, input, output, lora_weight, rank, alpha=1.0):
@@ -27,47 +29,90 @@ class HyperLoRAHookContext(AbstractContextManager):
         self.outer.unregister_hooks()
         return False  # don’t suppress exceptions
 
+def w1_to_uniform(x: torch.Tensor, a: float = 0.0, b: float = 1.0):
+    """
+    1D Wasserstein-1 distance between empirical samples x and Uniform(a,b).
+    """
+    x = x.flatten().to(torch.float64)
+    n = x.numel()
+    if n == 0:
+        return torch.tensor(float("nan"), dtype=torch.float64, device=x.device)
+    xs = torch.sort(x).values
+    # mid-quantiles of the target uniform
+    grid = (torch.arange(1, n+1, device=x.device, dtype=torch.float64) - 0.5) / n
+    target = a + grid * (b - a)
+    return torch.mean(torch.abs(xs - target))
+
+def init_hypernet(net, sample_num=128, n_steps=20):
+    optim = torch.optim.Adam(net.parameters(), lr=0.01)
+    for i in range(n_steps):
+        optim.zero_grad()
+        rand_in = torch.normal(mean=0, std=1, size=(sample_num, net.input_dim))
+        weight_samples = net(rand_in)
+        lora_a_samples = weight_samples[:, :net.in_feat * net.rank]
+        lora_b_samples = weight_samples[:, net.in_feat * net.rank:]
+        lora_a_fan_in = net.in_feat
+        lora_b_fan_in = net.out_feat
+        lora_a_bound = 1 / np.sqrt(lora_a_fan_in)
+        lora_b_bound = 1 / np.sqrt(lora_b_fan_in)
+        loss_a = w1_to_uniform(lora_a_samples, -lora_a_bound, lora_a_bound)
+        loss_b = w1_to_uniform(lora_b_samples, -lora_b_bound, lora_b_bound)
+        loss = loss_a + loss_b
+        loss.backward()
+        optim.step()
+    return net
 
 class HyperBlock(nn.Module):
-    def __init__(self, input_dim, hidden_dim, in_feat, out_feat, rank):
+    def __init__(self, input_dim, in_feat, out_feat, rank, hidden_layers=[]):
         super(HyperBlock, self).__init__()
         self.input_dim = input_dim
-        self.linear1 = nn.Linear(input_dim, hidden_dim)
+        self.linear1 = nn.Linear(input_dim, hidden_layers[0])
+        self.in_feat = in_feat
+        self.out_feat = out_feat
+        self.rank = rank
         self.gelu = nn.GELU()
-        self.linear2 = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
-        self.norm = nn.LayerNorm(hidden_dim)
+        self.layers = nn.ModuleList()
+        hidden_dim = hidden_layers[0]
+        for dim in hidden_layers:
+            self.layers.append(nn.Linear(hidden_dim, dim))
+            self.layers.append(nn.GELU())
+            self.layers.append(nn.LayerNorm(dim))
+            hidden_dim = dim
 
-        nn.init.kaiming_uniform_(self.linear2.weight[:in_feat * rank], a=math.sqrt(5))
-        nn.init.zeros_(self.linear1.bias)
-        nn.init.zeros_(self.linear2.bias[:in_feat * rank])
-        nn.init.zeros_(self.linear2.weight[in_feat * rank:])
-        nn.init.zeros_(self.linear2.bias[in_feat * rank:])
-        if self.linear2.bias is not None:
-            nn.init.zeros_(self.linear2.bias)
+        self.fc = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
+        init_hypernet(self, sample_num=256, n_steps=30)
+
+        nn.init.zeros_(self.fc.bias[:in_feat * rank])
+        nn.init.zeros_(self.fc.weight[in_feat * rank:])
+        nn.init.zeros_(self.fc.bias[in_feat * rank:])
 
     def forward(self, x):
         x = self.linear1(x)
         x = self.gelu(x)
-        x = self.linear2(x)
+        for layer in self.layers:
+            x = layer(x)
+        x = self.fc(x)
         return x
 
 class HyperLoRA(nn.Module):
-    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0):
+    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, hidden_layers=[]):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
         self.base_model = base_model
         self.rank = rank
         self.alpha = alpha
         self.max_modules = max_modules
+        self.hidden_layers = hidden_layers
         self.build_lora()
 
     def build_lora(self):
+        print("building hyper lora")
         self.modules = []
-        for name, layers in self.base_model.named_modules():
+        for name, layers in tqdm(self.base_model.named_modules()):
             if self.max_modules > 0 and len(self.modules) >= self.max_modules:
                 break
             if isinstance(layers, nn.Linear):
-                module = HyperBlock(input_dim=self.input_dim, hidden_dim=256, in_feat=layers.in_features, out_feat=layers.out_features, rank=self.rank)
+                module = HyperBlock(input_dim=self.input_dim, in_feat=layers.in_features, out_feat=layers.out_features, rank=self.rank, hidden_layers=self.hidden_layers)
                 self.modules.append((layers, module))
         self.lora_modules = nn.ModuleList([m for _, m in self.modules])
 

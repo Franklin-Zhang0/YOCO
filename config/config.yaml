@@ -10,15 +10,15 @@ dataset:
   
 model:
   type: "MLP"
-  hidden_layers: [512, 512, 512, 512]
+  hidden_layers: [256, 256, 256]
 
 trainer:
   expname: "MLP_0721"
-  num_epochs: 25
+  num_epochs: 30
   batch_size: 64
   learning_rate: 0.001
   grad_clipping: 1.0
-  calibnet_warmup_epochs: 0
+  calibnet_warmup_epochs: 20
   val_split: 0.1
   device: 'cpu'
   calib_finetune: False

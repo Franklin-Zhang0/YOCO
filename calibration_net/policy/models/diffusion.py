@@ -69,21 +69,22 @@ class FlowMatching(nn.Module):
         self.condition_dim = input_dim
         self.output_dim = output_dim
         self.n_steps = n_steps
-        self.time_dim = 128
+        self.time_dim = 32
+        self.cond_dim = 128
         self.h_dim = hidden_layers[0] if len(hidden_layers) > 0 else 256
         self.time_embed = TimeEmbed(self.time_dim)
         self.cond_mlp = nn.Sequential(
             nn.Linear(self.condition_dim, self.h_dim),
             nn.GELU(),
-            nn.Linear(self.h_dim, self.time_dim),
+            nn.Linear(self.h_dim, self.cond_dim),
         )
         self.calib_block = nn.Linear(1,1)
 
         # MLP network for flow-matching process
-        input_dim = self.output_dim + self.time_dim
+        input_dim = self.output_dim + self.time_dim + self.cond_dim
         self.layers = []
         for layers in hidden_layers:
-            self.layers.append(ResMLPBlock(input_dim, layers, film_dim=self.time_dim))
+            self.layers.append(ResMLPBlock(input_dim, layers, film_dim=self.cond_dim))
             input_dim = layers
         self.fc = nn.Linear(input_dim, output_dim)
         self.layers = nn.ModuleList(self.layers)
@@ -94,8 +95,7 @@ class FlowMatching(nn.Module):
     def forward(self, t: Tensor, x_t: Tensor, cond: Tensor):
         t_emb = self.time_embed(t)
         cond = self.cond_mlp(cond)
-        cond = cond + t_emb
-        latent = torch.cat((x_t, cond), -1)
+        latent = torch.cat((x_t, cond, t_emb), -1)
         for layers in self.layers:
             latent = layers(latent, cond)
         latent = self.fc(latent)

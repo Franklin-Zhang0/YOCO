@@ -25,6 +25,7 @@ class HypernetCfg:
     max_modules: int = -1
     rank: int = 2
     alpha: float = 2.0
+    hidden_layers: list = field(default_factory=lambda: [256, 256])
 
 @dataclass
 class ModelConfig:
@@ -34,6 +35,11 @@ class ModelConfig:
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     output_size: int = field(default_factory=int)
     hypernet_cfg: HypernetCfg = field(default_factory=HypernetCfg)
+
+@dataclass
+class LoggerConfig:
+    type: list[str] = field(default_factory=lambda: ['terminal'])  # 'wandb', 'tensorboard', 'csv', etc.
+    project: str = 'Calibration_net'
 
 @dataclass
 class TrainerConfig:
@@ -49,6 +55,7 @@ class TrainerConfig:
     load_path: Optional[str] = None
     save_interval: int = 5  # Save model every n epochs
     calib_finetune: bool = False
+    logger: LoggerConfig = field(default_factory=LoggerConfig)
     
 @dataclass
 class Config:

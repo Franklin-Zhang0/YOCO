@@ -221,7 +221,7 @@ class SequenceDataset(Dataset):
     
 if __name__ == '__main__':
     dataset = SequenceDataset(
-        path='/mnt/sda/yuzhang/data/InterHand/InterHand_retargeted_30fps_huggingface/',
+        path='/mnt/sda/yuzhang/data/InterHand/train/InterHand_retargeted_30fps_shape_aug_huggingface/',
         input_keys='pca_mano_pose',
         output_keys='inspire_joint_pose',
         hypernet_input_keys='betas',
