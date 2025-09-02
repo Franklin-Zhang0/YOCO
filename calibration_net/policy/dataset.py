@@ -5,7 +5,8 @@ from calibration_net.utils import walk_dict, index_dict
 import numpy as np
 from .preprocessing import TRANSFORM_REGISTRY
 from typing import OrderedDict, Union
-from functools import partial
+from functools import partial, lru_cache
+from tqdm import tqdm
 
 class TeleopDataset(Dataset):  # point-wise dataset
     def __init__(self, path, input_keys, output_keys, side='left', augmentations={}):
@@ -106,6 +107,7 @@ class SequenceDataset(Dataset):
         self.preprocessing_x = self.build_preprocessing(preprocessing_x, 'x')
         self.preprocessing_y = self.build_preprocessing(preprocessing_y, 'y')
         self.data_cache = {}
+        self.data_item_cache = {}
 
     def build_preprocessing(self, preprocess_types, key):
         combined_fn = OrderedDict()
@@ -194,6 +196,8 @@ class SequenceDataset(Dataset):
         return data
 
     def __getitem__(self, idx):
+        if idx in self.data_item_cache:
+            return self.data_item_cache[idx]
         demo_id = self.mapping['idx_to_demo_id'][idx]
         idx_in_demo = self.mapping['idx_to_idx_in_demo'][idx]
         data = self.fetch_demo(demo_id)
@@ -217,18 +221,19 @@ class SequenceDataset(Dataset):
             hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))
             hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
             item['hypernet_input'] = hypernet_x
+
+        if self.data_caching:
+            self.data_item_cache[idx] = item
         return item
     
 if __name__ == '__main__':
     dataset = SequenceDataset(
-        path='/mnt/sda/yuzhang/data/InterHand/train/InterHand_retargeted_30fps_shape_aug_huggingface/',
+        path='/mnt/sda/yuzhang/data/InterHand/train/InterHand_retargeted_30fps_huggingface/',
         input_keys='pca_mano_pose',
         output_keys='inspire_joint_pose',
         hypernet_input_keys='betas',
         preprocessing_x=[],
         preprocessing_y=[],
     )
-    from tqdm import tqdm
     for i in tqdm(range(1000)):
         dataset[i]
-        breakpoint()

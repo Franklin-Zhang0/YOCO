@@ -87,8 +87,8 @@ class Trainer():
         # self.trainset = torch.utils.data.Subset(self.dataset, range(256))  
         # self.valset = torch.utils.data.Subset(self.dataset, range(128))
         
-        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=16)
-        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=16)
+        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=16, persistent_workers=True)
+        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=16, persistent_workers=True)
 
 
     def train_step(self, data, do_backward=True):
@@ -160,7 +160,7 @@ class Trainer():
         for i in range(num_epoch):
             print(f"Epoch {i+1}/{num_epoch}")
             if self.trainer_args.calibnet_warmup_epochs > 0 and i == self.trainer_args.calibnet_warmup_epochs:
-                self.set_trainable(main_network=False, calib=True)
+                self.set_trainable(main_network=True, calib=True)
 
             train_info = self.train_epoch()
             if self.trainer_args.save_path:

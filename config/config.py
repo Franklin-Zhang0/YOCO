@@ -26,6 +26,7 @@ class HypernetCfg:
     rank: int = 2
     alpha: float = 2.0
     hidden_layers: list = field(default_factory=lambda: [256, 256])
+    name_filter: list[str] = field(default_factory=list)
 
 @dataclass
 class ModelConfig:

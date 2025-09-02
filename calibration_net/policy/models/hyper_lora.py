@@ -50,14 +50,10 @@ def init_hypernet(net, sample_num=128, n_steps=20):
         rand_in = torch.normal(mean=0, std=1, size=(sample_num, net.input_dim))
         weight_samples = net(rand_in)
         lora_a_samples = weight_samples[:, :net.in_feat * net.rank]
-        lora_b_samples = weight_samples[:, net.in_feat * net.rank:]
         lora_a_fan_in = net.in_feat
-        lora_b_fan_in = net.out_feat
-        lora_a_bound = 1 / np.sqrt(lora_a_fan_in)
-        lora_b_bound = 1 / np.sqrt(lora_b_fan_in)
+        lora_a_bound = 1 / np.sqrt(lora_a_fan_in) 
         loss_a = w1_to_uniform(lora_a_samples, -lora_a_bound, lora_a_bound)
-        loss_b = w1_to_uniform(lora_b_samples, -lora_b_bound, lora_b_bound)
-        loss = loss_a + loss_b
+        loss = loss_a
         loss.backward()
         optim.step()
     return net
@@ -66,6 +62,8 @@ class HyperBlock(nn.Module):
     def __init__(self, input_dim, in_feat, out_feat, rank, hidden_layers=[]):
         super(HyperBlock, self).__init__()
         self.input_dim = input_dim
+        if hidden_layers == [] or hidden_layers is None:
+            hidden_layers = [256, 256]
         self.linear1 = nn.Linear(input_dim, hidden_layers[0])
         self.in_feat = in_feat
         self.out_feat = out_feat
@@ -82,7 +80,8 @@ class HyperBlock(nn.Module):
         self.fc = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
         init_hypernet(self, sample_num=256, n_steps=30)
 
-        nn.init.zeros_(self.fc.bias[:in_feat * rank])
+        # nn.init.zeros_(self.fc.weight[:in_feat * rank])
+        # nn.init.zeros_(self.fc.bias[:in_feat * rank])
         nn.init.zeros_(self.fc.weight[in_feat * rank:])
         nn.init.zeros_(self.fc.bias[in_feat * rank:])
 
@@ -95,7 +94,7 @@ class HyperBlock(nn.Module):
         return x
 
 class HyperLoRA(nn.Module):
-    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, hidden_layers=[]):
+    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, hidden_layers=[], name_filter=[]):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
         self.base_model = base_model
@@ -103,12 +102,18 @@ class HyperLoRA(nn.Module):
         self.alpha = alpha
         self.max_modules = max_modules
         self.hidden_layers = hidden_layers
+        self.name_filter = name_filter
         self.build_lora()
 
     def build_lora(self):
         print("building hyper lora")
         self.modules = []
-        for name, layers in tqdm(self.base_model.named_modules()):
+        for name, layers in self.base_model.named_modules():
+            if self.name_filter is not None:
+                for filter in self.name_filter:
+                    if filter in name: break
+                else: continue
+            print(f"building {name} hyper lora module")
             if self.max_modules > 0 and len(self.modules) >= self.max_modules:
                 break
             if isinstance(layers, nn.Linear):
@@ -141,7 +146,7 @@ if __name__ == "__main__":
         nn.ReLU(),
         nn.Linear(256, 512)
     )
-    hyper_lora = HyperLoRA(input_dim=5, base_model=simple_mlp, rank=2, max_modules=1)
+    hyper_lora = HyperLoRA(input_size=5, base_model=simple_mlp, rank=2, max_modules=1, hidden_layers=[256])
     print(hyper_lora(torch.randn(1, 256), torch.randn(1, 5)))
     print(hyper_lora)
     breakpoint()
