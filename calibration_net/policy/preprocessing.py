@@ -1,5 +1,6 @@
 from calibration_net.utils import transform_joint3d
 import numpy as np
+from typing import OrderedDict
 
 def get_normalize(norm_stats):
     def normalize(x):
@@ -46,3 +47,23 @@ TRANSFORM_REGISTRY = {
     'joint_layout_to_5x4': get_layout_to_5x4,
     'flatten': get_flatten,
 }
+
+def build_preprocessing(preprocess_types, key, norm_stats=None):
+    combined_fn = OrderedDict()
+    for cur_type in preprocess_types:
+        assert cur_type in TRANSFORM_REGISTRY, f"Unknown preprocessing type: {cur_type}"
+        if cur_type == 'normalize':
+            fn = TRANSFORM_REGISTRY[cur_type](norm_stats[key])
+        else:
+            fn = TRANSFORM_REGISTRY[cur_type]()
+        combined_fn[cur_type] = fn
+    if len(combined_fn) == 0:
+        return lambda x, normalize=True: x
+    else:
+        def combined_fn_wrapper(x, normalize=True):
+            for fn_type, fn in combined_fn.items():
+                if fn_type == 'normalize' and not normalize:
+                    continue
+                x = fn(x)
+            return x
+        return combined_fn_wrapper
