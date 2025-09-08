@@ -45,6 +45,6 @@ class CNN_MLP(nn.Module):
         }
         return result
 
-    def predict(self, x):
+    def predict(self, x, noisy_act=None):
         return self.forward(x)
 

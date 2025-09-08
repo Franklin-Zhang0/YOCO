@@ -37,34 +37,27 @@ class Model(nn.Module):
                 hidden_layers=self.hidden_layers,
             )
             self.calib_block = self.network.calib_block # dummy calib block
-        if self.hypernet_cfg.input_size > 0:
+        if self.hypernet_cfg['input_size'] > 0:
             self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network)
             self.calib_block = self.hyperlora.lora_modules
         return self.network
 
-    def forward(self, x, y=None, hypernet_x=None):
-        context = self.hyperlora.use(hypernet_x) if self.hypernet_cfg.input_size > 0 else nullcontext()
+    def forward(self, x, y=None, hypernet_x=None, noisy_act=None):
+        context = self.hyperlora.use(hypernet_x) if hypernet_x is not None else nullcontext()
 
         with context:
             if y is not None:
                 result = self.network.train_forward(x, y)
             else:
-                result = self.network.predict(x)
+                result = self.network.predict(x, noisy_act=noisy_act)
 
         return result
 
     @torch.no_grad()
-    def predict(self, x, normalization_stats=None, norm_type='meanstd'):
+    def predict(self, x, noisy_act=None):
         self.eval()
-        if normalization_stats:
-            if norm_type == 'minmax':
-                x = (x - normalization_stats['x']['min']) / (normalization_stats['x']['max'] - normalization_stats['x']['min'] + 1e-5)
-            elif norm_type == 'meanstd':
-                x = (x - normalization_stats['x']['mean']) / normalization_stats['x']['std']
         x = torch.tensor(x, dtype=torch.float32)
-        y = self.forward(x)
-        if normalization_stats:
-            y = y * normalization_stats['y']['std'] + normalization_stats['y']['mean']
+        y = self.forward(x, noisy_act=noisy_act)
         return y
     
 

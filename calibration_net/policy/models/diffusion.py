@@ -127,8 +127,12 @@ class FlowMatching(nn.Module):
 
         return x_t + (t_end - t_start) * self(t=mid_t, x_t=mid_point_x_t, cond=cond)
 
-    def predict(self, cond: Tensor):
-        noise = torch.randn(cond.shape[0], self.output_dim).to(cond.device)
+    def predict(self, cond: Tensor, noisy_act: Tensor=None):
+        if noisy_act is None:
+            noise = torch.randn(cond.shape[0], self.output_dim).to(cond.device)
+        else:
+            assert noisy_act.shape == (cond.shape[0], self.output_dim)
+            noise = noisy_act.to(cond.device)
         cond = cond.reshape(cond.shape[0], -1)
         x_t = noise
         for i in range(self.n_steps):
