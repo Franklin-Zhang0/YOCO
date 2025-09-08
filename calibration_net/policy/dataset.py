@@ -3,9 +3,9 @@ from torch.utils.data import Dataset
 import torch
 from calibration_net.utils import walk_dict, index_dict
 import numpy as np
-from .preprocessing import TRANSFORM_REGISTRY
+from .preprocessing import TRANSFORM_REGISTRY, build_preprocessing
 from typing import OrderedDict, Union
-from functools import partial, lru_cache
+from functools import partial
 from tqdm import tqdm
 
 class TeleopDataset(Dataset):  # point-wise dataset
@@ -19,7 +19,7 @@ class TeleopDataset(Dataset):  # point-wise dataset
         self.side = side
         self.input_keys = input_keys
         self.output_keys = output_keys
-        
+
         self.normalization_stats = self.get_normalization_stats()
 
     def get_normalization_stats(self):
@@ -100,34 +100,14 @@ class SequenceDataset(Dataset):
         
         # preprocessing without normalization to compute stats
         self.normalization_stats = {'x': None, 'y': None}
-        self.preprocessing_x = self.build_preprocessing(preprocessing_x, 'x')
-        self.preprocessing_y = self.build_preprocessing(preprocessing_y, 'y')
+        self.preprocessing_x = build_preprocessing(preprocessing_x, 'x')
+        self.preprocessing_y = build_preprocessing(preprocessing_y, 'y')
         
         self.normalization_stats = self.get_normalization_stats()
-        self.preprocessing_x = self.build_preprocessing(preprocessing_x, 'x')
-        self.preprocessing_y = self.build_preprocessing(preprocessing_y, 'y')
+        self.preprocessing_x = build_preprocessing(preprocessing_x, 'x', norm_stats=self.normalization_stats)
+        self.preprocessing_y = build_preprocessing(preprocessing_y, 'y', norm_stats=self.normalization_stats)
         self.data_cache = {}
         self.data_item_cache = {}
-
-    def build_preprocessing(self, preprocess_types, key):
-        combined_fn = OrderedDict()
-        for cur_type in preprocess_types:
-            assert cur_type in TRANSFORM_REGISTRY, f"Unknown preprocessing type: {cur_type}"
-            if cur_type == 'normalize':
-                fn = TRANSFORM_REGISTRY[cur_type](self.normalization_stats[key])
-            else:
-                fn = TRANSFORM_REGISTRY[cur_type]()
-            combined_fn[cur_type] = fn
-        if len(combined_fn) == 0:
-            return lambda x, normalize=True: x
-        else:
-            def combined_fn_wrapper(x, normalize=True):
-                for fn_type, fn in combined_fn.items():
-                    if fn_type == 'normalize' and not normalize:
-                        continue
-                    x = fn(x)
-                return x
-            return combined_fn_wrapper
         
                 
     def create_mapping(self):
