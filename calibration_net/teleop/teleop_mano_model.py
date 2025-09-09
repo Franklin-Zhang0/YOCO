@@ -85,7 +85,7 @@ def main():
     parser.add_argument('--robot_speed', type=float, default=0.4)
     parser.add_argument('--control_frequency', type=int, default=30)  # Hz
     parser.add_argument('--calibration', action='store_true', help="If set, enter calibration mode to collect data for fitting the MANO model")
-    parser.add_argument('--model_dir', type=str, default="model")
+    parser.add_argument('--model_dir', type=str, required=True)
     args = parser.parse_args()
     
     robot = {}
@@ -127,6 +127,7 @@ def main():
     is_first_frame = True
     ensembler = {'left': Ensembler(horizon=5, tao=0.5), 'right': Ensembler(horizon=5, tao=0.5)}
     fixed_noise = torch.randn(1, cfg['model']['output_size']).to(device)
+    breakpoint()
     try:
         while True:
             with FrameRateContext(
