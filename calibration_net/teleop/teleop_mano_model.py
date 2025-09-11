@@ -1,4 +1,3 @@
-from open_cyber_glove.sdk import OpenCyberGlove
 from inspire_hand.hand import FingerID, Register
 from inspire_hand import InspireHand
 import argparse
@@ -10,12 +9,14 @@ from calibration_net.policy.preprocessing import build_preprocessing
 
 from calibration_net.utils import initilize_glove, initialize_robot, apply_angles, FrameRateContext
 from calibration_net.teleop.mano_fitter import ManoSequenceFitter, PoseCollector
+from calibration_net.teleop.vr_utils import calibration, initialize_fitter
 import os
 from contextlib import nullcontext
 
 MANO_PATH = os.environ.get("MANO_PATH", "")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+sides = []
 
 finger_mapping_inspire_to_glove = {
     FingerID.LITTLE: 12,
@@ -25,40 +26,6 @@ finger_mapping_inspire_to_glove = {
     FingerID.THUMB_BEND: 19,
     FingerID.THUMB_ROTATE: 16,
 }
-
-
-def calibration(n_comps):
-    pose_collector = PoseCollector(30)
-    poses = pose_collector.collect(200)
-    betas = {}
-    for side in ['left', 'right']:
-        mano_fitter = ManoSequenceFitter(
-                mano_model_dir=os.path.join(MANO_PATH, 'models'),
-                mano_side=side,
-                use_pca=n_comps < 45,                      
-                ncomps=n_comps,
-                iters=200,
-                w_joint=1.0,
-                w_pose_prior=0.001,
-                w_shape_prior=0.01,
-                w_trans_smooth=0.1,          
-                w_pose_smooth=0.01
-            )
-        out = mano_fitter.fit_sequence(poses[side]*1000, optimize_scale=False)
-        betas[side] = torch.tensor(out['betas'], dtype=torch.float32).unsqueeze(0).to(device)
-
-def initialize_fitter(n_comps):
-    mano_fitter = {}
-    for side in ['left', 'right']:
-        mano_fitter[side] = ManoSequenceFitter(
-            mano_model_dir=os.path.join(MANO_PATH, 'models'),
-            mano_side=side,
-            use_pca=n_comps < 45,                         
-            ncomps=n_comps,
-        )
-        mano_fitter[side].initialize_single_frame_fitting()
-    
-    return mano_fitter
 
 class Ensembler:
     def __init__(self, horizon=5, tao=0.5):
@@ -82,11 +49,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--left_robot_port', type=str, default=None)
     parser.add_argument('--right_robot_port', type=str, default=None)
+    parser.add_argument('--side', type=str, default='left', choices=['left', 'right', 'both'])
     parser.add_argument('--robot_speed', type=float, default=0.4)
     parser.add_argument('--control_frequency', type=int, default=30)  # Hz
     parser.add_argument('--calibration', action='store_true', help="If set, enter calibration mode to collect data for fitting the MANO model")
     parser.add_argument('--model_dir', type=str, required=True)
     args = parser.parse_args()
+    global sides
+    sides = [args.side] if args.side in ['left', 'right'] else ['left', 'right']
     
     robot = {}
     if args.left_robot_port:
@@ -103,18 +73,18 @@ def main():
     n_comps = cfg['model'].get('input_size')
 
     if args.calibration:
-        betas = calibration(n_comps)
+        betas = calibration(n_comps, sides)
     else:
         betas = {'left': torch.zeros((10,), dtype=torch.float32).to(device), 
                  'right': torch.zeros((10,), dtype=torch.float32).to(device)}
     print(f"Using betas {betas}")
 
     hyper_lora_ctx = {}
-    hyper_lora_ctx['left'] = model.hyperlora.use(betas['left'].unsqueeze(0))
-    hyper_lora_ctx['right'] = model.hyperlora.use(betas['right'].unsqueeze(0))
+    hyper_lora_ctx['left'] = model.hyperlora.use(torch.tensor(betas['left']).unsqueeze(0))
+    hyper_lora_ctx['right'] = model.hyperlora.use(torch.tensor(betas['right']).unsqueeze(0))
 
 
-    mano_fitter = initialize_fitter(n_comps)
+    mano_fitter = initialize_fitter(n_comps, sides)
     pose_collector = PoseCollector(args.control_frequency)
 
     process_x = cfg['dataset']['preprocessing_x']
@@ -127,7 +97,7 @@ def main():
     is_first_frame = True
     ensembler = {'left': Ensembler(horizon=5, tao=0.5), 'right': Ensembler(horizon=5, tao=0.5)}
     fixed_noise = torch.randn(1, cfg['model']['output_size']).to(device)
-    breakpoint()
+    
     try:
         while True:
             with FrameRateContext(
@@ -137,13 +107,13 @@ def main():
                 # collect pose
                 joint_pose = pose_collector.collect(1)
                 max_steps = 200 if is_first_frame else 50
-                results = {side: mano_fitter[side].fit_single_frame(joint_pose[side][-1], prev_results[side], betas[side], max_steps) for side in ['left', 'right']}
+                results = {side: mano_fitter[side].fit_single_frame(joint_pose[side][-1], prev_results[side], betas[side], max_steps) for side in sides}
                 # breakpoint()
-                hand_pose = {side: ensembler[side].predict(results[side]['hand_pose']) for side in ['left', 'right']}
+                hand_pose = {side: ensembler[side].predict(results[side]['hand_pose']) for side in sides}
                 # print(hand_pose['left'][:5])
-                pca_mano_pose = {side: results[side]['hand_pose'] for side in ['left', 'right']}
+                pca_mano_pose = {side: results[side]['hand_pose'] for side in sides}
                 prev_results = results
-                for side in ['left', 'right']:
+                for side in sides:
                     with hyper_lora_ctx[side]:
                         processed_pose = torch.tensor(process_x_fn(pca_mano_pose[side]), dtype=torch.float32).to(device)
                         pred = model.predict(processed_pose.unsqueeze(0), noisy_act=fixed_noise).cpu().numpy().squeeze(0)

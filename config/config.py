@@ -14,6 +14,7 @@ class DatasetConfig:
     action_horizon: int = 1
     preprocessing_x: list = field(default_factory=list)
     preprocessing_y: list = field(default_factory=list)
+    cat_side: bool = False
 
 @dataclass
 class ValDatasetConfig:

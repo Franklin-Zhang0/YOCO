@@ -99,6 +99,7 @@ class SequenceDataset(Dataset):
                  obs_horizon=1,
                  action_horizon=1,
                  data_caching=True,
+                 cat_side=False,
                  ):
         if ',' in path:
             path = path.split(',')
@@ -116,6 +117,7 @@ class SequenceDataset(Dataset):
         self.data_caching = data_caching
 
         self.input_keys = input_keys
+        self.cat_side = cat_side
         self.output_keys = output_keys
         self.hypernet_input_keys = hypernet_input_keys
         
@@ -256,19 +258,26 @@ class SequenceDataset(Dataset):
         if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
             hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))
             hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
+            if self.cat_side:
+                side = index_dict(dict(data), 'mano_side')[0]
+                if isinstance(side, bytes):
+                    side = side.decode('utf-8')
+                assert type(side) == str
+                side_x = torch.tensor([1.0 if side == 'left' else -1.0])
+                hypernet_x = torch.cat([hypernet_x, side_x], dim=-1)
             item['hypernet_input'] = hypernet_x
             
         return item
     
 if __name__ == '__main__':
+    dataset = ConcatHDF5(['/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5','/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5'])
     dataset = SequenceDataset(
-        path='/mnt/sda/yuzhang/data/InterHand/train/InterHand_retargeted_30fps_huggingface/',
+        path='/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5',
         input_keys='pca_mano_pose',
         output_keys='inspire_joint_pose',
         hypernet_input_keys='betas',
         preprocessing_x=[],
         preprocessing_y=[],
+        cat_side=True,
     )
-    for i in tqdm(range(1000)):
-        dataset[i]
-    dataset = ConcatHDF5(['/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5','/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5'])
+    breakpoint()
