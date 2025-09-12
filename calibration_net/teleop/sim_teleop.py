@@ -7,21 +7,42 @@ from viser.extras import ViserUrdf
 import numpy as np
 from calibration_net.teleop.vr_utils import initialize_fitter
 from calibration_net.teleop.mano_fitter import PoseCollector
+import tyro
+import time
+import multiprocessing as mp
 
+mp.set_start_method('spawn', force=True)
 DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
 
 
-def main(model_dir:str, hand_type: str='inspire', side='left'):
-    robot_urdf_path = Path(DEX_URDF_PATH) / "robots" / 'hands' / f'{hand_type}_hand' / f"{hand_type}_hand_right.urdf"
+def retargeting(model_dir, side, queue):
+    inferencer = ModelInferencer(model_dir=model_dir)
+
+    pose_collector = PoseCollector(30)
+    fitter = initialize_fitter(inferencer.n_comps, [side])
+    max_steps = 200
+    prev_result = None
+    while True:
+        joint_pose = pose_collector.collect(1, sides=[side])[side][0]
+        result = fitter[side].fit_single_frame(joint_pose, prev_result=prev_result, max_steps=max_steps)
+        mano_pose = result['hand_pose']
+        joints = inferencer.inference(mano_pose, batched=False)
+        queue.put(joints)
+        max_steps = 200
+        prev_result = result
+
+def main(model_dir:str, hand_type: str='inspire', side='right'):
+    robot_urdf_path = Path(DEX_URDF_PATH) / "robots" / 'hands' / f'{hand_type}_hand' / f"{hand_type}_hand_{side}.urdf"
     
     def filename_handler(fname: str) -> str:
         base_path = robot_urdf_path.parent
         return yourdfpy.filename_handler_magic(fname, dir=base_path)
+    
+    queue = mp.Queue()
+    retarget_process = mp.Process(target=retargeting, args=(model_dir, side, queue), daemon=True)
+    retarget_process.start()
 
-    urdf = yourdfpy.URDF.load(robot_urdf_path, filename_handler=filename_handler)
-    
-    inferencer = ModelInferencer(model_dir=model_dir)
-    
+    urdf = yourdfpy.URDF.load(robot_urdf_path, filename_handler=filename_handler)    
     
     server = viser.ViserServer()
 
@@ -29,32 +50,28 @@ def main(model_dir:str, hand_type: str='inspire', side='left'):
     server.scene.add_frame(
         "/scene_offset",
         show_axes=False,
-        position=(-0.15415953, -0.73598871, 0.93434792),
-        wxyz=(-0.381870867, 0.92421569, 0.0, 2.0004992e-32),
+        position=(-0.0, -0.0, 0.2),
+        wxyz=(-0.0, 0.0, 0.0, 0.0),
     )
     
     base_frame = server.scene.add_frame("/scene_offset/base", show_axes=False)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/scene_offset/base")
-    playing = server.gui.add_checkbox("playing", True)
-    # object_handle = server.scene.add_mesh_trimesh("/scene_offset/object", mesh)
-    server.scene.add_grid("/grid", 2.0, 2.0)
+    server.scene.add_grid("/grid", 1.0, 1.0)
     
-    pose_collector = PoseCollector(30)
-    fitter = initialize_fitter(inferencer.n_comps.input_size, [side])
-    max_steps = 200
-    prev_result = None
-    
+    prev_joints = np.zeros(6)
     while True:
         with server.atomic():
             base_frame.wxyz = np.zeros(4)
             base_frame.position = np.zeros(3)
             
-            joint_pose = pose_collector.collect(1)[side][0]
-            result = fitter[side].fit_single_frame(joint_pose, prev_result=prev_result, max_steps=max_steps)
-            
-            mano_pose = result['hand_pose']
-            joints = inferencer.inference(mano_pose, batched=False)
-            
+            try:
+                joints = queue.get(block=False)
+            except:
+                joints = prev_joints
+
             urdf_vis.update_cfg(np.array(joints))
-            max_steps=20
-            prev_result = result
+            prev_joints = joints
+
+
+if __name__ == "__main__":
+    tyro.cli(main)

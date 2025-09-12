@@ -79,12 +79,20 @@ class PoseCollector():
         self._sub.connect("tcp://localhost:5555")
         self.frame_rate=frame_rate
 
-    def collect(self, timesteps):
+    def collect(self, timesteps:int=1, sides:list[str]=['left','right']):
+        assert sides in [['left'], ['right'], ['left', 'right']]
         hand_pose={
             'left':[],
             'right':[]
         }
-        while len(hand_pose['left']) < timesteps or len(hand_pose['right']) < timesteps:
+        while True:
+            stop_flag = True
+            for side in sides:
+                if len(hand_pose[side]) < timesteps:
+                    stop_flag = False
+            if stop_flag:
+                break
+
             msg = self._sub.recv_json()
             obj = msg['data']
             sides = ['left', 'right']
@@ -527,8 +535,8 @@ def animate_mano_mesh(
 # ----------------------------
 if __name__ == "__main__":
     pose_collector = PoseCollector()
-    pose = pose_collector.collect(100)
-
+    pose = pose_collector.collect(1000)
+    result = {}
     for side in ['left', 'right']:
         fitter = ManoSequenceFitter(
             mano_model_dir="/home/franklin/project/hand_teleop/manopth/mano/models",           # <-- change to your MANO folder
@@ -544,27 +552,30 @@ if __name__ == "__main__":
         )
 
         out = fitter.fit_sequence(pose[side], optimize_scale=False)
+        result[side] = out
         prev_result = None
-        fitter.initialize_single_frame_fitting()
+
+        # fitter.initialize_single_frame_fitting()
         
-        try:
-            tqdm_bar = tqdm.tqdm(range(10000))
-            for i in tqdm_bar:
-                single_pose = pose_collector.collect(1)[side][0]
-                single_out = fitter.fit_single_frame(single_pose,  betas=to_torch(out["betas"], fitter.device), prev_result=prev_result)
-                prev_result = single_out
-                print(prev_result['hand_pose'][:5])
-                # tqdm_bar.set_description(f"Single-frame loss {single_out['loss'].item():.4f}")
-        except:
-            pass
+        # try:
+        #     tqdm_bar = tqdm.tqdm(range(10000))
+        #     for i in tqdm_bar:
+        #         single_pose = pose_collector.collect(1)[side][0]
+        #         single_out = fitter.fit_single_frame(single_pose,  betas=to_torch(out["betas"], fitter.device), prev_result=prev_result)
+        #         prev_result = single_out
+        #         print(prev_result['hand_pose'][:5])
+        #         # tqdm_bar.set_description(f"Single-frame loss {single_out['loss'].item():.4f}")
+        # except:
+        #     pass
             # print(prev_result)
         # except:
         #     pass
         print('betas:', out["betas"])
         print("scale:", None if out["scale"] is None else out["scale"]**2)
-        verts_mm, joints_mm = reconstruct_mano_sequence(out, fitter.mano_layer, use_pca=fitter.use_pca, device=fitter.device)
-        animate_hand_sequence(joints_mm, title=f"MANO Fit ({side})", fps=60, save_path="./visualizations/keypoints.gif")
-        faces = fitter.mano_layer.th_faces.detach().cpu().numpy()
+        # verts_mm, joints_mm = reconstruct_mano_sequence(out, fitter.mano_layer, use_pca=fitter.use_pca, device=fitter.device)
+        # animate_hand_sequence(joints_mm, title=f"MANO Fit ({side})", fps=60, save_path="./visualizations/keypoints.gif")
+        # faces = fitter.mano_layer.th_faces.detach().cpu().numpy()
 
-        # Animate the mesh
-        animate_mano_mesh(verts_mm, faces, title=f"MANO Mesh ({side})", fps=60, save_path="./visualizations/mesh.gif")
+        # # Animate the mesh
+        # animate_mano_mesh(verts_mm, faces, title=f"MANO Mesh ({side})", fps=60, save_path="./visualizations/mesh.gif")
+    breakpoint()
