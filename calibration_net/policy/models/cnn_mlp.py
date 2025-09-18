@@ -32,6 +32,8 @@ class CNN_MLP(nn.Module):
         self.layers = nn.Sequential(*layers)
     
     def forward(self, x):
+        if len(x.shape) == 2:
+            x = x.unsqueeze(-2)  # add channel dim
         x = self.calib_block(x).squeeze(-2)
         x = self.layers(x)
         return x
