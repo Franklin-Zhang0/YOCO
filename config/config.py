@@ -30,6 +30,14 @@ class HypernetCfg:
     name_filter: list[str] = field(default_factory=list)
 
 @dataclass
+class IKNetCfg:
+    enabled: bool = False
+    hidden_layers: list = field(default_factory=lambda: [256, 256, 256])
+    output_pca: bool = False
+    n_comps: int = 21
+    cond_dim: int = 0
+
+@dataclass
 class ModelConfig:
     type : str = 'MLP'
     input_size: int = field(default_factory=int)
@@ -37,6 +45,7 @@ class ModelConfig:
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     output_size: int = field(default_factory=int)
     hypernet_cfg: HypernetCfg = field(default_factory=HypernetCfg)
+    iknet_cfg: IKNetCfg = field(default_factory=IKNetCfg)
 
 @dataclass
 class LoggerConfig:

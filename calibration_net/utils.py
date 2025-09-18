@@ -1,6 +1,11 @@
 import numpy as np
 import time
 from typing import Union
+from enum import Enum
+
+class Side(Enum):
+    LEFT = 1
+    RIGHT = -1
 
 def initilize_glove(left_port=None, right_port=None, model_path=None, calibrate=True):
     from open_cyber_glove.sdk import OpenCyberGlove

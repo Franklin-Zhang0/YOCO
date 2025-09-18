@@ -7,16 +7,19 @@ from calibration_net.utils import walk_dict, create_dict_from_flattened
 from calibration_net.policy.models import *
 import numpy as np
 from calibration_net.policy.models.hyper_lora import HyperLoRA
+from calibration_net.policy.models.iknet import IKNet
 from contextlib import nullcontext
+from omegaconf import OmegaConf
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, hidden_layers=None):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg, hidden_layers=None):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.model_type = type
         self.hidden_layers = hidden_layers
         self.hypernet_cfg = hypernet_cfg
+        self.iknet_cfg = iknet_cfg
         self.input_channel = input_channel
         self.build_network()
         
@@ -37,27 +40,41 @@ class Model(nn.Module):
                 hidden_layers=self.hidden_layers,
             )
             self.calib_block = self.network.calib_block # dummy calib block
+        if self.iknet_cfg['enabled']:
+            iknet_cfg = OmegaConf.to_container(self.iknet_cfg)
+            del iknet_cfg['enabled']
+            self.iknet = IKNet(**iknet_cfg)
+
         if self.hypernet_cfg['input_size'] > 0:
             self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network)
             self.calib_block = self.hyperlora.lora_modules
         return self.network
 
-    def forward(self, x, y=None, hypernet_x=None, noisy_act=None):
+    def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, ik_cond=None, side=None):
+        ik_loss = 0.0
+        if self.iknet_cfg['enabled']:
+            if ik_y is None:
+                axis_angle, quat = self.iknet(x, side=side, ik_cond=ik_cond)
+            else:
+                axis_angle, quat, ik_loss = self.iknet(x, side=side, ik_y=ik_y, ik_cond=ik_cond)
+            x = axis_angle
+
         context = self.hyperlora.use(hypernet_x) if hypernet_x is not None else nullcontext()
 
         with context:
             if y is not None:
                 result = self.network.train_forward(x, y)
+                result['loss'] += ik_loss
+                result['loss_ik'] = ik_loss
             else:
                 result = self.network.predict(x, noisy_act=noisy_act)
-
         return result
 
     @torch.no_grad()
-    def predict(self, x, noisy_act=None):
+    def predict(self, x, hypernet_x=None, noisy_act=None, side=None, ik_cond=None):
         self.eval()
         x = torch.tensor(x, dtype=torch.float32)
-        y = self.forward(x, noisy_act=noisy_act)
+        y = self.forward(x, hypernet_x=hypernet_x, noisy_act=noisy_act, side=side, ik_cond=ik_cond)
         return y
     
 

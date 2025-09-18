@@ -53,6 +53,7 @@ def build_preprocessing(preprocess_types, key, norm_stats=None):
     for cur_type in preprocess_types:
         assert cur_type in TRANSFORM_REGISTRY, f"Unknown preprocessing type: {cur_type}"
         if cur_type == 'normalize':
+            if norm_stats is None: break
             fn = TRANSFORM_REGISTRY[cur_type](norm_stats[key])
         else:
             fn = TRANSFORM_REGISTRY[cur_type]()

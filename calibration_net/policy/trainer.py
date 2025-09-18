@@ -27,12 +27,20 @@ class Trainer():
         self.load_dataset()
         example = self.trainset[0]
         print("Example input shape:", example['input'].shape)
-        self.args.model.input_size = example['input'].shape[-1]
+        
+        if self.args.model.input_size < 45:
+            self.args.model.iknet_cfg.output_pca = True
+
+        if self.args.model.iknet_cfg.enabled:
+            self.args.model.input_size = self.args.model.iknet_cfg.n_comps if self.args.model.iknet_cfg.output_pca else 45
+        else:
+            self.args.model.input_size = example['input'].shape[-1]
         self.args.model.input_channel = example['input'].shape[-2]
         self.args.model.output_size = example['output'].shape[-1]
         
         if 'hypernet_input' in example:
             self.args.model.hypernet_cfg.input_size = example['hypernet_input'].shape[-1]
+            self.args.model.iknet_cfg.cond_dim = example['hypernet_input'].shape[-1]
         else:
             self.args.model.hypernet_cfg.input_size = 0
 
@@ -92,8 +100,8 @@ class Trainer():
 
 
     def train_step(self, data, do_backward=True):
-        x, y = data['input'], data['output']
-        x, y = x.float().to(self.device), y.float().to(self.device)
+        x, y, side, ik_y = data['input'], data['output'], data['side'], data['ik_y']
+        x, y, side, ik_y = x.float().to(self.device), y.float().to(self.device), side.to(self.device), ik_y.float().to(self.device)
         if 'hypernet_input' in data:
             hypernet_input = data['hypernet_input'].float().to(self.device)
         else:
@@ -103,16 +111,18 @@ class Trainer():
         
         if do_backward: #training
             self.global_steps += 1
-            result = self.model(x, y, hypernet_input)
+            result = self.model(x, y, hypernet_input, side=side, ik_y=ik_y, ik_cond=hypernet_input)
             loss = result['loss']
             self.optimizer.zero_grad()
             loss.backward()
             nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
             self.optimizer.step()
-            step_info['train/loss'] = loss.item()
+            for key, value in result.items():
+                if 'loss' in key:
+                    step_info[f'train/{key}'] = value.item()
             self.log_step(step_info, self.global_steps)
         else: # evaluating
-            pred_y = self.model(x, hypernet_x=hypernet_input)
+            pred_y = self.model(x, hypernet_x=hypernet_input, side=side, ik_cond=hypernet_input)
             loss = self.loss_function(pred_y, y)
             mae = torch.mean(torch.abs(pred_y - y))
             step_info['val/mae'] = mae.item()

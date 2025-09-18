@@ -106,17 +106,22 @@ def main():
                 # Update poses with timeout protection
                 # collect pose
                 joint_pose = pose_collector.collect(1)
-                max_steps = 200 if is_first_frame else 50
-                results = {side: mano_fitter[side].fit_single_frame(joint_pose[side][-1], prev_results[side], betas[side], max_steps) for side in sides}
-                # breakpoint()
-                hand_pose = {side: ensembler[side].predict(results[side]['hand_pose']) for side in sides}
-                # print(hand_pose['left'][:5])
-                pca_mano_pose = {side: results[side]['hand_pose'] for side in sides}
-                prev_results = results
+
+                if not hasattr(model, 'iknet'):
+                    max_steps = 200 if is_first_frame else 50
+                    results = {side: mano_fitter[side].fit_single_frame(joint_pose[side][-1], prev_results[side], betas[side], max_steps) for side in sides}
+                    # breakpoint()
+                    hand_pose = {side: ensembler[side].predict(results[side]['hand_pose']) for side in sides}
+                    # print(hand_pose['left'][:5])
+                    input = {side: hand_pose for side in sides}
+                    prev_results = results
+                else:
+                    input = {side: joint_pose[side][-1] for side in sides}
+
                 for side in sides:
                     with hyper_lora_ctx[side]:
-                        processed_pose = torch.tensor(process_x_fn(pca_mano_pose[side]), dtype=torch.float32).to(device)
-                        pred = model.predict(processed_pose.unsqueeze(0), noisy_act=fixed_noise).cpu().numpy().squeeze(0)
+                        processed_input = torch.tensor(process_x_fn(input[side]), dtype=torch.float32).to(device)
+                        pred = model.predict(processed_input.unsqueeze(0), noisy_act=fixed_noise).cpu().numpy().squeeze(0)
                         pred = process_y_fn(pred)
                         if side == 'left':
                             print(f"{side}: {pred[:4]}")

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 import math
+from .resmlp import ResMLPBlock
 
 class TimeEmbed(nn.Module):
     def __init__(self, dim, n_fourier=32):
@@ -20,38 +21,6 @@ class TimeEmbed(nn.Module):
         wt = t * self.B[None, :] * 2*math.pi
         ff = torch.cat([torch.sin(wt), torch.cos(wt)], dim=-1)
         return self.proj(ff)
-    
-class FiLM(nn.Module):
-    def __init__(self, hdim, edim):
-        super().__init__()
-        self.to_scale = nn.Linear(edim, hdim)
-        self.to_shift = nn.Linear(edim, hdim)
-    def forward(self, h, e):
-        return h * (1 + self.to_scale(e)) + self.to_shift(e)
-
-class ResMLPBlock(nn.Module):
-    def __init__(self, input_dim, output_dim, film_dim=None):
-        super(ResMLPBlock, self).__init__()
-        self.linear = nn.Linear(input_dim, output_dim)
-        self.norm = nn.LayerNorm(input_dim)
-        self.activation = nn.GELU()
-
-        if film_dim is not None:
-            self.film = FiLM(output_dim, film_dim)
-        else:
-            self.film = None
-
-    def forward(self, x: Tensor, cond: Tensor=None) -> Tensor:
-        residual = x
-        x = self.norm(x)
-        x = self.linear(x)
-        x = self.activation(x)
-        if self.film is not None and cond is not None:
-            x = self.film(x, cond)
-        if x.shape[-1] != residual.shape[-1]:
-            return x
-        else:
-            return x + residual
 
 class FlowMatching(nn.Module):
     def __init__(self, input_dim, output_dim, n_steps=5, hidden_layers=[]):

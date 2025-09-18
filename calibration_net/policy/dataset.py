@@ -1,7 +1,7 @@
 import datasets
 from torch.utils.data import Dataset
 import torch
-from calibration_net.utils import walk_dict, index_dict
+from calibration_net.utils import walk_dict, index_dict, Side
 import numpy as np
 from .preprocessing import TRANSFORM_REGISTRY, build_preprocessing
 from typing import OrderedDict, Union
@@ -251,19 +251,23 @@ class SequenceDataset(Dataset):
         
         x = torch.tensor(x, dtype=torch.float32)
         y = torch.tensor(y, dtype=torch.float32).squeeze()
-        
+
+        side = index_dict(dict(data), 'mano_side')[0]
+        if isinstance(side, bytes):
+            side = side.decode('utf-8')
+        assert type(side) == str
+        enc_side = Side.__dict__[side.upper()].value
+        mano_pose = index_dict(dict(data), 'mano_angles')[idx_in_demo]
+        mano_pose = torch.tensor(mano_pose, dtype=torch.float32)
+
         # x, y = self.__augment__(x, y)
-        item = {'input': x, 'output': y}
+        item = {'input': x, 'output': y, 'side': enc_side, 'ik_y': mano_pose, "ik_betas": torch.tensor(index_dict(dict(data), 'betas'), dtype=torch.float32)}
 
         if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
             hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))
             hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
             if self.cat_side:
-                side = index_dict(dict(data), 'mano_side')[0]
-                if isinstance(side, bytes):
-                    side = side.decode('utf-8')
-                assert type(side) == str
-                side_x = torch.tensor([1.0 if side == 'left' else -1.0])
+                side_x = torch.tensor(enc_side, dtype=torch.float32).view(1)
                 hypernet_x = torch.cat([hypernet_x, side_x], dim=-1)
             item['hypernet_input'] = hypernet_x
             
@@ -273,11 +277,12 @@ if __name__ == '__main__':
     dataset = ConcatHDF5(['/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5','/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5'])
     dataset = SequenceDataset(
         path='/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5',
-        input_keys='pca_mano_pose',
+        input_keys='world_hand_joints',
         output_keys='inspire_joint_pose',
         hypernet_input_keys='betas',
-        preprocessing_x=[],
+        preprocessing_x=["joint_3d_world_to_local","normalize"],
         preprocessing_y=[],
         cat_side=True,
     )
+    dataset[0]
     breakpoint()
