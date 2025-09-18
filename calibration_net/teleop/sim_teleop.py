@@ -15,23 +15,32 @@ mp.set_start_method('spawn', force=True)
 DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
 
 
-def retargeting(model_dir, side, queue):
+def retargeting(model_dir, side, queue, calibration):
     inferencer = ModelInferencer(model_dir=model_dir)
 
     pose_collector = PoseCollector(30)
     fitter = initialize_fitter(inferencer.n_comps, [side])
+    if calibration:
+        print("Starting calibration...")
+        poses = pose_collector.collect(400)
+        betas = fitter[side].fit_sequence(poses[side], optimize_scale=False)['betas']
+        print("Calibration done. Betas:", betas)
+        
     max_steps = 200
     prev_result = None
     while True:
         joint_pose = pose_collector.collect(1, sides=[side])[side][0]
-        result = fitter[side].fit_single_frame(joint_pose, prev_result=prev_result, max_steps=max_steps)
-        mano_pose = result['hand_pose']
-        joints = inferencer.inference(mano_pose, batched=False)
+        if not hasattr(inferencer.model, 'iknet'):
+            result = fitter[side].fit_single_frame(joint_pose, prev_result=prev_result, max_steps=max_steps)
+            model_input = result['hand_pose']
+            max_steps = 200
+            prev_result = result
+        else:
+            model_input = joint_pose
+        joints = inferencer.inference(model_input, batched=False)
         queue.put(joints)
-        max_steps = 200
-        prev_result = result
 
-def main(model_dir:str, hand_type: str='inspire', side='right'):
+def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool=True):
     robot_urdf_path = Path(DEX_URDF_PATH) / "robots" / 'hands' / f'{hand_type}_hand' / f"{hand_type}_hand_{side}.urdf"
     
     def filename_handler(fname: str) -> str:
@@ -39,7 +48,7 @@ def main(model_dir:str, hand_type: str='inspire', side='right'):
         return yourdfpy.filename_handler_magic(fname, dir=base_path)
     
     queue = mp.Queue()
-    retarget_process = mp.Process(target=retargeting, args=(model_dir, side, queue), daemon=True)
+    retarget_process = mp.Process(target=retargeting, args=(model_dir, side, queue, calibration), daemon=True)
     retarget_process.start()
 
     urdf = yourdfpy.URDF.load(robot_urdf_path, filename_handler=filename_handler)    

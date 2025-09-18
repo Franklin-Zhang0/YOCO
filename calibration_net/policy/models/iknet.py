@@ -83,6 +83,7 @@ class IKNet(nn.Module):
         so3 = so3.view(-1, 15 * 3)
 
         if self.output_pca:
+            assert side is not None
             coeff_idx = side == Side.LEFT.value
             coeff = self.stack_coeff.to(so3.device, so3.dtype)[coeff_idx.long(), :, :]
             pca = coeff @ so3.unsqueeze(-1)

@@ -29,7 +29,7 @@ def initialize_fitter(n_comps:int, sides:list[str]):
     mano_fitter = {}
     for side in sides:
         mano_fitter[side] = ManoSequenceFitter(
-            mano_model_dir=os.path.join(MANO_PATH, 'models'),
+            mano_model_dir=MANO_PATH,
             mano_side=side,
             use_pca=n_comps < 45,                         
             ncomps=n_comps,

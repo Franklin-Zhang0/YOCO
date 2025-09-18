@@ -41,7 +41,7 @@ class Model(nn.Module):
             )
             self.calib_block = self.network.calib_block # dummy calib block
         if self.iknet_cfg['enabled']:
-            iknet_cfg = OmegaConf.to_container(self.iknet_cfg)
+            iknet_cfg = dict(self.iknet_cfg)
             del iknet_cfg['enabled']
             self.iknet = IKNet(**iknet_cfg)
 
