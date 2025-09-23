@@ -8,6 +8,18 @@ def get_normalize(norm_stats):
         return x
     return normalize
 
+def bone_normalize(joints_xyz: np.ndarray):
+    MCP_indices = [1, 5, 9, 13, 17]
+    
+    MCP_pos = joints_xyz[..., MCP_indices, :]  # (..., 5, 3)
+    root_pos = joints_xyz[..., 0:1, :]  # (..., 1, 3)
+    
+    bone_vec = MCP_pos - root_pos  # (..., 5, 3)
+    bone_len = np.linalg.norm(bone_vec, axis=-1, keepdims=True)
+    mean_bone_len = np.mean(bone_len, axis=-2, keepdims=True)  # (..., 1, 3)
+    normed_joints_xyz = joints_xyz / (mean_bone_len + 1e-5) * 2.0
+    return normed_joints_xyz
+
 def get_delta():
     def delta(x):
         x = x[1:] - x[:-1]
@@ -40,6 +52,7 @@ def get_flatten():
 
 TRANSFORM_REGISTRY = {
     'joint_3d_world_to_local': lambda: transform_joint3d,
+    'bone_normalize': lambda: bone_normalize,
     'normalize': get_normalize,
     'delta': get_delta,
     'original_and_delta': get_original_and_delta,

@@ -9,7 +9,11 @@ import numpy as np
 from tqdm import tqdm
 
 
-def lora_hook(module, input, output, lora_weight, rank, alpha=1.0):
+def lora_hook(module, input, output, lora_weight, rank, alpha=1.0, drop_out=0.0):
+    rand = torch.rand(1).item()
+    if rand < drop_out:
+        return output
+    
     in_dim, out_dim = module.in_features, module.out_features
     batch_size = lora_weight.shape[0]
     lora_A = lora_weight[:, :in_dim*rank].reshape(batch_size, in_dim, rank)
@@ -94,7 +98,7 @@ class HyperBlock(nn.Module):
         return x
 
 class HyperLoRA(nn.Module):
-    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, hidden_layers=[], name_filter=[]):
+    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, drop_out: float=0.0, hidden_layers=[], name_filter=[]):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
         self.base_model = base_model
@@ -103,6 +107,7 @@ class HyperLoRA(nn.Module):
         self.max_modules = max_modules
         self.hidden_layers = hidden_layers
         self.name_filter = name_filter
+        self.drop_out = drop_out
         self.build_lora()
 
     def build_lora(self):
@@ -124,7 +129,7 @@ class HyperLoRA(nn.Module):
     def register_hooks(self, hyper_lora_input):
         for layers, module in self.modules:
             lora_weight = module(hyper_lora_input)
-            layers.register_forward_hook(partial(lora_hook, lora_weight=lora_weight, rank=self.rank, alpha=self.alpha))
+            layers.register_forward_hook(partial(lora_hook, lora_weight=lora_weight, rank=self.rank, alpha=self.alpha, drop_out=self.drop_out))
 
     def unregister_hooks(self):
         for layers, _ in self.modules:

@@ -43,7 +43,6 @@ class IKNet(nn.Module):
         hidden_layers=[256, 256, 256],
         output_pca=False,
         n_comps=21,
-        cond_dim=0,
     ):
         super(IKNet, self).__init__()
         self.njoints = njoints
@@ -64,17 +63,17 @@ class IKNet(nn.Module):
 
         invk_layers = []
         for layer_idx, (inps, outs) in enumerate(zip(neurons[:-1], neurons[1:])):
-            invk_layers.append(ResMLPBlock(inps, outs, film_dim=cond_dim if cond_dim > 0 else None))
+            invk_layers.append(ResMLPBlock(inps, outs))
 
-        invk_layers.append(ResMLPBlock(neurons[-1], out_neurons, film_dim=cond_dim if cond_dim > 0 else None))
+        invk_layers.append(ResMLPBlock(neurons[-1], out_neurons))
 
         self.invk_layers = nn.ModuleList(invk_layers)
 
-    def forward(self, joint, side, ik_cond, ik_y=None):
+    def forward(self, joint, side, ik_y=None):
         x = joint = joint.contiguous().view(-1, self.njoints * 3)
         
         for layers in self.invk_layers:
-            x = layers(x, ik_cond)
+            x = layers(x)
         quat = x
         # quat = self.invk_layers(joint)
         quat = quat.view(-1, 15, 4)
@@ -90,7 +89,7 @@ class IKNet(nn.Module):
             pca = pca.squeeze(-1)
 
         if ik_y is not None:
-            ik_loss = nn.MSELoss()(so3, ik_y)
+            ik_loss = nn.MSELoss()(pca, ik_y)
             return pca, quat, ik_loss
         
         else:

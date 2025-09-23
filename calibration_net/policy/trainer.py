@@ -40,7 +40,6 @@ class Trainer():
         
         if 'hypernet_input' in example:
             self.args.model.hypernet_cfg.input_size = example['hypernet_input'].shape[-1]
-            self.args.model.iknet_cfg.cond_dim = example['hypernet_input'].shape[-1]
         else:
             self.args.model.hypernet_cfg.input_size = 0
 
@@ -76,7 +75,7 @@ class Trainer():
         self.model.network[-1] = self.model.fc
 
     def create_optimizer(self):
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.trainer_args.learning_rate)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.trainer_args.learning_rate, weight_decay=self.trainer_args.weight_decay)
         self.loss_function = nn.MSELoss()
     
     def load_dataset(self):
@@ -111,7 +110,7 @@ class Trainer():
         
         if do_backward: #training
             self.global_steps += 1
-            result = self.model(x, y, hypernet_input, side=side, ik_y=ik_y, ik_cond=hypernet_input)
+            result = self.model(x, y, hypernet_input, side=side, ik_y=ik_y)
             loss = result['loss']
             self.optimizer.zero_grad()
             loss.backward()
@@ -122,7 +121,7 @@ class Trainer():
                     step_info[f'train/{key}'] = value.item()
             self.log_step(step_info, self.global_steps)
         else: # evaluating
-            pred_y = self.model(x, hypernet_x=hypernet_input, side=side, ik_cond=hypernet_input)
+            pred_y = self.model(x, hypernet_x=hypernet_input, side=side)
             loss = self.loss_function(pred_y, y)
             mae = torch.mean(torch.abs(pred_y - y))
             step_info['val/mae'] = mae.item()

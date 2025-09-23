@@ -4,6 +4,7 @@ import torch
 from calibration_net.utils import walk_dict, index_dict, Side
 import numpy as np
 from .preprocessing import TRANSFORM_REGISTRY, build_preprocessing
+from .augmentation import AUGMENTATION_REGISTRY, build_augmentation
 from typing import OrderedDict, Union
 from functools import partial
 from tqdm import tqdm
@@ -113,6 +114,7 @@ class SequenceDataset(Dataset):
             self.hdf5_mode = False
             
         self.augmentations = augmentations
+        self.augmentations = {k:build_augmentation(v) for k,v in augmentations.items()}
         self.side = side
         self.data_caching = data_caching
 
@@ -233,6 +235,15 @@ class SequenceDataset(Dataset):
         else:
             data = self.data[demo_id]
         return data
+    
+    def __augment__(self, item):
+        for key, aug_fn in self.augmentations.items():
+            if key in item:
+                item[key] = aug_fn(item[key])
+            else:
+                raise ValueError(f"Augmentation key '{key}' not in item keys {list(item.keys())}")
+        return item
+            
 
     def __getitem__(self, idx):
         demo_id = self.mapping['idx_to_demo_id'][idx]
@@ -257,11 +268,10 @@ class SequenceDataset(Dataset):
             side = side.decode('utf-8')
         assert type(side) == str
         enc_side = Side.__dict__[side.upper()].value
-        mano_pose = index_dict(dict(data), 'mano_angles')[idx_in_demo]
-        mano_pose = torch.tensor(mano_pose, dtype=torch.float32)
+        pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')[idx_in_demo]
+        pca_mano_pose = torch.tensor(pca_mano_pose, dtype=torch.float32)
 
-        # x, y = self.__augment__(x, y)
-        item = {'input': x, 'output': y, 'side': enc_side, 'ik_y': mano_pose, "ik_betas": torch.tensor(index_dict(dict(data), 'betas'), dtype=torch.float32)}
+        item = {'input': x, 'output': y, 'side': enc_side, 'ik_y': pca_mano_pose}
 
         if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
             hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))
@@ -270,6 +280,8 @@ class SequenceDataset(Dataset):
                 side_x = torch.tensor(enc_side, dtype=torch.float32).view(1)
                 hypernet_x = torch.cat([hypernet_x, side_x], dim=-1)
             item['hypernet_input'] = hypernet_x
+            
+        item = self.__augment__(item)
             
         return item
     

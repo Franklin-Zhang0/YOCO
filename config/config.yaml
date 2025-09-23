@@ -4,10 +4,15 @@ dataset:
   output_keys: "robot.left.target_angles"
   side: "left"
   augmentations:
-    x_noise_scale: 0.005
-    y_noise_scale: 0.001
-    x_dropout: 0.1
-  
+    input: 
+      dropout:
+        p: 0.2
+      gaussian_noise:
+        sigma: 0.001
+    hypernet_input:
+      dropout:
+        p: 0.3
+
 model:
   type: "MLP"
   hidden_layers: [256, 256, 256]
@@ -17,6 +22,7 @@ trainer:
   num_epochs: 30
   batch_size: 64
   learning_rate: 0.001
+  weight_decay: 1e-4
   grad_clipping: 1.0
   calibnet_warmup_epochs: 20
   val_split: 0.1

@@ -28,6 +28,7 @@ class HypernetCfg:
     alpha: float = 2.0
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     name_filter: list[str] = field(default_factory=list)
+    drop_out: float = 0.0
 
 @dataclass
 class IKNetCfg:
@@ -35,7 +36,6 @@ class IKNetCfg:
     hidden_layers: list = field(default_factory=lambda: [256, 256, 256])
     output_pca: bool = False
     n_comps: int = 21
-    cond_dim: int = 0
 
 @dataclass
 class ModelConfig:
@@ -57,6 +57,7 @@ class TrainerConfig:
     expname: str = field(default_factory=str)
     batch_size: int = field(default_factory=int)
     learning_rate: float = field(default_factory=float)
+    weight_decay: float = field(default_factory=float)
     grad_clipping: float = field(default_factory=float)
     calibnet_warmup_epochs: int = 0
     num_epochs: int = field(default_factory=int)

@@ -8,7 +8,7 @@ class ModelInferencer():
         self.device = device
         self.model, self.norm_stats, self.cfg = load_model(model_dir, device=device)
         self.n_comps = self.cfg['model'].get('input_size')
-        self.cat_side = self.cfg['dataset']['cat_side']
+        self.cat_side = self.cfg['dataset'].get('cat_side', False)
         
         self.betas = torch.tensor(betas, dtype=torch.float32, device = self.device) if betas is not None else torch.zeros((10,), device=device)
         self.enc_side = Side.__dict__[side.upper()].value
@@ -26,10 +26,10 @@ class ModelInferencer():
         self.fixed_noise = fixed_noise
         self.noise = torch.randn(1, self.cfg['model']['output_size']).to(device)
         
-    def inference(self, x: torch.Tensor, batched: bool=False, num_samples: int=10):
+    def inference(self, x: torch.Tensor, batched: bool=False):
         self.model.eval()
         if not self.fixed_noise:
-            self.noise = torch.randn(num_samples, self.cfg['model']['output_size'], device=self.device)
+            self.noise = torch.randn(1, self.cfg['model']['output_size'], device=self.device)
         if batched: 
             self.noise = self.noise.repeat(x.shape[0], 1)
         else:
@@ -41,7 +41,7 @@ class ModelInferencer():
         x = torch.as_tensor(x, device=self.device).float()
         with torch.no_grad():
             with self.hyper_lora_ctx:
-                y_pred = self.model.predict(x, noisy_act=self.noise, side=self.enc_side_tensor, ik_cond=self.shape)
-                y_pred = torch.mean(y_pred, dim=0).cpu().numpy()
+                y_pred = self.model.predict(x, noisy_act=self.noise, side=self.enc_side_tensor)
+                y_pred = y_pred.squeeze().cpu().numpy()
             y_pred = self.process_y_fn(y_pred)
         return y_pred

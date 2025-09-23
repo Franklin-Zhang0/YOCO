@@ -183,7 +183,7 @@ def build_axes_from_joints3d(joints_xyz: np.ndarray):
     """
     joints_xyz = np.asarray(joints_xyz)
     if joints_xyz.shape[-2:] != (21, 3):
-        raise ValueError("expected (..., 21, 3) input")
+        raise ValueError("expected (..., 21, 3) input, but got shape " + str(joints_xyz.shape))
 
     eps = 1e-8
 
