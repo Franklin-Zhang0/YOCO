@@ -26,8 +26,9 @@ class HyperLoRAHookContext(AbstractContextManager):
     def __init__(self, outer, hyper_lora_input: Tensor):
         self.outer = outer
         self.hyper = hyper_lora_input
+        self.lora_weights = self.outer.prepare_lora_weights(hyper_lora_input)
     def __enter__(self):
-        self.outer.register_hooks(self.hyper)
+        self.outer.register_hooks(self.hyper, self.lora_weights)
         return self.outer
     def __exit__(self, exc_type, exc, tb):
         self.outer.unregister_hooks()
@@ -126,10 +127,19 @@ class HyperLoRA(nn.Module):
                 self.modules.append((layers, module))
         self.lora_modules = nn.ModuleList([m for _, m in self.modules])
 
-    def register_hooks(self, hyper_lora_input):
+    def prepare_lora_weights(self, hyper_lora_input: Tensor):
+        lora_weights = []
         for layers, module in self.modules:
             lora_weight = module(hyper_lora_input)
-            layers.register_forward_hook(partial(lora_hook, lora_weight=lora_weight, rank=self.rank, alpha=self.alpha, drop_out=self.drop_out))
+            lora_weights.append((layers, lora_weight))
+        return lora_weights
+
+    def register_hooks(self, hyper_lora_input, lora_weights=None):
+        if lora_weights is None:
+            lora_weights = self.prepare_lora_weights(hyper_lora_input)
+        assert len(lora_weights) == len(self.modules)
+        for layers, lora_weights in lora_weights:
+            layers.register_forward_hook(partial(lora_hook, lora_weight=lora_weights, rank=self.rank, alpha=self.alpha, drop_out=self.drop_out))
 
     def unregister_hooks(self):
         for layers, _ in self.modules:

@@ -51,24 +51,27 @@ class Model(nn.Module):
         return self.network
 
     def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, side=None):
-        ik_loss = 0.0
-        if self.iknet_cfg.get('enabled', False):
-            if ik_y is None:
-                axis_angle, quat = self.iknet(x, side=side)
-            else:
-                axis_angle, quat, ik_loss = self.iknet(x, side=side, ik_y=ik_y)
-            x = axis_angle
-
         context = self.hyperlora.use(hypernet_x) if hypernet_x is not None else nullcontext()
+        
+        ik_loss = 0.0
 
-        # with context:
-        if y is not None:
-            result = self.network.train_forward(x, y)
-            result['loss_qpos'] = result['loss'].clone()
-            result['loss'] += ik_loss * 0.1
-            result['loss_ik'] = ik_loss
-        else:
-            result = self.network.predict(x, noisy_act=noisy_act)
+        with context:
+            if self.iknet_cfg.get('enabled', False):
+                if ik_y is None:
+                    axis_angle, quat = self.iknet(x, side=side)
+                else:
+                    axis_angle, quat, ik_loss = self.iknet(x, side=side, ik_y=ik_y)
+                x = axis_angle
+
+
+            if y is not None:
+                result = self.network.train_forward(x, y)
+                result['loss_qpos'] = result['loss'].clone()
+                result['loss'] += ik_loss * 0.1
+                result['loss_ik'] = ik_loss
+            else:
+                result = self.network.predict(x, noisy_act=noisy_act)
+                
         return result
 
     @torch.no_grad()
