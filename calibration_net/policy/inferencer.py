@@ -4,7 +4,8 @@ from calibration_net.policy.preprocessing import build_preprocessing
 from calibration_net.utils import Side
 
 class ModelInferencer():
-    def __init__(self, model_dir, device='cuda' if torch.cuda.is_available() else 'cpu', betas=None, fixed_noise=True, side='left'):
+    def __init__(self, model_dir, side, device='cuda' if torch.cuda.is_available() else 'cpu', betas=None, fixed_noise=True):
+        assert side in ['left', 'right']
         self.device = device
         self.model, self.norm_stats, self.cfg = load_model(model_dir, device=device)
         self.n_comps = self.cfg['model'].get('input_size')

@@ -16,7 +16,7 @@ DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
 
 
 def retargeting(model_dir, side, queue, calibration):
-    inferencer = ModelInferencer(model_dir=model_dir)
+    inferencer = ModelInferencer(model_dir=model_dir, side=side)
 
     pose_collector = PoseCollector(30)
     fitter = initialize_fitter(inferencer.n_comps, [side])
@@ -25,7 +25,7 @@ def retargeting(model_dir, side, queue, calibration):
         poses = pose_collector.collect(400)
         betas = fitter[side].fit_sequence(poses[side], optimize_scale=False)['betas']
         print("Calibration done. Betas:", betas)
-        
+
     max_steps = 200
     prev_result = None
     while True:
@@ -40,7 +40,7 @@ def retargeting(model_dir, side, queue, calibration):
         joints = inferencer.inference(model_input, batched=False)
         queue.put(joints)
 
-def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool=True):
+def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool=False):
     robot_urdf_path = Path(DEX_URDF_PATH) / "robots" / 'hands' / f'{hand_type}_hand' / f"{hand_type}_hand_{side}.urdf"
     
     def filename_handler(fname: str) -> str:
