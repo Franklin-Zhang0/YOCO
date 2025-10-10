@@ -95,8 +95,8 @@ class Trainer():
         # self.trainset = torch.utils.data.Subset(self.dataset, range(256))  
         # self.valset = torch.utils.data.Subset(self.dataset, range(128))
         
-        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=16)
-        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=8)
+        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=4)
+        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=4)
 
 
     def train_step(self, data, do_backward=True):

@@ -12,7 +12,7 @@ from contextlib import nullcontext
 from omegaconf import OmegaConf
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, train=True):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -21,6 +21,7 @@ class Model(nn.Module):
         self.hypernet_cfg = hypernet_cfg
         self.iknet_cfg = iknet_cfg
         self.input_channel = input_channel
+        self.is_train = train
         self.build_network()
         
     def build_network(self):
@@ -46,10 +47,10 @@ class Model(nn.Module):
             self.iknet = IKNet(**iknet_cfg)
 
         if self.hypernet_cfg['input_size'] > 0:
-            self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network)
+            self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network, train_init=self.is_train)
             self.calib_block = self.hyperlora.lora_modules
         return self.network
-
+    
     def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, side=None):
         context = self.hyperlora.use(hypernet_x) if hypernet_x is not None else nullcontext()
         

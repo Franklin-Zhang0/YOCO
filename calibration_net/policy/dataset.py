@@ -140,6 +140,21 @@ class SequenceDataset(Dataset):
         self.preprocessing_y = build_preprocessing(preprocessing_y, 'y', norm_stats=self.normalization_stats)
         self.data_cache = {}
         self.data_item_cache = {}
+        if self.data_caching:
+            self.prefetch_data()
+
+    def prefetch_data(self):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        print("Prefetching data...")
+        with ThreadPoolExecutor(max_workers=512) as executor:
+            futures = {executor.submit(self.fetch_demo, i): i for i in range(len(self.data))}
+            for future in tqdm(as_completed(futures), total=len(futures)):
+                demo_id = futures[future]
+                try:
+                    _ = future.result()
+                except Exception as e:
+                    print(f"Error precaching demo {demo_id}: {e}")
+        print("Precaching done.")
         
                 
     def create_mapping(self):
@@ -230,7 +245,11 @@ class SequenceDataset(Dataset):
             if demo_id in self.data_cache:
                 data = self.data_cache[demo_id]
             else:
-                data = self.data[demo_id]
+                data = {}
+                for key, value in walk_dict(self.data[demo_id]):
+                    data[key] = np.array(value)
+                data[self.input_keys] = self.preprocessing_x(data[self.input_keys])
+                data[self.output_keys] = self.preprocessing_y(data[self.output_keys])
                 self.data_cache[demo_id] = data
         else:
             data = self.data[demo_id]
@@ -248,14 +267,13 @@ class SequenceDataset(Dataset):
     def __getitem__(self, idx):
         demo_id = self.mapping['idx_to_demo_id'][idx]
         idx_in_demo = self.mapping['idx_to_idx_in_demo'][idx]
-        # data = self.fetch_demo(demo_id)
-        data = self.data[demo_id]
+        data = self.fetch_demo(demo_id)
         
-        x = np.array(index_dict(dict(data), self.input_keys))
-        y = np.array(index_dict(dict(data), self.output_keys))
+        x = index_dict(dict(data), self.input_keys)
+        y = index_dict(dict(data), self.output_keys)
         
-        x = self.preprocessing_x(x)
-        y = self.preprocessing_y(y)
+        # x = self.preprocessing_x(x)
+        # y = self.preprocessing_y(y)
         
         x = self.__chunking__(x, range(-self.obs_horizon + 1, 1), idx_in_demo)
         y = self.__chunking__(y, range(0, self.action_horizon), idx_in_demo)
@@ -272,13 +290,14 @@ class SequenceDataset(Dataset):
         item = {'input': x, 'output': y, 'side': enc_side}
 
         if 'pca_mano_pose' in data:
-            pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')[idx_in_demo]
+            pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')
+            pca_mano_pose = self.__chunking__(pca_mano_pose, range(-self.obs_horizon + 1, 1), idx_in_demo)
             pca_mano_pose = torch.tensor(pca_mano_pose, dtype=torch.float32)
             item['ik_y'] = pca_mano_pose
 
 
         if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
-            hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))
+            hypernet_x = index_dict(dict(data), self.hypernet_input_keys)
             hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
             if self.cat_side:
                 side_x = torch.tensor(enc_side, dtype=torch.float32).view(1)
@@ -296,9 +315,9 @@ if __name__ == '__main__':
         input_keys='world_hand_joints',
         output_keys='inspire_joint_pose',
         hypernet_input_keys='betas',
-        preprocessing_x=["joint_3d_world_to_local","normalize"],
+        preprocessing_x=["joint_3d_world_to_local","bone_normalize","flatten"],
         preprocessing_y=[],
         cat_side=True,
     )
-    dataset[0]
-    breakpoint()
+    for data in tqdm(dataset):
+        pass
