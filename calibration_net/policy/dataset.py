@@ -268,10 +268,14 @@ class SequenceDataset(Dataset):
             side = side.decode('utf-8')
         assert type(side) == str
         enc_side = Side.__dict__[side.upper()].value
-        pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')[idx_in_demo]
-        pca_mano_pose = torch.tensor(pca_mano_pose, dtype=torch.float32)
+        
+        item = {'input': x, 'output': y, 'side': enc_side}
 
-        item = {'input': x, 'output': y, 'side': enc_side, 'ik_y': pca_mano_pose}
+        if 'pca_mano_pose' in data:
+            pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')[idx_in_demo]
+            pca_mano_pose = torch.tensor(pca_mano_pose, dtype=torch.float32)
+            item['ik_y'] = pca_mano_pose
+
 
         if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
             hypernet_x = np.array(index_dict(dict(data), self.hypernet_input_keys))

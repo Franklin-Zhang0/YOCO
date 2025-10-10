@@ -6,7 +6,7 @@ from calibration_net.policy.inferencer import ModelInferencer
 from viser.extras import ViserUrdf
 import numpy as np
 from calibration_net.teleop.vr_utils import initialize_fitter
-from calibration_net.teleop.mano_fitter import PoseCollector
+from calibration_net.data_collection.pose_collector import AvpPoseCollector
 import tyro
 import time
 import multiprocessing as mp
@@ -18,7 +18,7 @@ DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
 def retargeting(model_dir, side, queue, calibration):
     inferencer = ModelInferencer(model_dir=model_dir, side=side)
 
-    pose_collector = PoseCollector(30)
+    pose_collector = AvpPoseCollector(avp_ip='10.212.30.224', frame_rate=60)
     fitter = initialize_fitter(inferencer.n_comps, [side])
     if calibration:
         print("Starting calibration...")
@@ -28,7 +28,12 @@ def retargeting(model_dir, side, queue, calibration):
 
     max_steps = 200
     prev_result = None
+    i=0
+    import time
+
+    start = time.time()
     while True:
+        i+=1
         joint_pose = pose_collector.collect(1, sides=[side])[side][0]
         if not hasattr(inferencer.model, 'iknet'):
             result = fitter[side].fit_single_frame(joint_pose, prev_result=prev_result, max_steps=max_steps)
@@ -39,6 +44,9 @@ def retargeting(model_dir, side, queue, calibration):
             model_input = joint_pose
         joints = inferencer.inference(model_input, batched=False)
         queue.put(joints)
+        if i % 30 == 0:
+            print(f"FPS: {30/(time.time()-start):.2f}")
+            start = time.time()
 
 def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool=False):
     robot_urdf_path = Path(DEX_URDF_PATH) / "robots" / 'hands' / f'{hand_type}_hand' / f"{hand_type}_hand_{side}.urdf"
@@ -59,7 +67,7 @@ def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool
     server.scene.add_frame(
         "/scene_offset",
         show_axes=False,
-        position=(-0.0, -0.0, 0.2),
+        position=(-0.0, -0.0, 0.0),
         wxyz=(-0.0, 0.0, 0.0, 0.0),
     )
     

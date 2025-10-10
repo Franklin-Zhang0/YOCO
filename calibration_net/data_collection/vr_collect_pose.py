@@ -1,4 +1,4 @@
-from calibration_net.teleop.mano_fitter import PoseCollector, ManoSequenceFitter
+from calibration_net.data_collection.pose_collector import PoseCollector, ManoSequenceFitter
 import tyro
 import os
 import pickle
@@ -20,7 +20,7 @@ def main(save_path:str, n_sec:int=300, frame_rate:int=30, ncomps=21, slice_len:i
         result = {'world_hand_joints': [], 'mano_side': [side], 'mano_angles': [], 'pca_mano_pose': [], 'betas': [], 'trans': [], 'global_orient': []}
 
         mano_fitter = ManoSequenceFitter(
-                mano_model_dir=os.path.join(MANO_PATH, 'models'),
+                mano_model_dir=MANO_PATH,
                 mano_side=side,
                 use_pca=True,                      
                 ncomps=ncomps,

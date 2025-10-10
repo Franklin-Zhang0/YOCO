@@ -43,16 +43,17 @@ class Trainer():
         else:
             self.args.model.hypernet_cfg.input_size = 0
 
-        self.model = Model(**self.args.model)
-
         if self.trainer_args.load_path:
             print(f"Loading model from {self.trainer_args.load_path}")
             self.model, normalization_stats, loaded_cfg = load_model(self.trainer_args.load_path)
+            self.dataset.normalization_stats = normalization_stats
             if loaded_cfg['model']['output_size'] != self.args.model.output_size:
                 self.switch_last_layer()
                 loaded_cfg['model']['output_size'] = self.args.model.output_size
             # assert all other model configurations match
             assert loaded_cfg['model'] == self.args.model
+        else:
+            self.model = Model(**self.args.model)
             
         self.model.to(self.device)
         
@@ -99,8 +100,14 @@ class Trainer():
 
 
     def train_step(self, data, do_backward=True):
-        x, y, side, ik_y = data['input'], data['output'], data['side'], data['ik_y']
-        x, y, side, ik_y = x.float().to(self.device), y.float().to(self.device), side.to(self.device), ik_y.float().to(self.device)
+        x, y, side = data['input'], data['output'], data['side']
+        x, y, side = x.float().to(self.device), y.float().to(self.device), side.to(self.device)
+        
+        if 'ik_y' in data:
+            ik_y = data['ik_y'].float().to(self.device)
+        else:
+            ik_y = None
+
         if 'hypernet_input' in data:
             hypernet_input = data['hypernet_input'].float().to(self.device)
         else:

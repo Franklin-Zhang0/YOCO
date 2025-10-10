@@ -8,7 +8,7 @@ import torch
 from calibration_net.policy.preprocessing import build_preprocessing
 
 from calibration_net.utils import initilize_glove, initialize_robot, apply_angles, FrameRateContext
-from calibration_net.teleop.mano_fitter import ManoSequenceFitter, PoseCollector
+from calibration_net.data_collection.pose_collector import PoseCollector
 from calibration_net.teleop.vr_utils import calibration, initialize_fitter
 import os
 from contextlib import nullcontext
@@ -72,8 +72,10 @@ def main():
     model, norm_stats, cfg = load_model(args.model_dir, device=device)
     n_comps = cfg['model'].get('input_size')
 
+    pose_collector = PoseCollector(args.control_frequency)
+
     if args.calibration:
-        betas = calibration(n_comps, sides)
+        betas = calibration(pose_collector, n_comps, sides)
     else:
         betas = {'left': torch.zeros((10,), dtype=torch.float32).to(device), 
                  'right': torch.zeros((10,), dtype=torch.float32).to(device)}
@@ -85,7 +87,6 @@ def main():
 
 
     mano_fitter = initialize_fitter(n_comps, sides)
-    pose_collector = PoseCollector(args.control_frequency)
 
     process_x = cfg['dataset']['preprocessing_x']
     process_y = cfg['dataset']['preprocessing_y']

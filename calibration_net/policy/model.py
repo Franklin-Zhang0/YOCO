@@ -53,7 +53,7 @@ class Model(nn.Module):
     def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, side=None):
         context = self.hyperlora.use(hypernet_x) if hypernet_x is not None else nullcontext()
         
-        ik_loss = 0.0
+        ik_loss = torch.tensor(0.0, device=x.device)
 
         with context:
             if self.iknet_cfg.get('enabled', False):

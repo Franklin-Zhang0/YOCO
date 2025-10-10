@@ -241,4 +241,43 @@ def transform_joint3d(joint_xyz: np.ndarray):
     transformed_joint_xyz = apply_transformation(joint_xyz, inv_tran)
     return transformed_joint_xyz
     
+class AngleNormalizer():
+    def __init__(self, urdf_path):
+        import yourdfpy
+        from pathlib import Path
+        robot_urdf_path = Path(urdf_path)
+
+        def filename_handler(fname: str) -> str:
+            base_path = robot_urdf_path.parent
+            return yourdfpy.filename_handler_magic(fname, dir=base_path)
+        
+        urdf = yourdfpy.URDF.load(robot_urdf_path, filename_handler=filename_handler) 
+        act_indices = urdf.actuated_joint_indices
+        joints = [urdf.robot.joints[i] for i in act_indices]
+        self.joint_upper_limits = np.array([joint.limit.upper for joint in joints])
+        self.joint_lower_limits = np.array([joint.limit.lower for joint in joints])
+
+    def normalize(self, angles: Union[np.ndarray, list]):
+        angles = np.asarray(angles)
+        if angles.ndim == 1:
+            assert angles.shape[0] == len(self.joint_upper_limits), f"Expected {len(self.joint_upper_limits)} angles, but got {angles.shape[0]}"
+            normalized_angles = (angles - self.joint_lower_limits) / (self.joint_upper_limits - self.joint_lower_limits)
+        elif angles.ndim == 2:
+            assert angles.shape[1] == len(self.joint_upper_limits), f"Expected {len(self.joint_upper_limits)} angles, but got {angles.shape[1]}"
+            normalized_angles = (angles - self.joint_lower_limits[None, :]) / (self.joint_upper_limits - self.joint_lower_limits)[None, :]
+        else:
+            raise ValueError(f"Expected angles to be 1D or 2D array, but got {angles.ndim}D array")
+        normalized_angles = np.clip(normalized_angles, 0.0, 1.0)
+        return normalized_angles
     
+    def denormalize(self, normalized_angles: Union[np.ndarray, list]):
+        normalized_angles = np.asarray(normalized_angles)
+        if normalized_angles.ndim == 1:
+            assert normalized_angles.shape[0] == len(self.joint_upper_limits), f"Expected {len(self.joint_upper_limits)} angles, but got {normalized_angles.shape[0]}"
+            angles = normalized_angles * (self.joint_upper_limits - self.joint_lower_limits) + self.joint_lower_limits
+        elif normalized_angles.ndim == 2:
+            assert normalized_angles.shape[1] == len(self.joint_upper_limits), f"Expected {len(self.joint_upper_limits)} angles, but got {normalized_angles.shape[1]}"
+            angles = normalized_angles * (self.joint_upper_limits - self.joint_lower_limits)[None, :] + self.joint_lower_limits[None, :]
+        else:
+            raise ValueError(f"Expected angles to be 1D or 2D array, but got {normalized_angles.ndim}D array")
+        return angles
