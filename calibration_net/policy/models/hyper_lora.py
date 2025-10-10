@@ -64,7 +64,7 @@ def init_hypernet(net, sample_num=128, n_steps=20):
     return net
 
 class HyperBlock(nn.Module):
-    def __init__(self, input_dim, in_feat, out_feat, rank, hidden_layers=[]):
+    def __init__(self, input_dim, in_feat, out_feat, rank, hidden_layers=[], train_init=True):
         super(HyperBlock, self).__init__()
         self.input_dim = input_dim
         if hidden_layers == [] or hidden_layers is None:
@@ -83,7 +83,8 @@ class HyperBlock(nn.Module):
             hidden_dim = dim
 
         self.fc = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
-        init_hypernet(self, sample_num=256, n_steps=30)
+        if train_init:
+            init_hypernet(self, sample_num=256, n_steps=30)
 
         # nn.init.zeros_(self.fc.weight[:in_feat * rank])
         # nn.init.zeros_(self.fc.bias[:in_feat * rank])
@@ -99,7 +100,7 @@ class HyperBlock(nn.Module):
         return x
 
 class HyperLoRA(nn.Module):
-    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, drop_out: float=0.0, hidden_layers=[], name_filter=[]):
+    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, drop_out: float=0.0, hidden_layers=[], name_filter=[], train_init=True):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
         self.base_model = base_model
@@ -109,6 +110,7 @@ class HyperLoRA(nn.Module):
         self.hidden_layers = hidden_layers
         self.name_filter = name_filter
         self.drop_out = drop_out
+        self.train_init = train_init
         self.build_lora()
 
     def build_lora(self):
@@ -123,7 +125,7 @@ class HyperLoRA(nn.Module):
             if self.max_modules > 0 and len(self.modules) >= self.max_modules:
                 break
             if isinstance(layers, nn.Linear):
-                module = HyperBlock(input_dim=self.input_dim, in_feat=layers.in_features, out_feat=layers.out_features, rank=self.rank, hidden_layers=self.hidden_layers)
+                module = HyperBlock(input_dim=self.input_dim, in_feat=layers.in_features, out_feat=layers.out_features, rank=self.rank, hidden_layers=self.hidden_layers, train_init=self.train_init)
                 self.modules.append((layers, module))
         self.lora_modules = nn.ModuleList([m for _, m in self.modules])
 

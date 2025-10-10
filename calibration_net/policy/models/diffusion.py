@@ -70,10 +70,9 @@ class FlowMatching(nn.Module):
         latent = self.fc(latent)
         return latent
 
-    
     def train_forward(self, cond: Tensor, x_1: Tensor):
-        cond = cond.reshape(cond.shape[0], -1)
-        x_1 = x_1.reshape(x_1.shape[0], -1)
+        cond = cond.view(cond.shape[0], -1)
+        x_1 = x_1.view(x_1.shape[0], -1)
         x_0 = torch.randn_like(x_1, device=cond.device)
         t =  torch.rand(len(x_1), 1).to(cond.device)
         dx_t = x_1 - x_0
@@ -114,13 +113,15 @@ class FlowMatching(nn.Module):
 
 # Example usage:
 if __name__ == "__main__":
-    input_dim = 10
-    hidden_dim = 64
+    input_dim = 42
+    output_dim = 6
+    hidden_layers = [256, 256, 256]
     n_steps = 5
-    model = FlowMatching(input_dim, hidden_dim, n_steps)
+    model = FlowMatching(input_dim, output_dim, n_steps=n_steps, hidden_layers=hidden_layers)
     
     # Example input sequence (batch_size, seq_length, input_dim)
-    x = torch.randn(16, 50, input_dim)  # 16 samples, 50 timesteps, 10 feature dimensions
+    x = torch.randn(256, 2, 21)  # 256 samples, 2 timesteps, 10 feature dimensions
     
-    output = model(x)
-    print(output.shape)  # Should output shape: (16, 50, 10)
+    from tqdm import tqdm
+    for i in tqdm(range(1000)):
+        output = model.train_forward(x, x_1=torch.randn(256, output_dim))

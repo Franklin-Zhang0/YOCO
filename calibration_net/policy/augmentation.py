@@ -12,8 +12,18 @@ def gaussian_noise(sigma=0.01):
         return x + noise
     return gaussian_noise_fn
 
+def history_dropout(p=0.1):
+    def history_dropout_fn(x):
+        T = x.shape[0]
+        mask = np.random.rand(T) < p
+        x[mask] = 0
+        return x
+    return history_dropout_fn
+
+
 AUGMENTATION_REGISTRY = {
     'dropout': dropout,
+    'history_dropout': history_dropout,
     'gaussian_noise': gaussian_noise,
 }
 

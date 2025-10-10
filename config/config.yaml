@@ -7,6 +7,8 @@ dataset:
     input: 
       dropout:
         p: 0.2
+      history_dropout:
+        p: 0.1
       gaussian_noise:
         sigma: 0.001
     hypernet_input:
@@ -22,7 +24,7 @@ trainer:
   num_epochs: 30
   batch_size: 64
   learning_rate: 0.001
-  weight_decay: 1e-4
+  weight_decay: 1e-3
   grad_clipping: 1.0
   calibnet_warmup_epochs: 20
   val_split: 0.1

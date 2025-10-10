@@ -70,6 +70,7 @@ class IKNet(nn.Module):
         self.invk_layers = nn.ModuleList(invk_layers)
 
     def forward(self, joint, side, ik_y=None):
+        B, T = joint.shape[:2]
         x = joint = joint.contiguous().view(-1, self.njoints * 3)
         
         for layers in self.invk_layers:
@@ -79,14 +80,14 @@ class IKNet(nn.Module):
         quat = quat.view(-1, 15, 4)
         quat = normalize_quaternion(quat)
         so3 = quaternion_to_angle_axis(quat).contiguous()
-        so3 = so3.view(-1, 15 * 3)
+        so3 = so3.view(B, T, 15 * 3)
 
         if self.output_pca:
             assert side is not None
             coeff_idx = side == Side.LEFT.value
             coeff = self.stack_coeff.to(so3.device, so3.dtype)[coeff_idx.long(), :, :]
-            pca = coeff @ so3.unsqueeze(-1)
-            pca = pca.squeeze(-1)
+            pca = coeff @ so3.permute(0, 2, 1)  # B x n_comps x T
+            pca = pca.permute(0, 2, 1).contiguous()  # B x T x n_comps
 
         if ik_y is not None:
             ik_loss = nn.MSELoss()(pca, ik_y)
