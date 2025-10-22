@@ -70,7 +70,7 @@ class IKNet(nn.Module):
         self.invk_layers = nn.ModuleList(invk_layers)
 
     def forward(self, joint, side, ik_y=None):
-        B, T = joint.shape[:2]
+        B, T, D = joint.shape
         x = joint = joint.contiguous().view(-1, self.njoints * 3)
         
         for layers in self.invk_layers:

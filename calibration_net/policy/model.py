@@ -106,7 +106,7 @@ def load_model(model_dir: str, device: str = 'cpu') -> Model:
     normalization_stats = {k: np.array(v) for k,v in walk_dict(normalization_stats)}
     normalization_stats = create_dict_from_flattened(normalization_stats)
 
-    model = Model(**model_cfg)
+    model = Model(**model_cfg, train=False)
     model_weight_path = os.path.join(model_dir, 'model.pth')
     model.load_state_dict(torch.load(model_weight_path, map_location=device), strict=False)
     model.to(device)

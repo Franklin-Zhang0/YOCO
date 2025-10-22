@@ -156,6 +156,19 @@ class HyperLoRA(nn.Module):
     def use(self, hyper_lora_input: Tensor) -> HyperLoRAHookContext:
         """Factory that returns a context manager carrying your argument."""
         return HyperLoRAHookContext(self, hyper_lora_input)
+    
+    @torch.no_grad()
+    def merge_weight(self, hyper_lora_input: Tensor):
+        assert hyper_lora_input.shape[0] == 1, "only support batch size 1 for merging weight"
+        lora_weights = self.prepare_lora_weights(hyper_lora_input)
+        for layers, lora_weight in lora_weights:
+            in_dim, out_dim = layers.in_features, layers.out_features
+            lora_A = lora_weight[:, :in_dim*self.rank].reshape(1, in_dim, self.rank)
+            lora_B = lora_weight[:, in_dim*self.rank:].reshape(1, self.rank, out_dim)
+            delta_w = (lora_A @ lora_B) / float(self.rank) * self.alpha
+            delta_w = delta_w.squeeze(0)
+            layers.weight.data += delta_w.T
+        return self.base_model
 
 if __name__ == "__main__":
     simple_mlp = nn.Sequential(
