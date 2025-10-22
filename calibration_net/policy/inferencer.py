@@ -42,7 +42,9 @@ class ModelInferencer():
 
         if batched:
             x = x.reshape(B, T, -1)
-        
+        else:
+            x = x[None, ...]
+
         x = torch.as_tensor(x, device=self.device).float()
         with torch.no_grad():
             y_pred = self.model.predict(x, noisy_act=self.noise, side=self.enc_side_tensor)

@@ -32,7 +32,7 @@ def save_data(poses, betas, output_dir, idx, hand_type, angle_normalizer):
         broadcast_pose = broadcast_pose[:, ::-1]
     denormed_broadcast_pose = angle_normalizer.denormalize(broadcast_pose)
     for side in ['left', 'right']:
-        if side in poses:
+        if side in poses and side in betas:
             pose = poses[side]
             save_dict = {
                 'world_hand_joints': pose,
@@ -48,9 +48,21 @@ def save_data(poses, betas, output_dir, idx, hand_type, angle_normalizer):
                 pickle.dump(save_dict, f)
             print(f'Saved {side} hand pose to {save_path}')
 
-def main(output_dir: str, hand_type: str='inspire', collector_type: str='avp', ip: str='', frame_rate: int=60):
+def main(output_dir: str, 
+         hand_type: str='inspire', 
+         collector_type: str='avp', 
+         ip: str='', 
+         left_glove_port: str='', 
+         right_glove_port: str='', 
+         calibrate: bool=False,
+         hand_model_path: str='',
+         glove_model_path: str='',
+         frame_rate: int=60,
+         ):
     if collector_type == 'avp' and ip == '':
         raise ValueError("AVP IP address must be provided when collector_type is 'avp'.")
+    if collector_type == 'glove' and left_glove_port == '' and right_glove_port == '':
+        raise ValueError("At least one glove port must be provided when collector_type is 'glove'.")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(output_dir, timestamp)
@@ -99,9 +111,9 @@ def main(output_dir: str, hand_type: str='inspire', collector_type: str='avp', i
     pose_list = list(FIX_POSE_REGISTER.keys())
     stop_flag = False
 
-    pose_collector = get_pose_collector(collector_type, avp_ip=ip, frame_rate=60)
+    pose_collector = get_pose_collector(collector_type, avp_ip=ip, frame_rate=60, left_glove_port=left_glove_port, right_glove_port=right_glove_port, hand_model_path=hand_model_path, glove_model_path=glove_model_path, calibrate=calibrate)
     print('Fitting betas, please randomly move your hands for 10 seconds...')
-    betas = calibration(pose_collector, n_comps=21, sides=['left','right'], timesteps=frame_rate*10)
+    betas = calibration(pose_collector, n_comps=21, sides=['left'], timesteps=frame_rate*10)
 
     key_idx = 0
     poses = None
@@ -114,7 +126,7 @@ def main(output_dir: str, hand_type: str='inspire', collector_type: str='avp', i
         sleep_flag = True
         time.sleep(2)
         print(Fore.RED+'\nCollecting pose...' + Style.RESET_ALL)
-        poses = pose_collector.collect(timesteps=frame_rate * 3, sides=['left','right'])
+        poses = pose_collector.collect(timesteps=frame_rate * 3, sides=['left'])
         save_data(poses, betas, output_dir, key_idx, hand_type, angle_normalizer)
         key_idx += 1
         sleep_flag = False

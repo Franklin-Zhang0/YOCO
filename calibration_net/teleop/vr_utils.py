@@ -5,7 +5,7 @@ import torch
 
 MANO_PATH = os.environ.get("MANO_PATH", "")
 def calibration(pose_collector: BaseCollector, n_comps:int, sides:list[str], timesteps:int=200):
-    poses = pose_collector.collect(timesteps)
+    poses = pose_collector.collect(timesteps, sides=sides)
     betas = {}
     for side in sides:
         mano_fitter = ManoSequenceFitter(

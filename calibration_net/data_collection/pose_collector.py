@@ -112,11 +112,12 @@ class PoseCollector(BaseCollector):
 
 
 class GlovePoseCollector(BaseCollector):
-    def __init__(self, hand_model_path, left_glove_port=None, right_glove_port=None, calibrate=False):
+    def __init__(self, hand_model_path, left_glove_port=None, right_glove_port=None, glove_model_path=None, calibrate=False):
         from calibration_net.utils import initilize_glove
         from open_cyber_glove.visualizer import HandVisualizer
         glove_sdk = initilize_glove(left_port=left_glove_port, 
                                     right_port=right_glove_port,
+                                    model_path=glove_model_path,
                                     calibrate=calibrate)
         visualizer = HandVisualizer(hand_model_path)
         self.glove_sdk = glove_sdk
@@ -136,17 +137,16 @@ class GlovePoseCollector(BaseCollector):
             if stop_flag:
                 break
 
-            sides = ['left', 'right']
             for side in sides:
                 if side == 'left':
-                    if self.glove_sdk.left_hand is None:
+                    if self.glove_sdk.left_glove is None:
                         continue
-                    angles = self.glove_sdk.left_hand.get_angles(method='model')
+                    angles = self.glove_sdk.get_angles(method='model', hand_type='left')
                     joints = self.visualizer.get_joints(angles, hand_type='left')
                 else:
-                    if self.glove_sdk.right_hand is None:
+                    if self.glove_sdk.right_glove is None:
                         continue
-                    angles = self.glove_sdk.right_hand.get_angles(method='model')
+                    angles = self.glove_sdk.get_angles(method='model', hand_type='right')
                     joints = self.visualizer.get_joints(angles, hand_type='right')
                 hand_pose[side].append(joints)
             print(f"Number of frames collected, left:{len(hand_pose['left'])}/{timesteps}, right:{len(hand_pose['right'])}/{timesteps}", end='\r')
@@ -216,6 +216,11 @@ def get_pose_collector(collector_type, **kwargs) -> BaseCollector:
         return AvpPoseCollector(kwargs['avp_ip'], kwargs.get('frame_rate', 60))
     
     elif collector_type == 'glove':
-        return GlovePoseCollector(**kwargs)
+        return GlovePoseCollector(kwargs['hand_model_path'], 
+                                  left_glove_port=kwargs.get('left_glove_port', None), 
+                                  right_glove_port=kwargs.get('right_glove_port', None), 
+                                  glove_model_path=kwargs.get('glove_model_path', None),
+                                  calibrate=kwargs.get('calibrate', False), 
+                                  )
     else:
         raise ValueError(f"Unknown collector type: {collector_type}")
