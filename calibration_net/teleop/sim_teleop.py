@@ -6,10 +6,11 @@ from calibration_net.policy.inferencer import ModelInferencer
 from viser.extras import ViserUrdf
 import numpy as np
 from calibration_net.teleop.vr_utils import initialize_fitter
-from calibration_net.data_collection.pose_collector import AvpPoseCollector
+from calibration_net.data_collection.pose_collector import get_pose_collector
 import tyro
 import time
 import multiprocessing as mp
+from calibration_net.utils import AngleNormalizer
 
 mp.set_start_method('spawn', force=True)
 DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
@@ -18,7 +19,7 @@ DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
 def retargeting(model_dir, side, queue, calibration):
     inferencer = ModelInferencer(model_dir=model_dir, side=side)
 
-    pose_collector = AvpPoseCollector(avp_ip='10.212.30.224', frame_rate=60)
+    pose_collector = get_pose_collector(collector_type='avp', avp_ip='10.212.36.171', frame_rate=60)
     fitter = initialize_fitter(inferencer.n_comps, [side])
     if calibration:
         print("Starting calibration...")
@@ -55,12 +56,13 @@ def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool
         base_path = robot_urdf_path.parent
         return yourdfpy.filename_handler_magic(fname, dir=base_path)
     
-    queue = mp.Queue()
+    queue = mp.Queue(maxsize=1)
     retarget_process = mp.Process(target=retargeting, args=(model_dir, side, queue, calibration), daemon=True)
     retarget_process.start()
 
-    urdf = yourdfpy.URDF.load(robot_urdf_path, filename_handler=filename_handler)    
-    
+    urdf = yourdfpy.URDF.load(robot_urdf_path, filename_handler=filename_handler)  
+    angle_normalizer = AngleNormalizer(robot_urdf_path)
+
     server = viser.ViserServer()
 
     # We will transform everything by the transform below, for aesthetics.
@@ -75,7 +77,6 @@ def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/scene_offset/base")
     server.scene.add_grid("/grid", 1.0, 1.0)
     
-    prev_joints = np.zeros(6)
     while True:
         with server.atomic():
             base_frame.wxyz = np.zeros(4)
@@ -84,10 +85,11 @@ def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool
             try:
                 joints = queue.get(block=False)
             except:
-                joints = prev_joints
+                continue
+            print(joints)
+            joints = angle_normalizer.denormalize(joints)
 
-            urdf_vis.update_cfg(np.array(joints))
-            prev_joints = joints
+            urdf_vis.update_cfg(joints)
 
 
 if __name__ == "__main__":
