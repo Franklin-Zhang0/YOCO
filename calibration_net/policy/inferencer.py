@@ -19,7 +19,7 @@ class ModelInferencer():
         else:
             self.shape = self.betas
         
-        self.model.network = self.model.hyperlora.merge_weight(self.shape.unsqueeze(0))
+        self.model.hyperlora.merge_weight(self.shape.unsqueeze(0))
         process_x = self.cfg['dataset']['preprocessing_x']
         process_y = self.cfg['dataset']['preprocessing_y']
         self.process_x_fn = build_preprocessing(process_x, 'x', norm_stats=self.norm_stats)

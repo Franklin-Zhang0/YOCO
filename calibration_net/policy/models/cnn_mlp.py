@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from calibration_net.policy.models.resmlp import ResMLPBlock
 
 class CNN_MLP(nn.Module):
     def __init__(self, input_size, output_size, input_channel, hidden_layers=[]):
@@ -24,8 +25,7 @@ class CNN_MLP(nn.Module):
         layers = []
         in_features = input_size
         for hidden_size in hidden_layers:
-            layers.append(nn.Linear(in_features, hidden_size))
-            layers.append(nn.GELU())
+            layers.append(ResMLPBlock(in_features, hidden_size))
             in_features = hidden_size
         self.fc = nn.Linear(in_features, output_size)
         layers.append(self.fc)

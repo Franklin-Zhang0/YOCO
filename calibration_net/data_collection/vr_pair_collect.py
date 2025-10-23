@@ -27,7 +27,8 @@ def load_urdf(hand_type: str, side: str):
     return urdf
 
 def save_data(poses, betas, output_dir, idx, hand_type, angle_normalizer):
-    broadcast_pose = np.repeat(1-np.array(FIX_POSE_REGISTER[ list(FIX_POSE_REGISTER.keys())[idx]])[np.newaxis, ...], len(poses['left']), axis=0)
+    global POSE_REGISTER
+    broadcast_pose = np.repeat(1-np.array(POSE_REGISTER[ list(POSE_REGISTER.keys())[idx]])[np.newaxis, ...], len(poses['left']), axis=0)
     if hand_type == 'inspire':
         broadcast_pose = broadcast_pose[:, ::-1]
     denormed_broadcast_pose = angle_normalizer.denormalize(broadcast_pose)
@@ -40,7 +41,7 @@ def save_data(poses, betas, output_dir, idx, hand_type, angle_normalizer):
                 'mano_side': [side],
                 'robot_joint_pose': denormed_broadcast_pose,
                 'robot_type': hand_type,
-                'pose_name': list(FIX_POSE_REGISTER.keys())[idx],
+                'pose_name': list(POSE_REGISTER.keys())[idx],
                 'normalized_robot_joint_pose': broadcast_pose
             }
             save_path = os.path.join(output_dir, f'{side}_{idx}.pkl')
@@ -64,6 +65,8 @@ def main(output_dir: str,
     if collector_type == 'glove' and left_glove_port == '' and right_glove_port == '':
         raise ValueError("At least one glove port must be provided when collector_type is 'glove'.")
     
+    global POSE_REGISTER
+    POSE_REGISTER = FIX_POSE_REGISTER[hand_type]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(output_dir, timestamp)
     if not os.path.exists(output_dir):
@@ -108,7 +111,7 @@ def main(output_dir: str,
     left_base_frame.position = np.zeros(3)
     right_base_frame.wxyz = np.zeros(4)
     right_base_frame.position = np.zeros(3)
-    pose_list = list(FIX_POSE_REGISTER.keys())
+    pose_list = list(POSE_REGISTER.keys())
     stop_flag = False
 
     pose_collector = get_pose_collector(collector_type, avp_ip=ip, frame_rate=60, left_glove_port=left_glove_port, right_glove_port=right_glove_port, hand_model_path=hand_model_path, glove_model_path=glove_model_path, calibrate=calibrate)
@@ -156,9 +159,9 @@ def main(output_dir: str,
 
     print(f'Press n to collect next pose, r to restore previous pose, q to quit.')
     while True:
-        joints = 1 - np.array(FIX_POSE_REGISTER[pose_list[key_idx]])
+        joints = np.array(POSE_REGISTER[pose_list[key_idx]])
         if hand_type == 'inspire':
-            joints = joints[::-1]
+            joints = 1 - joints[::-1]
             
         # joints = joints * (joint_upper_limits - joint_lower_limits) + joint_lower_limits
         joints = angle_normalizer.denormalize(joints)
