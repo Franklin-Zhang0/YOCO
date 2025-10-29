@@ -16,16 +16,27 @@ class CombinedModel(nn.Module):
         super(CombinedModel, self).__init__()
         self.models = nn.ModuleList()
         self.joints_layout = joints_layout
-        kwargs['input_size'] = 1
+        kwargs['input_size'] = len(self.get_pos_range(0, kwargs['input_size']))
         for joints in joints_layout:
             output_size = len(joints)
             model = model_cls(output_size=output_size ,**kwargs)
             self.models.append(model)
+
+    def get_pos_range(self, i, n_pos):
+        if n_pos == 21:
+            pos_range = list(range(1+4*i, 1+4*(i+1)))
+        elif n_pos == 5:
+            pos_range = list(range(i, i+1))
+        else:
+            raise NotImplementedError(f"n_pos {n_pos} not supported")
+        return pos_range
+
             
     def forward(self, x, **kwargs):
         outs = []
         for i, model in enumerate(self.models):
-            out = model(x[..., i, :], **kwargs)
+            pos_range = self.get_pos_range(i, x.shape[-2])
+            out = model(x[:, pos_range], **kwargs)
             outs.append(out)
         x = torch.cat(outs, dim=-1)
         return x
@@ -34,7 +45,8 @@ class CombinedModel(nn.Module):
         outs = []
         losses = []
         for i, model in enumerate(self.models):
-            out = model.train_forward(x[..., i, :], y[:, sum(len(j) for j in self.joints_layout[:i]):sum(len(j) for j in self.joints_layout[:i+1])])
+            pos_range = self.get_pos_range(i, x.shape[-2])
+            out = model.train_forward(x[:, pos_range], y[:, sum(len(j) for j in self.joints_layout[:i]):sum(len(j) for j in self.joints_layout[:i+1])])
             outs.append(out['pred_y'])
             losses.append(out['loss'])
         pred_y = torch.cat(outs, dim=-1)
@@ -48,13 +60,14 @@ class CombinedModel(nn.Module):
     def predict(self, x, **kwargs):
         outs = []
         for i, model in enumerate(self.models):
-            out = model.predict(x[..., i, :], **kwargs)
+            pos_range = self.get_pos_range(i, x.shape[-2])
+            out = model.predict(x[:, pos_range], **kwargs)
             outs.append(out)
         x = torch.cat(outs, dim=-1)
         return x
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, train=True):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, train=True, joints_layout=[]):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -64,6 +77,7 @@ class Model(nn.Module):
         self.iknet_cfg = iknet_cfg
         self.input_channel = input_channel
         self.is_train = train
+        self.joints_layout = joints_layout
         self.build_network()
         
     def build_network(self):
@@ -74,14 +88,15 @@ class Model(nn.Module):
                 input_channel=self.input_channel,
                 hidden_layers=self.hidden_layers
             )
-            self.calib_block = self.network.calib_block
-            # self.network = CombinedModel(
-            #     joints_layout=[[0,1,2,3],[4,5,6],[7,8,9],[10],[11]],
-            #     model_cls=CNN_MLP,
-            #     input_size=self.input_size,
-            #     input_channel=self.input_channel,
-            #     hidden_layers=self.hidden_layers
-            # )
+
+        elif self.model_type == 'CombinedMLP':
+            self.network = CombinedModel(
+                joints_layout=self.joints_layout,
+                model_cls=CNN_MLP,
+                input_size=self.input_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
+            )
 
         elif self.model_type == 'Flow':
             self.network = FlowMatching(

@@ -5,7 +5,56 @@ import numpy as np
 
 TIP_INDICIES = [4, 8, 12, 16, 20]
 
-def get_geort_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn.Module, fk_model:torch.nn.Module, loss_weights:dict, robot_point_cloud:torch.Tensor) -> dict:
+def get_alignment_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn.Module, fk_model:torch.nn.Module) -> torch.Tensor:
+    def ik_forward(x):
+        return ik_model(x, side=side)
+    points = points.float().cuda()
+    embedded_point = fk_model(ik_forward(points))
+
+    embedded_finger_tip = embedded_point
+    mano_finger_tip = points[:, TIP_INDICIES, :]
+
+    # append wrist point at origin
+    embedded_finger_tip = torch.cat(
+        [embedded_finger_tip, torch.zeros_like(embedded_finger_tip[:, :1, :])], dim=1
+    )
+    mano_finger_tip = torch.cat(
+        [mano_finger_tip, torch.zeros_like(mano_finger_tip[:, :1, :])], dim=1
+    )
+
+    # NxN grid of relative positions.
+    delta_mano = mano_finger_tip[:, :, None] - mano_finger_tip[:, None, :]
+    delta_robot = embedded_finger_tip[:, :, None] - embedded_finger_tip[:, None, :]
+
+    # Vector regularization.
+    position_scale = torch.mean(torch.norm(delta_mano + 1e-6, dim=-1)) / torch.mean(torch.norm(delta_robot + 1e-6, dim=-1)).detach()
+    position_scale = torch.clip(position_scale, 0.8, 1.2)
+    residual_position_delta = (
+        (delta_mano - delta_robot * position_scale)
+        * (1 - torch.eye(delta_mano.shape[1])[None, ..., None]).to(device=points.device)
+    )**2
+
+    # Vector angle regularization.
+    delta_mano_normalized = delta_mano / torch.norm(
+        delta_mano + 1e-6, dim=-1, keepdim=True
+    )
+    delta_robot_normalized = delta_robot / torch.norm(
+        delta_robot + 1e-6, dim=-1, keepdim=True
+    )
+    residual_angle_delta = 1 - (delta_mano_normalized * delta_robot_normalized).sum(
+        dim=-1
+    )
+    residual_angle_delta = (
+        residual_angle_delta
+        * (1 - torch.eye(residual_angle_delta.shape[1])).to(device=points.device)
+    )
+    
+    loss = residual_position_delta.mean() + residual_angle_delta.mean()
+    return loss
+
+
+def get_geort_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn.Module, fk_model:torch.nn.Module, robot_point_cloud:torch.Tensor) -> dict:
+    loss_weights = {'curvature':0.0, 'pinch':1.0, 'direction':0.0, 'chamfer':1.0}
     points = points.float().cuda()
     side = side.float().cuda()
     def ik_forward(x):
@@ -13,7 +62,6 @@ def get_geort_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn.Mod
     
     def fk_forward(x):
         pos = fk_model(x)
-        # pos[..., 0] *= -side[:, None]
         return pos
     
     embedded_point = fk_forward(ik_forward(points))

@@ -12,7 +12,7 @@ from .models.fk_model import FKModel, FKTrainer
 from calibration_net.utils import walk_dict, create_dict_from_flattened
 from copy import deepcopy
 from .logger import get_logger_cls 
-from .loss import get_geort_loss
+from .loss import get_geort_loss, get_alignment_loss
 from contextlib import nullcontext
 
 class Trainer():
@@ -60,9 +60,9 @@ class Trainer():
             
         self.model.to(self.device)
 
-        if self.trainer_args.loss_type in ['geort', 'composite']:
+        if self.trainer_args.loss_type in ['geort', 'composite', 'alignment']:
             print("Using FK model for loss computation")
-            self.fk_model = FKModel(self.trainer_args.joint_layout).to(self.device)
+            self.fk_model = FKModel(self.args.model.joints_layout).to(self.device)
             self.fk_trainer = FKTrainer(self.fk_model, self.trainer_args.fk_ds_path, self.trainer_args.fk_model_path, self.device)
             if os.path.exists(self.trainer_args.fk_model_path):
                 print(f"Loading FK model from {self.trainer_args.fk_model_path}")
@@ -121,11 +121,20 @@ class Trainer():
         elif loss_type == 'geort':
             loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud, loss_weights=self.trainer_args.loss_weights)
             return loss
+        elif loss_type == 'alignment':
+            loss = get_alignment_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model)
+            return {'loss': loss}
         elif loss_type == 'composite':
-            geo_rt_loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud, loss_weights=self.trainer_args.loss_weights)
-            geo_rt_loss['qpos_loss'] = result['loss']
-            geo_rt_loss['loss'] = result['loss'] * self.trainer_args.loss_weights['qpos'] + geo_rt_loss['loss']
-            return geo_rt_loss
+            total_loss = 0.0
+            loss = {}
+            loss['geort'] = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)['loss']
+            loss['alignment'] = get_alignment_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model)
+            loss['qpos'] = result['loss']
+
+            for key in loss:
+                total_loss += loss[key] * self.trainer_args.loss_weights[key]
+            loss['loss'] = total_loss
+            return loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 

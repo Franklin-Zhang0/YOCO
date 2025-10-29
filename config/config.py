@@ -43,6 +43,7 @@ class ModelConfig:
     output_size: int = field(default_factory=int)
     hypernet_cfg: HypernetCfg = field(default_factory=HypernetCfg)
     iknet_cfg: IKNetCfg = field(default_factory=IKNetCfg)
+    joints_layout: Optional[list] = field(default_factory=lambda: [[0,1,2,3], [4,5,6], [7,8,9], [10], [11]])
 
 @dataclass
 class LoggerConfig:
@@ -61,10 +62,9 @@ class TrainerConfig:
     val_split: float = 0.2
     device: str = 'cuda'  # 'cpu', 'cuda', or 'xpu'
     loss_type: str = 'plain'  # 'qpos', 'geort', 'composite'
-    loss_weights: Dict[str, float] = field(default_factory=lambda: {'curvature':0.1, 'pinch':1.0, 'direction':0.1, 'chamfer':8.0, 'qpos':10.0})
+    loss_weights: Dict[str, float] = field(default_factory=lambda: {'qpos':1.0, 'geort': 0.0, 'alignment':0.02})
     save_path: Optional[str] = None
     load_path: Optional[str] = None
-    joint_layout: Optional[list] = field(default_factory=lambda: [[0,1,2,3], [4,5,6], [7,8,9], [10], [11]])
     fk_model_path: Optional[str] = "expdata/fk/model/omni.pth"
     fk_ds_path: Optional[str] = "expdata/fk/dataset/omni.npz"
     save_interval: int = 5  # Save model every n epochs
