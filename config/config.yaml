@@ -2,22 +2,19 @@ dataset:
   path: "/home/franklin/data/hand_teleop/left_glove_to_inspire_0718_merged/"
   input_keys: "glove.left.tensile_data"
   output_keys: "robot.left.target_angles"
-  side: "left"
   augmentations:
     input: 
       dropout:
         p: 0.2
-      history_dropout:
-        p: 0.1
       gaussian_noise:
-        sigma: 0.001
+        sigma: 0.0001
     hypernet_input:
       dropout:
         p: 0.3
 
 model:
   type: "MLP"
-  hidden_layers: [256, 256, 256]
+  hidden_layers: [256, 256, 256, 256]
 
 trainer:
   expname: "MLP_0721"

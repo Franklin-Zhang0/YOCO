@@ -19,7 +19,8 @@ class ModelInferencer():
         else:
             self.shape = self.betas
         
-        self.model.hyperlora.merge_weight(self.shape.unsqueeze(0))
+        if hasattr(self.model, 'hyperlora'):
+            self.model.hyperlora.merge_weight(self.shape.unsqueeze(0))
         process_x = self.cfg['dataset']['preprocessing_x']
         process_y = self.cfg['dataset']['preprocessing_y']
         self.process_x_fn = build_preprocessing(process_x, 'x', norm_stats=self.norm_stats)
@@ -38,10 +39,9 @@ class ModelInferencer():
             x = x[None, ...]
 
         x = self.process_x_fn(x)
-        assert x.ndim == 2
 
         if batched:
-            x = x.reshape(B, T, -1)
+            pass
         else:
             x = x[None, ...]
 

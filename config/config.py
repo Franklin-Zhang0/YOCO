@@ -8,10 +8,7 @@ class DatasetConfig:
     input_keys: str = field(default_factory=str)
     hypernet_input_keys: str = field(default_factory=str)
     output_keys: str = field(default_factory=str)
-    side: str = 'left'
     augmentations: Dict[str, float] = field(default_factory=dict)
-    obs_horizon: int = 1
-    action_horizon: int = 1
     preprocessing_x: list = field(default_factory=list)
     preprocessing_y: list = field(default_factory=list)
     cat_side: bool = False
@@ -63,8 +60,13 @@ class TrainerConfig:
     num_epochs: int = field(default_factory=int)
     val_split: float = 0.2
     device: str = 'cuda'  # 'cpu', 'cuda', or 'xpu'
+    loss_type: str = 'plain'  # 'qpos', 'geort', 'composite'
+    loss_weights: Dict[str, float] = field(default_factory=lambda: {'curvature':0.1, 'pinch':1.0, 'direction':0.1, 'chamfer':8.0, 'qpos':10.0})
     save_path: Optional[str] = None
     load_path: Optional[str] = None
+    joint_layout: Optional[list] = field(default_factory=lambda: [[0,1,2,3], [4,5,6], [7,8,9], [10], [11]])
+    fk_model_path: Optional[str] = "expdata/fk/model/omni.pth"
+    fk_ds_path: Optional[str] = "expdata/fk/dataset/omni.npz"
     save_interval: int = 5  # Save model every n epochs
     calib_finetune: bool = False
     logger: LoggerConfig = field(default_factory=LoggerConfig)

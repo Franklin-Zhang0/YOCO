@@ -11,6 +11,48 @@ from calibration_net.policy.models.iknet import IKNet
 from contextlib import nullcontext
 from omegaconf import OmegaConf
 
+class CombinedModel(nn.Module):
+    def __init__(self, joints_layout, model_cls, **kwargs):
+        super(CombinedModel, self).__init__()
+        self.models = nn.ModuleList()
+        self.joints_layout = joints_layout
+        kwargs['input_size'] = 1
+        for joints in joints_layout:
+            output_size = len(joints)
+            model = model_cls(output_size=output_size ,**kwargs)
+            self.models.append(model)
+            
+    def forward(self, x, **kwargs):
+        outs = []
+        for i, model in enumerate(self.models):
+            out = model(x[..., i, :], **kwargs)
+            outs.append(out)
+        x = torch.cat(outs, dim=-1)
+        return x
+    
+    def train_forward(self, x, y):
+        outs = []
+        losses = []
+        for i, model in enumerate(self.models):
+            out = model.train_forward(x[..., i, :], y[:, sum(len(j) for j in self.joints_layout[:i]):sum(len(j) for j in self.joints_layout[:i+1])])
+            outs.append(out['pred_y'])
+            losses.append(out['loss'])
+        pred_y = torch.cat(outs, dim=-1)
+        loss = sum(losses)
+        result = {
+            'loss': loss,
+            'pred_y': pred_y,
+        }
+        return result
+    
+    def predict(self, x, **kwargs):
+        outs = []
+        for i, model in enumerate(self.models):
+            out = model.predict(x[..., i, :], **kwargs)
+            outs.append(out)
+        x = torch.cat(outs, dim=-1)
+        return x
+
 class Model(nn.Module):
     def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, train=True):
         super(Model, self).__init__()
@@ -33,6 +75,13 @@ class Model(nn.Module):
                 hidden_layers=self.hidden_layers
             )
             self.calib_block = self.network.calib_block
+            # self.network = CombinedModel(
+            #     joints_layout=[[0,1,2,3],[4,5,6],[7,8,9],[10],[11]],
+            #     model_cls=CNN_MLP,
+            #     input_size=self.input_size,
+            #     input_channel=self.input_channel,
+            #     hidden_layers=self.hidden_layers
+            # )
 
         elif self.model_type == 'Flow':
             self.network = FlowMatching(
@@ -49,6 +98,8 @@ class Model(nn.Module):
         if self.hypernet_cfg['input_size'] > 0:
             self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network, train_init=self.is_train)
             self.calib_block = self.hyperlora.lora_modules
+        else:
+            self.calib_block = None
         return self.network
     
     def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, side=None):

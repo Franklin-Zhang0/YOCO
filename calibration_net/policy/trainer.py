@@ -8,9 +8,12 @@ import pickle
 from .dataset import TeleopDataset, SequenceDataset
 from datetime import datetime
 from .model import Model, load_model
+from .models.fk_model import FKModel, FKTrainer
 from calibration_net.utils import walk_dict, create_dict_from_flattened
 from copy import deepcopy
 from .logger import get_logger_cls 
+from .loss import get_geort_loss
+from contextlib import nullcontext
 
 class Trainer():
     def __init__(self, args):
@@ -34,8 +37,8 @@ class Trainer():
         if self.args.model.iknet_cfg.enabled:
             self.args.model.input_size = self.args.model.iknet_cfg.n_comps if self.args.model.iknet_cfg.output_pca else 45
         else:
-            self.args.model.input_size = example['input'].shape[-1]
-        self.args.model.input_channel = example['input'].shape[-2]
+            self.args.model.input_size = example['input'].shape[-2]
+        self.args.model.input_channel = example['input'].shape[-1]
         self.args.model.output_size = example['output'].shape[-1]
         
         if 'hypernet_input' in example:
@@ -56,6 +59,18 @@ class Trainer():
             self.model = Model(**self.args.model)
             
         self.model.to(self.device)
+
+        if self.trainer_args.loss_type in ['geort', 'composite']:
+            print("Using FK model for loss computation")
+            self.fk_model = FKModel(self.trainer_args.joint_layout).to(self.device)
+            self.fk_trainer = FKTrainer(self.fk_model, self.trainer_args.fk_ds_path, self.trainer_args.fk_model_path, self.device)
+            if os.path.exists(self.trainer_args.fk_model_path):
+                print(f"Loading FK model from {self.trainer_args.fk_model_path}")
+                fk_state_dict = torch.load(self.trainer_args.fk_model_path, map_location=self.device)
+                self.fk_model.load_state_dict(fk_state_dict)
+            else:
+                self.fk_trainer.train()
+            self.fk_model.eval()
         
         if self.trainer_args.calib_finetune:
             self.set_trainable(main_network=False, calib=True)
@@ -68,15 +83,16 @@ class Trainer():
     def set_trainable(self, main_network=True, calib=True):
         for param in self.model.parameters():
             param.requires_grad = main_network
-        for param in self.model.calib_block.parameters():
-            param.requires_grad = calib
+        if self.model.calib_block is not None:
+            for param in self.model.calib_block.parameters():
+                param.requires_grad = calib
 
     def switch_last_layer(self):
         self.model.fc = nn.Linear(self.model.fc.in_features, self.args.model.output_size)
         self.model.network[-1] = self.model.fc
 
     def create_optimizer(self):
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.trainer_args.learning_rate, weight_decay=self.trainer_args.weight_decay)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.trainer_args.learning_rate)
         self.loss_function = nn.MSELoss()
     
     def load_dataset(self):
@@ -90,17 +106,32 @@ class Trainer():
             self.trainset = self.dataset
             val_dataset_args = deepcopy(self.args.dataset)
             val_dataset_args.path = self.args.val_dataset.path
-            self.valset = SequenceDataset(**val_dataset_args)
+            self.valset = SequenceDataset(**val_dataset_args, is_train=False)
             self.valset.normalization_stats = self.trainset.normalization_stats  # use the same stats for validation set
         # self.trainset = torch.utils.data.Subset(self.dataset, range(256))  
         # self.valset = torch.utils.data.Subset(self.dataset, range(128))
         
         self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=4)
         self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=4)
-
+        
+    def get_loss(self, data, result):
+        loss_type = self.trainer_args.loss_type
+        if loss_type == 'qpos':
+            return {'loss': result['loss']}
+        elif loss_type == 'geort':
+            loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud, loss_weights=self.trainer_args.loss_weights)
+            return loss
+        elif loss_type == 'composite':
+            geo_rt_loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud, loss_weights=self.trainer_args.loss_weights)
+            geo_rt_loss['qpos_loss'] = result['loss']
+            geo_rt_loss['loss'] = result['loss'] * self.trainer_args.loss_weights['qpos'] + geo_rt_loss['loss']
+            return geo_rt_loss
+        else:
+            raise ValueError(f"Unknown loss type: {loss_type}")
 
     def train_step(self, data, do_backward=True):
         x, y, side = data['input'], data['output'], data['side']
+        x[..., 0] *= -side.unsqueeze(-1)  # flip x axis based on side
         x, y, side = x.float().to(self.device), y.float().to(self.device), side.to(self.device)
         
         if 'ik_y' in data:
@@ -114,25 +145,28 @@ class Trainer():
             hypernet_input = None
 
         step_info = {}
-        
-        if do_backward: #training
-            self.global_steps += 1
-            result = self.model(x, y, hypernet_input, side=side, ik_y=ik_y)
-            loss = result['loss']
-            self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
-            self.optimizer.step()
-            for key, value in result.items():
-                if 'loss' in key:
+
+        context = self.model.hyperlora.use(hypernet_input) if hypernet_input is not None else nullcontext()
+        with context:
+            if do_backward: #training
+                self.global_steps += 1
+                # result = self.model(x, y, hypernet_input, side=side, ik_y=ik_y)
+                result = self.model(x, y, side=side, ik_y=ik_y)
+                loss = self.get_loss(data, result)
+                self.optimizer.zero_grad()
+                loss['loss'].backward()
+                nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
+                self.optimizer.step()
+                for key, value in loss.items():
                     step_info[f'train/{key}'] = value.item()
-            self.log_step(step_info, self.global_steps)
-        else: # evaluating
-            pred_y = self.model(x, hypernet_x=hypernet_input, side=side)
-            loss = self.loss_function(pred_y, y)
-            mae = torch.mean(torch.abs(pred_y - y))
-            step_info['val/mae'] = mae.item()
-            step_info['val/loss'] = loss.item()
+                self.log_step(step_info, self.global_steps)
+            else: # evaluating
+                # pred_y = self.model(x, hypernet_x=hypernet_input, side=side)
+                pred_y = self.model(x, side=side)
+                loss = self.loss_function(pred_y, y)
+                mae = torch.mean(torch.abs(pred_y - y))
+                step_info['val/mae'] = mae.item()
+                step_info['val/loss'] = loss.item()
 
         return step_info
     

@@ -187,10 +187,10 @@ def build_axes_from_joints3d(joints_xyz: np.ndarray):
 
     eps = 1e-8
 
-    z_axis = joints_xyz[..., 9, :] - joints_xyz[..., 0, :]          # middle_MCP − wrist
+    z_axis = (joints_xyz[..., 9, :] + joints_xyz[..., 13, :])/2 - joints_xyz[..., 0, :]          # middle_MCP − wrist
     z_axis /= np.linalg.norm(z_axis, axis=-1, keepdims=True) + eps
 
-    y_aux  = joints_xyz[..., 13, :] - joints_xyz[..., 5, :]         # ring_MCP − index_MCP
+    y_aux  = joints_xyz[..., 5, :] - joints_xyz[..., 13, :]         # ring_MCP − index_MCP
     y_aux /= np.linalg.norm(y_aux, axis=-1, keepdims=True) + eps
 
     x_axis = np.cross(y_aux, z_axis)

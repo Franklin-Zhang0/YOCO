@@ -93,14 +93,12 @@ class SequenceDataset(Dataset):
                  input_keys, 
                  hypernet_input_keys,
                  output_keys, 
-                 side='left', 
                  augmentations={}, 
                  preprocessing_x=[], 
                  preprocessing_y=[],
-                 obs_horizon=1,
-                 action_horizon=1,
                  data_caching=True,
                  cat_side=False,
+                 is_train=True,
                  ):
         if ',' in path:
             path = path.split(',')
@@ -115,8 +113,8 @@ class SequenceDataset(Dataset):
             
         self.augmentations = augmentations
         self.augmentations = {k:build_augmentation(v) for k,v in augmentations.items()}
-        self.side = side
         self.data_caching = data_caching
+        self.is_train = is_train
 
         self.input_keys = input_keys
         self.cat_side = cat_side
@@ -126,8 +124,6 @@ class SequenceDataset(Dataset):
         assert self.input_keys in self.data[0].keys(), f"Input keys '{self.input_keys}' not in dataset columns {self.data.column_names}"
         assert self.output_keys in self.data[0].keys(), f"Output keys '{self.output_keys}' not in dataset columns {self.data.column_names}"
             
-        self.obs_horizon = obs_horizon
-        self.action_horizon = action_horizon
         self.length, self.mapping = self.create_mapping()
         
         # preprocessing without normalization to compute stats
@@ -272,14 +268,8 @@ class SequenceDataset(Dataset):
         x = index_dict(dict(data), self.input_keys)
         y = index_dict(dict(data), self.output_keys)
         
-        # x = self.preprocessing_x(x)
-        # y = self.preprocessing_y(y)
-        
-        x = self.__chunking__(x, range(-self.obs_horizon + 1, 1), idx_in_demo)
-        y = self.__chunking__(y, range(0, self.action_horizon), idx_in_demo)
-        
-        x = torch.tensor(x, dtype=torch.float32)
-        y = torch.tensor(y, dtype=torch.float32).squeeze()
+        x = torch.tensor(x[idx_in_demo], dtype=torch.float32)
+        y = torch.tensor(y[idx_in_demo], dtype=torch.float32).squeeze()
 
         side = index_dict(dict(data), 'mano_side')[0]
         if isinstance(side, bytes):
@@ -291,8 +281,7 @@ class SequenceDataset(Dataset):
 
         if 'pca_mano_pose' in data:
             pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')
-            pca_mano_pose = self.__chunking__(pca_mano_pose, range(-self.obs_horizon + 1, 1), idx_in_demo)
-            pca_mano_pose = torch.tensor(pca_mano_pose, dtype=torch.float32)
+            pca_mano_pose = torch.tensor(pca_mano_pose[idx_in_demo], dtype=torch.float32)
             item['ik_y'] = pca_mano_pose
 
 
@@ -303,8 +292,9 @@ class SequenceDataset(Dataset):
                 side_x = torch.tensor(enc_side, dtype=torch.float32).view(1)
                 hypernet_x = torch.cat([hypernet_x, side_x], dim=-1)
             item['hypernet_input'] = hypernet_x
-            
-        item = self.__augment__(item)
+        
+        if self.is_train:
+            item = self.__augment__(item)
             
         return item
     

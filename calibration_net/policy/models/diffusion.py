@@ -78,10 +78,12 @@ class FlowMatching(nn.Module):
         dx_t = x_1 - x_0
         x_t = (1-t) * x_0 + t * x_1
         pred_dx_t = self.forward(t=t, x_t=x_t, cond=cond)
+        pred_x_1 = self.step(x_t, t_start=t, t_end=torch.ones_like(t), cond=cond)
         loss = F.mse_loss(pred_dx_t, dx_t)
         result = {
             'loss': loss,
-            'pred_dx_t': pred_dx_t
+            'pred_dx_t': pred_dx_t,
+            'pred_y': pred_x_1,
         }
         return result
 

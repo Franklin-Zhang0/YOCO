@@ -4,37 +4,56 @@ import torch.nn.functional as F
 from calibration_net.policy.models.resmlp import ResMLPBlock
 
 class CNN_MLP(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, hidden_layers=[]):
+    def __init__(self, input_size, output_size, input_channel, hidden_layers=[], n_channels = 32):
         super(CNN_MLP, self).__init__()
         self.calib_block = nn.Sequential(nn.Conv1d(
                 in_channels=input_channel,
-                out_channels=128,
-                kernel_size=5,
+                out_channels=n_channels,
+                kernel_size=3,
                 stride=1,
-                padding=2
-            ),
+                padding=1
+                ),
                 nn.GELU(),
+                nn.BatchNorm1d(n_channels),
+                
                 nn.Conv1d(
-                    in_channels=128,
-                    out_channels=1,
-                    kernel_size=5,
+                    in_channels=n_channels,
+                    out_channels=n_channels,
+                    kernel_size=3,
                     stride=1,
-                    padding=2
-                )
+                    padding=1
+                ),
+                nn.GELU(),
+                nn.BatchNorm1d(n_channels),
+                
+                nn.Conv1d(
+                    in_channels=n_channels,
+                    out_channels=3,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1
+                ),
             )
+        
         layers = []
-        in_features = input_size
+        self.input_features = input_size * input_channel
+        self.input_size = input_size
+        self.input_channel = input_channel
+        
+        in_features = self.input_features
         for hidden_size in hidden_layers:
             layers.append(ResMLPBlock(in_features, hidden_size))
             in_features = hidden_size
         self.fc = nn.Linear(in_features, output_size)
+        self.fc_norm = nn.Tanh()
         layers.append(self.fc)
+        layers.append(self.fc_norm)
         self.layers = nn.Sequential(*layers)
     
     def forward(self, x):
-        if len(x.shape) == 2:
-            x = x.unsqueeze(-2)  # add channel dim
-        x = self.calib_block(x).squeeze(-2)
+        x = x.reshape(x.shape[0], self.input_size, self.input_channel).permute(0, 2, 1)
+        x = self.calib_block(x).reshape(x.shape[0], self.input_features)
+        
         x = self.layers(x)
         return x
 

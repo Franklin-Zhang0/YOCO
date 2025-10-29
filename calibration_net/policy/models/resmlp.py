@@ -13,7 +13,7 @@ class ResMLPBlock(nn.Module):
     def __init__(self, input_dim, output_dim, film_dim=None):
         super(ResMLPBlock, self).__init__()
         self.linear = nn.Linear(input_dim, output_dim)
-        self.norm = nn.LayerNorm(input_dim)
+        self.norm = nn.LayerNorm(output_dim)
         self.activation = nn.GELU()
 
         if film_dim is not None:
@@ -23,9 +23,9 @@ class ResMLPBlock(nn.Module):
 
     def forward(self, x: Tensor, cond: Tensor=None) -> Tensor:
         residual = x
-        x = self.norm(x)
         x = self.linear(x)
         x = self.activation(x)
+        x = self.norm(x)
         if self.film is not None and cond is not None:
             x = self.film(x, cond)
         if x.shape[-1] != residual.shape[-1]:
