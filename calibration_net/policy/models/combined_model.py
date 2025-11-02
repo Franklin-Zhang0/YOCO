@@ -7,13 +7,14 @@ class FusionModule(nn.Module):
         super(FusionModule, self).__init__()
         self.fuse_module = nn.ModuleList()
         for i in range(n_layers):
-            self.fuse_module.append(ResMLPBlock(output_size, output_size, input_size))
+            self.fuse_module.append(ResMLPBlock(input_size + output_size, input_size + output_size))
 
     def forward(self, x, cond):
         cond = cond.reshape(cond.shape[0], -1)
+        inputs = torch.cat((x, cond), dim=-1)
         for layer in self.fuse_module:
-            x = layer(x, cond)
-        return x
+            inputs = layer(inputs)
+        return inputs[..., :x.shape[-1]] * 0.01 + x
 
 class CombinedModel(nn.Module):
     def __init__(self, joints_layout, model_cls, full_input, num_fuse_layer, **kwargs):
@@ -21,6 +22,7 @@ class CombinedModel(nn.Module):
         self.models = nn.ModuleList()
         self.joints_layout = joints_layout
         self.full_input = full_input
+        self.full_input_size = kwargs['input_size']
         kwargs['input_size'] = len(self.get_pos_range(0, kwargs['input_size']))
         for joints in joints_layout:
             output_size = len(joints)
@@ -29,7 +31,7 @@ class CombinedModel(nn.Module):
 
         if num_fuse_layer > 0:
             self.fuse_module = FusionModule(
-                input_size=kwargs['input_size'] * 3,
+                input_size=self.full_input_size * 3,
                 output_size=sum(len(j) for j in joints_layout),
                 n_layers=num_fuse_layer
             )
