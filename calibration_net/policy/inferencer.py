@@ -2,6 +2,7 @@ from calibration_net.policy.model import load_model
 import torch
 from calibration_net.policy.preprocessing import build_preprocessing
 from calibration_net.utils import Side
+import numpy as np
 
 class ModelInferencer():
     def __init__(self, model_dir, side, device='cuda' if torch.cuda.is_available() else 'cpu', betas=None, fixed_noise=True):
@@ -28,7 +29,7 @@ class ModelInferencer():
         self.fixed_noise = fixed_noise
         self.noise = torch.randn(1, self.cfg['model']['output_size']).to(device)
         
-    def inference(self, x: torch.Tensor, batched: bool=False):
+    def inference(self, x: np.ndarray, batched: bool=False):
         self.model.eval()
         if not self.fixed_noise:
             self.noise = torch.randn(1, self.cfg['model']['output_size'], device=self.device)
@@ -39,11 +40,6 @@ class ModelInferencer():
             x = x[None, ...]
 
         x = self.process_x_fn(x)
-
-        if batched:
-            pass
-        else:
-            x = x[None, ...]
 
         x = torch.as_tensor(x, device=self.device).float()
         with torch.no_grad():

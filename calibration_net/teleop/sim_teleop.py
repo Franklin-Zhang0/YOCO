@@ -11,6 +11,7 @@ import tyro
 import time
 import multiprocessing as mp
 from calibration_net.utils import AngleNormalizer
+from pynput import keyboard
 
 mp.set_start_method('spawn', force=True)
 DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
@@ -36,13 +37,7 @@ def retargeting(model_dir, side, queue, calibration):
     while True:
         i+=1
         joint_pose = pose_collector.collect(1, sides=[side])[side][0]
-        if not hasattr(inferencer.model, 'iknet'):
-            result = fitter[side].fit_single_frame(joint_pose, prev_result=prev_result, max_steps=max_steps)
-            model_input = result['hand_pose']
-            max_steps = 200
-            prev_result = result
-        else:
-            model_input = joint_pose
+        model_input = joint_pose
         joints = inferencer.inference(model_input, batched=False)
         queue.put(joints)
         if i % 30 == 0:
@@ -72,7 +67,17 @@ def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool
         position=(-0.0, -0.0, 0.0),
         wxyz=(-0.0, 0.0, 0.0, 0.0),
     )
-    
+
+    pause_flag = False
+    def on_press(key):
+        nonlocal pause_flag
+        if key == keyboard.Key.space:
+            pause_flag = True
+            print("Paused")
+
+    keyboard_listener = keyboard.Listener(on_press=on_press)
+    keyboard_listener.start()
+
     base_frame = server.scene.add_frame("/scene_offset/base", show_axes=False)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/scene_offset/base")
     server.scene.add_grid("/grid", 1.0, 1.0)
@@ -86,7 +91,10 @@ def main(model_dir:str, hand_type: str='inspire', side='right', calibration:bool
                 joints = queue.get(block=False)
             except:
                 continue
-            print(joints)
+            # print(joints)
+            if pause_flag:
+                breakpoint()
+                pause_flag = False
             joints = angle_normalizer.denormalize(joints)
 
             urdf_vis.update_cfg(joints)
