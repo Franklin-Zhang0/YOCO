@@ -11,66 +11,9 @@ from calibration_net.policy.models.iknet import IKNet
 from contextlib import nullcontext
 from omegaconf import OmegaConf
 
-class CombinedModel(nn.Module):
-    def __init__(self, joints_layout, model_cls, full_input, **kwargs):
-        super(CombinedModel, self).__init__()
-        self.models = nn.ModuleList()
-        self.joints_layout = joints_layout
-        self.full_input = full_input
-        kwargs['input_size'] = len(self.get_pos_range(0, kwargs['input_size']))
-        for joints in joints_layout:
-            output_size = len(joints)
-            model = model_cls(output_size=output_size ,**kwargs)
-            self.models.append(model)
-
-    def get_pos_range(self, i, n_pos):
-        if self.full_input:
-            return list(range(n_pos))
-        if n_pos == 21:
-            pos_range = list(range(1+4*i, 1+4*(i+1)))
-        elif n_pos == 5:
-            pos_range = list(range(i, i+1))
-        else:
-            raise NotImplementedError(f"n_pos {n_pos} not supported")
-        return pos_range
-
-            
-    def forward(self, x, **kwargs):
-        outs = []
-        for i, model in enumerate(self.models):
-            pos_range = self.get_pos_range(i, x.shape[-2])
-            out = model(x[:, pos_range], **kwargs)
-            outs.append(out)
-        x = torch.cat(outs, dim=-1)
-        return x
-    
-    def train_forward(self, x, y):
-        outs = []
-        losses = []
-        for i, model in enumerate(self.models):
-            pos_range = self.get_pos_range(i, x.shape[-2])
-            out = model.train_forward(x[:, pos_range], y[:, sum(len(j) for j in self.joints_layout[:i]):sum(len(j) for j in self.joints_layout[:i+1])])
-            outs.append(out['pred_y'])
-            losses.append(out['loss'])
-        pred_y = torch.cat(outs, dim=-1)
-        loss = sum(losses)
-        result = {
-            'loss': loss,
-            'pred_y': pred_y,
-        }
-        return result
-    
-    def predict(self, x, **kwargs):
-        outs = []
-        for i, model in enumerate(self.models):
-            pos_range = self.get_pos_range(i, x.shape[-2])
-            out = model.predict(x[:, pos_range], **kwargs)
-            outs.append(out)
-        x = torch.cat(outs, dim=-1)
-        return x
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, joints_layout=[], full_input=False, train=True):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, joints_layout=[], full_input=False, num_fuse_layer=0, train=True):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -82,6 +25,7 @@ class Model(nn.Module):
         self.is_train = train
         self.joints_layout = joints_layout
         self.full_input = full_input
+        self.num_fuse_layer = num_fuse_layer
         self.build_network()
         
     def build_network(self):
@@ -100,7 +44,8 @@ class Model(nn.Module):
                 full_input=self.full_input,
                 input_size=self.input_size,
                 input_channel=self.input_channel,
-                hidden_layers=self.hidden_layers
+                hidden_layers=self.hidden_layers,
+                num_fuse_layer=self.num_fuse_layer,
             )
 
         elif self.model_type == 'Flow':

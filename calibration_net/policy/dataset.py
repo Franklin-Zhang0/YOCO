@@ -279,6 +279,9 @@ class SequenceDataset(Dataset):
             side = side.decode('utf-8')
         assert type(side) == str
         enc_side = Side.__dict__[side.upper()].value
+
+        if self.input_keys == 'world_hand_joints':
+            x[..., 0] *= -enc_side  # flip x axis based on side
         
         item = {'input': x, 'output': y, 'side': enc_side}
 
