@@ -117,6 +117,7 @@ class Trainer():
         
     def get_loss(self, data, result):
         finger_mask = data.get('finger_mask', torch.ones(5, dtype=torch.bool)).to(self.device)
+        original_input = data.get('original_data', None).float().to(self.device)
         loss_type = self.trainer_args.loss_type
 
         def get_masked_loss(loss, mask):
@@ -125,12 +126,17 @@ class Trainer():
                 joint_mask = mask[:, i].unsqueeze(-1).repeat(1, len(joints))
                 joints_mask.append(joint_mask)
             joints_mask = torch.cat(joints_mask, dim=-1)
-            loss = loss * joints_mask
-            return loss
+            loss_dict = {'loss': (loss * joints_mask).mean(), 'qpos': loss.mean()}
+            if original_input is not None:
+                pred = self.model(original_input, side=data['side'])
+                drift_error = (pred - result['pred_y']) ** 2
+                loss_dict['drift_error'] = (drift_error * joints_mask).mean()
+                loss_dict['loss'] += loss_dict['drift_error']
+            return loss_dict
 
         if loss_type == 'qpos':
             loss = get_masked_loss(result['loss'], finger_mask).mean()
-            return {'loss': loss}
+            return loss
         elif loss_type == 'geort':
             loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)
             return loss
@@ -142,9 +148,9 @@ class Trainer():
             loss = {}
             loss['geort'] = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)['loss']
             loss['alignment'] = get_alignment_loss(points=data['input'], side=data['side'], mask=finger_mask, ik_model=self.model, fk_model=self.fk_model)
-            loss['qpos'] = get_masked_loss(result['loss'], finger_mask).mean()
+            loss.update(get_masked_loss(result['loss'], finger_mask))
 
-            for key in loss:
+            for key in self.loss_weights:
                 total_loss += loss[key] * self.loss_weights[key]
             loss['loss'] = total_loss
             return loss

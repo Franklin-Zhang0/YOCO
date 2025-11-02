@@ -27,6 +27,7 @@ def finger_randomize(p=0.1):
             [17,18,19,20] # Pinky
         ]
         data = x['data']
+        x['original_data'] = data.copy()
         mask = np.ones(5, dtype=bool)
         for i, finger in enumerate(finger_indices):
             if np.random.rand() < p:
