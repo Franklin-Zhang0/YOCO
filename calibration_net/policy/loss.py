@@ -5,7 +5,7 @@ import numpy as np
 
 TIP_INDICIES = [4, 8, 12, 16, 20]
 
-def get_alignment_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn.Module, fk_model:torch.nn.Module) -> torch.Tensor:
+def get_alignment_loss(points:torch.Tensor, side:torch.Tensor, mask:torch.Tensor, ik_model:torch.nn.Module, fk_model:torch.nn.Module) -> torch.Tensor:
     def ik_forward(x):
         return ik_model(x, side=side)
     points = points.float().cuda()
@@ -13,6 +13,9 @@ def get_alignment_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn
 
     embedded_finger_tip = embedded_point
     mano_finger_tip = points[:, TIP_INDICIES, :]
+
+    mano_pos_scale = ((torch.norm(mano_finger_tip, dim=-1) * mask).sum(-1) / (mask.sum(-1) + 1e-6)).mean()
+    robot_pos_scale = ((torch.norm(embedded_finger_tip, dim=-1) * mask).sum(-1) / (mask.sum(-1) + 1e-6)).mean()
 
     # append wrist point at origin
     embedded_finger_tip = torch.cat(
@@ -27,12 +30,16 @@ def get_alignment_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn
     delta_robot = embedded_finger_tip[:, :, None] - embedded_finger_tip[:, None, :]
 
     # Vector regularization.
-    position_scale = torch.mean(torch.norm(delta_mano + 1e-6, dim=-1)) / torch.mean(torch.norm(delta_robot + 1e-6, dim=-1)).detach()
-    position_scale = torch.clip(position_scale, 0.8, 1.2)
+
     residual_position_delta = (
-        (delta_mano - delta_robot * position_scale)
+        (delta_mano / mano_pos_scale - delta_robot / robot_pos_scale)
         * (1 - torch.eye(delta_mano.shape[1])[None, ..., None]).to(device=points.device)
-    )**2
+    )
+    residual_position_delta = torch.abs(residual_position_delta)
+    # take the upper triangle only to avoid duplicate pairs
+    residual_position_delta = torch.triu(residual_position_delta, diagonal=1)
+    residual_position_delta[:, :5] *= mask.unsqueeze(-1).unsqueeze(-1)
+
 
     # Vector angle regularization.
     delta_mano_normalized = delta_mano / torch.norm(
@@ -48,13 +55,15 @@ def get_alignment_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn
         residual_angle_delta
         * (1 - torch.eye(residual_angle_delta.shape[1])).to(device=points.device)
     )
+    residual_angle_delta = torch.triu(residual_angle_delta, diagonal=1)
+    residual_angle_delta[:, :5] *= mask.unsqueeze(-1)
     
     loss = residual_position_delta.mean() + residual_angle_delta.mean()
     return loss
 
 
 def get_geort_loss(points:torch.Tensor, side:torch.Tensor, ik_model:torch.nn.Module, fk_model:torch.nn.Module, robot_point_cloud:torch.Tensor) -> dict:
-    loss_weights = {'curvature':0.0, 'pinch':1.0, 'direction':0.0, 'chamfer':1.0}
+    loss_weights = {'curvature':0.1, 'pinch':1.0, 'direction':1.0, 'chamfer':80.0}
     points = points.float().cuda()
     side = side.float().cuda()
     def ik_forward(x):
@@ -128,12 +137,11 @@ def pinch_loss(point:torch.Tensor, embedded_point:torch.Tensor):
     n_finger = point.size(1)
     pinch_loss = 0
 
-    for i in range(1):
-        for j in range(i + 1, n_finger):
-            distance = point[:, i, ...] - point[:, j, ...]
-            mask = (torch.norm(distance, dim=-1) < 0.007).float()
-            e_distance = ((embedded_point[:, i, ...] - embedded_point[:, j, ...]) ** 2).sum(dim=-1)
-            pinch_loss += (mask * e_distance).mean() / (mask.sum() + 1e-7) * point.size(0)
+    for i in range(n_finger):
+        distance = point[:, i, ...] - 0
+        mask = (torch.norm(distance, dim=-1) < 0.007).float()
+        e_distance = ((embedded_point[:, i, ...] - 0) ** 2).sum(dim=-1)
+        pinch_loss += (mask * e_distance).mean() / (mask.sum() + 1e-7) * point.size(0)
 
     return pinch_loss
 

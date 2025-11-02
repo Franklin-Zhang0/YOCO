@@ -254,9 +254,12 @@ class SequenceDataset(Dataset):
     def __augment__(self, item):
         for key, aug_fn in self.augmentations.items():
             if key in item:
-                item[key] = aug_fn(item[key])
-            else:
-                raise ValueError(f"Augmentation key '{key}' not in item keys {list(item.keys())}")
+                aug_result = aug_fn({'data': item[key]})
+                item[key] = aug_result['data']
+
+                aug_result.pop('data')
+                for aug_key, aug_value in aug_result.items():
+                    item[aug_key] = aug_value
         return item
             
 

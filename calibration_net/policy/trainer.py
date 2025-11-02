@@ -36,9 +36,10 @@ class Trainer():
 
         if self.args.model.iknet_cfg.enabled:
             self.args.model.input_size = self.args.model.iknet_cfg.n_comps if self.args.model.iknet_cfg.output_pca else 45
+            self.args.model.input_channel = 1
         else:
-            self.args.model.input_size = example['input'].shape[-2]
-        self.args.model.input_channel = example['input'].shape[-1]
+            self.args.model.input_size = torch.prod(torch.tensor(example['input'].shape[:-1])).item()
+            self.args.model.input_channel = example['input'].shape[-1]
         self.args.model.output_size = example['output'].shape[-1]
         
         if 'hypernet_input' in example:
@@ -115,24 +116,36 @@ class Trainer():
         self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=4)
         
     def get_loss(self, data, result):
+        finger_mask = data.get('finger_mask', torch.ones(5, dtype=torch.bool)).to(self.device)
         loss_type = self.trainer_args.loss_type
+
+        def get_masked_loss(loss, mask):
+            joints_mask = []
+            for i, joints in enumerate(self.args.model.joints_layout):
+                joint_mask = mask[:, i].unsqueeze(-1).repeat(1, len(joints))
+                joints_mask.append(joint_mask)
+            joints_mask = torch.cat(joints_mask, dim=-1)
+            loss = loss * joints_mask
+            return loss
+
         if loss_type == 'qpos':
-            return {'loss': result['loss']}
+            loss = get_masked_loss(result['loss'], finger_mask).mean()
+            return {'loss': loss}
         elif loss_type == 'geort':
-            loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud, loss_weights=self.trainer_args.loss_weights)
+            loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)
             return loss
         elif loss_type == 'alignment':
-            loss = get_alignment_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model)
+            loss = get_alignment_loss(points=data['input'], side=data['side'], mask=finger_mask, ik_model=self.model, fk_model=self.fk_model)
             return {'loss': loss}
         elif loss_type == 'composite':
             total_loss = 0.0
             loss = {}
             loss['geort'] = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)['loss']
-            loss['alignment'] = get_alignment_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model)
-            loss['qpos'] = result['loss']
+            loss['alignment'] = get_alignment_loss(points=data['input'], side=data['side'], mask=finger_mask, ik_model=self.model, fk_model=self.fk_model)
+            loss['qpos'] = get_masked_loss(result['loss'], finger_mask).mean()
 
             for key in loss:
-                total_loss += loss[key] * self.trainer_args.loss_weights[key]
+                total_loss += loss[key] * self.loss_weights[key]
             loss['loss'] = total_loss
             return loss
         else:
@@ -140,7 +153,10 @@ class Trainer():
 
     def train_step(self, data, do_backward=True):
         x, y, side = data['input'], data['output'], data['side']
-        x[..., 0] *= -side.unsqueeze(-1)  # flip x axis based on side
+        unsqueezed_side = side.clone()
+        while unsqueezed_side.dim() < x[..., 0].dim():
+            unsqueezed_side = unsqueezed_side.unsqueeze(-1)
+        x[..., 0] *= -unsqueezed_side  # flip x axis based on side
         x, y, side = x.float().to(self.device), y.float().to(self.device), side.to(self.device)
         
         if 'ik_y' in data:
@@ -193,6 +209,11 @@ class Trainer():
         info['train/loss'] = sum(train_loss) / len(train_loss)
         print(f"Training Loss: {info['train/loss']}")
         info['val/loss'] = self.validate()
+        
+        for key in self.loss_weights:
+            self.loss_weights[key] += self.trainer_args.loss_weights_decay.get(key, 0.0)
+            self.loss_weights[key] = max(self.loss_weights[key], 0.0)
+    
         return info
 
     def validate(self):
@@ -215,6 +236,7 @@ class Trainer():
     def train(self):
         self.global_steps = 0
         num_epoch = self.trainer_args.num_epochs
+        self.loss_weights = self.trainer_args.loss_weights
         best_val_loss = float('inf')
         for i in range(num_epoch):
             print(f"Epoch {i+1}/{num_epoch}")

@@ -1,3 +1,3 @@
-from .cnn_mlp import CNN_MLP
+from .mlp import MLP
 from .diffusion import FlowMatching
 from .hyper_lora import HyperLoRA

@@ -12,10 +12,11 @@ from contextlib import nullcontext
 from omegaconf import OmegaConf
 
 class CombinedModel(nn.Module):
-    def __init__(self, joints_layout, model_cls, **kwargs):
+    def __init__(self, joints_layout, model_cls, full_input, **kwargs):
         super(CombinedModel, self).__init__()
         self.models = nn.ModuleList()
         self.joints_layout = joints_layout
+        self.full_input = full_input
         kwargs['input_size'] = len(self.get_pos_range(0, kwargs['input_size']))
         for joints in joints_layout:
             output_size = len(joints)
@@ -23,6 +24,8 @@ class CombinedModel(nn.Module):
             self.models.append(model)
 
     def get_pos_range(self, i, n_pos):
+        if self.full_input:
+            return list(range(n_pos))
         if n_pos == 21:
             pos_range = list(range(1+4*i, 1+4*(i+1)))
         elif n_pos == 5:
@@ -67,7 +70,7 @@ class CombinedModel(nn.Module):
         return x
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, train=True, joints_layout=[]):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, joints_layout=[], full_input=False, train=True):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -78,11 +81,12 @@ class Model(nn.Module):
         self.input_channel = input_channel
         self.is_train = train
         self.joints_layout = joints_layout
+        self.full_input = full_input
         self.build_network()
         
     def build_network(self):
         if self.model_type == 'MLP':
-            self.network = CNN_MLP(
+            self.network = MLP(
                 input_size=self.input_size,
                 output_size=self.output_size,
                 input_channel=self.input_channel,
@@ -92,7 +96,8 @@ class Model(nn.Module):
         elif self.model_type == 'CombinedMLP':
             self.network = CombinedModel(
                 joints_layout=self.joints_layout,
-                model_cls=CNN_MLP,
+                model_cls=MLP,
+                full_input=self.full_input,
                 input_size=self.input_size,
                 input_channel=self.input_channel,
                 hidden_layers=self.hidden_layers
