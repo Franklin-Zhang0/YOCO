@@ -28,10 +28,13 @@ def load_urdf(hand_type: str, side: str):
 
 def save_data(poses, betas, output_dir, idx, hand_type, angle_normalizer):
     global POSE_REGISTER
-    broadcast_pose = np.repeat(1-np.array(POSE_REGISTER[ list(POSE_REGISTER.keys())[idx]])[np.newaxis, ...], len(poses['left']), axis=0)
+    broadcast_pose = np.repeat(np.array(POSE_REGISTER[ list(POSE_REGISTER.keys())[idx]])[np.newaxis, ...], len(poses['left']), axis=0)
     if hand_type == 'inspire':
-        broadcast_pose = broadcast_pose[:, ::-1]
-    denormed_broadcast_pose = angle_normalizer.denormalize(broadcast_pose)
+        broadcast_pose = 1 - broadcast_pose[:, ::-1]
+        denormed_broadcast_pose = angle_normalizer.denormalize(broadcast_pose)
+    else:
+        denormed_broadcast_pose = broadcast_pose
+        broadcast_pose = angle_normalizer.normalize(broadcast_pose)
     for side in ['left', 'right']:
         if side in poses and side in betas:
             pose = poses[side]
@@ -162,9 +165,9 @@ def main(output_dir: str,
         joints = np.array(POSE_REGISTER[pose_list[key_idx]])
         if hand_type == 'inspire':
             joints = 1 - joints[::-1]
+            joints = angle_normalizer.denormalize(joints)
             
         # joints = joints * (joint_upper_limits - joint_lower_limits) + joint_lower_limits
-        joints = angle_normalizer.denormalize(joints)
         with server.atomic():
             left_urdf_vis.update_cfg(np.array(joints))
             right_urdf_vis.update_cfg(np.array(joints))

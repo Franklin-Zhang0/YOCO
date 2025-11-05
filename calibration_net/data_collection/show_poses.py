@@ -65,21 +65,22 @@ def main(hand_type: str='inspire'):
     right_base_frame.wxyz = np.zeros(4)
     right_base_frame.position = np.zeros(3)
 
-
+    time.sleep(10.0)
     for key, value in POSE_REGISTER.items():
         print(f'Pose {key}: {key}, values: {value}')
-        joints = 1 - np.array(value)
+        joints = np.array(value)
         if hand_type == 'inspire':
-            joints = joints[::-1]
+            joints = 1 - joints[::-1]
+            joints = angle_normalizer.denormalize(joints)
             
         # joints = joints * (joint_upper_limits - joint_lower_limits) + joint_lower_limits
-        joints = angle_normalizer.denormalize(joints)
         wxyz_pos = hand.forward_kinematics(cfg=joints)
         finger_pos = wxyz_pos[[4, 8, 12, 16, 20], -3:]
         with server.atomic():
             left_urdf_vis.update_cfg(np.array(joints))
             right_urdf_vis.update_cfg(np.array(joints))
-        input("Press Enter to continue...")
+        # input("Press Enter to continue...")
+        time.sleep(1.0)
             
 
 
