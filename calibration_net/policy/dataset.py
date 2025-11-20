@@ -10,6 +10,7 @@ from functools import partial
 from tqdm import tqdm
 import h5py
 import multiprocessing as mp
+import random
 
 class ConcatHDF5():
     def __init__(self, paths:list[str]):
@@ -98,6 +99,7 @@ class SequenceDataset(Dataset):
                  preprocessing_y=[],
                  data_caching=True,
                  cat_side=False,
+                 preference_cfg={},
                  is_train=True,
                  ):
         if ',' in path:
@@ -115,6 +117,7 @@ class SequenceDataset(Dataset):
         self.augmentations = {k:build_augmentation(v) for k,v in augmentations.items()}
         self.data_caching = data_caching
         self.is_train = is_train
+        self.preference_cfg = preference_cfg
 
         self.input_keys = input_keys
         self.cat_side = cat_side
@@ -271,8 +274,8 @@ class SequenceDataset(Dataset):
         x = index_dict(dict(data), self.input_keys)
         y = index_dict(dict(data), self.output_keys)
         
-        x = torch.tensor(x[idx_in_demo], dtype=torch.float32)
-        y = torch.tensor(y[idx_in_demo], dtype=torch.float32).squeeze()
+        inputs = torch.tensor(x[idx_in_demo], dtype=torch.float32)
+        outputs = torch.tensor(y[idx_in_demo], dtype=torch.float32).squeeze()
 
         side = index_dict(dict(data), 'mano_side')[0]
         if isinstance(side, bytes):
@@ -281,9 +284,9 @@ class SequenceDataset(Dataset):
         enc_side = Side.__dict__[side.upper()].value
 
         if self.input_keys == 'world_hand_joints':
-            x[..., 0] *= -enc_side  # flip x axis based on side
-        
-        item = {'input': x, 'output': y, 'side': enc_side}
+            inputs[..., 0] *= -enc_side  # flip x axis based on side
+
+        item = {'input': inputs, 'output': outputs, 'side': enc_side}
 
         if 'pca_mano_pose' in data:
             pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')
@@ -298,7 +301,20 @@ class SequenceDataset(Dataset):
                 side_x = torch.tensor(enc_side, dtype=torch.float32).view(1)
                 hypernet_x = torch.cat([hypernet_x, side_x], dim=-1)
             item['hypernet_input'] = hypernet_x
-        
+            
+            total_length = self.preference_cfg.get('max_tokens', 10)
+            rand_length = random.randint(self.preference_cfg.get('min_tokens', 0), self.preference_cfg.get('max_tokens', 10))
+            rand_idx = random.choices(range(len(x)), k=rand_length)
+            item['preference_x'] =  torch.tensor(x[rand_idx], dtype=torch.float32)
+            item['preference_y'] = torch.tensor(y[rand_idx], dtype=torch.float32)
+            
+            pad_length = total_length - rand_length
+            if pad_length > 0:
+                item['preference_x'] = torch.cat([item['preference_x'], torch.zeros((pad_length, *item['preference_x'].shape[1:]), dtype=torch.float32)], dim=0)
+                item['preference_y'] = torch.cat([item['preference_y'], torch.zeros((pad_length, *item['preference_y'].shape[1:]), dtype=torch.float32)], dim=0)
+            item['preference_input'] = torch.cat([item['preference_x'].reshape(total_length, -1), item['preference_y'].reshape(total_length, -1)], dim=-1)
+            item['preference_mask'] = torch.cat([torch.ones((rand_length,), dtype=torch.bool), torch.zeros((pad_length,), dtype=torch.bool)], dim=0)
+
         if self.is_train:
             item = self.__augment__(item)
             

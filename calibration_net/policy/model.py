@@ -8,12 +8,13 @@ from calibration_net.policy.models import *
 import numpy as np
 from calibration_net.policy.models.hyper_lora import HyperLoRA
 from calibration_net.policy.models.iknet import IKNet
+from calibration_net.policy.models.preference_extractor import TransformerExtractor
 from contextlib import nullcontext
 from omegaconf import OmegaConf
 
 
 class Model(nn.Module):
-    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, iknet_cfg={}, hidden_layers=None, joints_layout=[], full_input=False, num_fuse_layer=0, train=True):
+    def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, preference_extractor_cfg, iknet_cfg={}, hidden_layers=None, joints_layout=[], full_input=False, num_fuse_layer=0, train=True):
         super(Model, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -26,9 +27,11 @@ class Model(nn.Module):
         self.joints_layout = joints_layout
         self.full_input = full_input
         self.num_fuse_layer = num_fuse_layer
+        self.preference_extractor_cfg = preference_extractor_cfg
         self.build_network()
         
     def build_network(self):
+        self.calib_block = nn.ModuleList()
         if self.model_type == 'MLP':
             self.network = MLP(
                 input_size=self.input_size,
@@ -54,7 +57,6 @@ class Model(nn.Module):
                 output_dim=self.output_size,
                 hidden_layers=self.hidden_layers,
             )
-            self.calib_block = self.network.calib_block # dummy calib block
         if self.iknet_cfg.get('enabled', False):
             iknet_cfg = dict(self.iknet_cfg)
             del iknet_cfg['enabled']
@@ -62,9 +64,15 @@ class Model(nn.Module):
 
         if self.hypernet_cfg['input_size'] > 0:
             self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network, train_init=self.is_train)
-            self.calib_block = self.hyperlora.lora_modules
-        else:
-            self.calib_block = None
+            self.calib_block.append(self.hyperlora.lora_modules)
+            
+        if self.preference_extractor_cfg.get('enabled', False):
+            preference_extractor_cfg = dict(self.preference_extractor_cfg)
+            del preference_extractor_cfg['enabled']
+            self.preference_extractor = TransformerExtractor(
+                **preference_extractor_cfg
+            )
+            self.calib_block.append(self.preference_extractor)
         return self.network
     
     def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, side=None):

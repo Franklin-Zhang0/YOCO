@@ -26,6 +26,11 @@ class Trainer():
         
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.expname = self.trainer_args.expname
+        
+        self.args.dataset.preference_cfg = {
+            'min_tokens': self.args.model.preference_extractor_cfg.min_tokens,
+            'max_tokens': self.args.model.preference_extractor_cfg.max_tokens,
+        }
 
         self.load_dataset()
         example = self.trainset[0]
@@ -44,6 +49,9 @@ class Trainer():
         
         if 'hypernet_input' in example:
             self.args.model.hypernet_cfg.input_size = example['hypernet_input'].shape[-1]
+            if self.args.model.preference_extractor_cfg.enabled:
+                self.args.model.hypernet_cfg.input_size += self.args.model.preference_extractor_cfg.hidden_dim
+                self.args.model.preference_extractor_cfg.input_dim = example['preference_input'].shape[-1]
         else:
             self.args.model.hypernet_cfg.input_size = 0
 
@@ -73,12 +81,12 @@ class Trainer():
                 self.fk_trainer.train()
             self.fk_model.eval()
         
-        if self.trainer_args.calib_finetune:
-            self.set_trainable(main_network=False, calib=True)
-        elif self.trainer_args.calibnet_warmup_epochs == 0:
-            self.set_trainable(main_network=True, calib=True)
-        elif self.trainer_args.calibnet_warmup_epochs > 0:
-            self.set_trainable(main_network=True, calib=False)
+        # if self.trainer_args.calib_finetune:
+        #     self.set_trainable(main_network=False, calib=True)
+        # elif self.trainer_args.calibnet_warmup_epochs == 0:
+        #     self.set_trainable(main_network=True, calib=True)
+        # elif self.trainer_args.calibnet_warmup_epochs > 0:
+        #     self.set_trainable(main_network=True, calib=False)
         self.create_optimizer()
 
     def set_trainable(self, main_network=True, calib=True):
@@ -93,7 +101,11 @@ class Trainer():
         self.model.network[-1] = self.model.fc
 
     def create_optimizer(self):
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.trainer_args.learning_rate)
+        if not self.trainer_args.calib_finetune:
+            parameters = self.model.parameters()
+        else:
+            parameters = self.model.calib_block.parameters()
+        self.optimizer = torch.optim.AdamW(parameters, lr=self.trainer_args.learning_rate)
         self.loss_function = nn.MSELoss()
     
     def load_dataset(self):
@@ -131,18 +143,16 @@ class Trainer():
                 pred = self.model(original_input, side=data['side'])
                 drift_error = (pred - result['pred_y']) ** 2
                 loss_dict['drift_error'] = (drift_error * joints_mask).mean()
-                loss_dict['loss'] += loss_dict['drift_error']
+                loss_dict['loss'] += loss_dict['drift_error'] * 10.0
             return loss_dict
 
         if loss_type == 'qpos':
             loss = get_masked_loss(result['loss'], finger_mask).mean()
-            return loss
         elif loss_type == 'geort':
             loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)
-            return loss
         elif loss_type == 'alignment':
             loss = get_alignment_loss(points=data['input'], side=data['side'], mask=finger_mask, ik_model=self.model, fk_model=self.fk_model)
-            return {'loss': loss}
+            loss = {'loss': loss}
         elif loss_type == 'composite':
             total_loss = 0.0
             loss = {}
@@ -153,16 +163,17 @@ class Trainer():
             for key in self.loss_weights:
                 total_loss += loss[key] * self.loss_weights[key]
             loss['loss'] = total_loss
-            return loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 
+        if self.prefer_feat_loss is not None:
+            loss['loss'] += self.prefer_feat_loss * 0.1  # weight for preference feature loss
+            loss['prefer_feat_loss'] = self.prefer_feat_loss
+        
+        return loss
+
     def train_step(self, data, do_backward=True):
         x, y, side = data['input'], data['output'], data['side']
-        unsqueezed_side = side.clone()
-        while unsqueezed_side.dim() < x[..., 0].dim():
-            unsqueezed_side = unsqueezed_side.unsqueeze(-1)
-        x[..., 0] *= -unsqueezed_side  # flip x axis based on side
         x, y, side = x.float().to(self.device), y.float().to(self.device), side.to(self.device)
         
         if 'ik_y' in data:
@@ -172,8 +183,15 @@ class Trainer():
 
         if 'hypernet_input' in data:
             hypernet_input = data['hypernet_input'].float().to(self.device)
+            if self.args.model.preference_extractor_cfg.enabled:
+                preference_feat, self.prefer_feat_loss = self.model.preference_extractor.train_forward(
+                    data['preference_input'].float().to(self.device),
+                    data['preference_mask'].to(self.device)
+                )
+                hypernet_input = torch.cat([hypernet_input, preference_feat], dim=-1)
         else:
             hypernet_input = None
+            self.prefer_feat_loss = None
 
         step_info = {}
 
@@ -218,7 +236,7 @@ class Trainer():
         
         for key in self.loss_weights:
             self.loss_weights[key] += self.trainer_args.loss_weights_decay.get(key, 0.0)
-            self.loss_weights[key] = max(self.loss_weights[key], 0.0)
+            self.loss_weights[key] = min(max(self.loss_weights[key], 0.0), 1.0)
     
         return info
 
@@ -246,8 +264,8 @@ class Trainer():
         best_val_loss = float('inf')
         for i in range(num_epoch):
             print(f"Epoch {i+1}/{num_epoch}")
-            if self.trainer_args.calibnet_warmup_epochs > 0 and i == self.trainer_args.calibnet_warmup_epochs:
-                self.set_trainable(main_network=True, calib=True)
+            # if self.trainer_args.calibnet_warmup_epochs > 0 and i == self.trainer_args.calibnet_warmup_epochs:
+            #     self.set_trainable(main_network=True, calib=True)
 
             train_info = self.train_epoch()
             if self.trainer_args.save_path:

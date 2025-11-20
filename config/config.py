@@ -11,6 +11,7 @@ class DatasetConfig:
     augmentations: Dict[str, float] = field(default_factory=dict)
     preprocessing_x: list = field(default_factory=list)
     preprocessing_y: list = field(default_factory=list)
+    preference_cfg: Dict[str, Any] = field(default_factory=dict)
     cat_side: bool = False
 
 @dataclass
@@ -33,6 +34,16 @@ class IKNetCfg:
     hidden_layers: list = field(default_factory=lambda: [256, 256, 256])
     output_pca: bool = False
     n_comps: int = 21
+    
+@dataclass
+class PreferenceExtractorConfig:
+    enabled: bool = False
+    input_dim: int = field(default_factory=int)
+    hidden_dim: int = 32
+    num_heads: int = 4
+    n_layers: int = 4
+    max_tokens: int = 10
+    min_tokens: int = 5
 
 @dataclass
 class ModelConfig:
@@ -42,6 +53,7 @@ class ModelConfig:
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     output_size: int = field(default_factory=int)
     hypernet_cfg: HypernetCfg = field(default_factory=HypernetCfg)
+    preference_extractor_cfg: PreferenceExtractorConfig = field(default_factory=PreferenceExtractorConfig)
     iknet_cfg: IKNetCfg = field(default_factory=IKNetCfg)
     joints_layout: Optional[list] = field(default_factory=lambda: [[0,1,2,3], [4,5,6], [7,8,9], [10], [11]])
     full_input: bool = False # Only for CombinedModel, whether to use full input for each sub-model
@@ -64,8 +76,8 @@ class TrainerConfig:
     val_split: float = 0.2
     device: str = 'cuda'  # 'cpu', 'cuda', or 'xpu'
     loss_type: str = 'composite'  # 'qpos', 'geort', 'composite'
-    loss_weights: Dict[str, float] = field(default_factory=lambda: {'qpos':1.0, 'geort': 0.0, 'alignment':0.1})
-    loss_weights_decay: Dict[str, Any] = field(default_factory=lambda: {'qpos': -0.01, 'geort': 0.00, 'alignment': 0.01})
+    loss_weights: Dict[str, float] = field(default_factory=lambda: {'qpos':1.0, 'geort': 0.01, 'alignment':0.1})
+    loss_weights_decay: Dict[str, Any] = field(default_factory=lambda: {'qpos': 0.00, 'geort': 0.02, 'alignment': 0.02})
     save_path: Optional[str] = None
     load_path: Optional[str] = None
     fk_model_path: Optional[str] = "expdata/fk/model/omni.pth"

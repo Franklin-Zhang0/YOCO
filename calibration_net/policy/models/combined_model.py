@@ -3,15 +3,24 @@ import torch.nn as nn
 from .resmlp import ResMLPBlock
 
 class FusionModule(nn.Module):
-    def __init__(self, input_size, output_size, n_layers=2):
+    def __init__(self, input_size, output_size, n_layers=2, hidden_layers=[256]):
         super(FusionModule, self).__init__()
         self.fuse_module = nn.ModuleList()
+
+        self.cond_enc = []
+        for hidden_size in hidden_layers:
+            self.cond_enc.append(ResMLPBlock(input_size, hidden_size))
+            input_size = hidden_size
+        self.cond_enc = nn.Sequential(*self.cond_enc)
+        self.cond_dim = hidden_layers[-1] if hidden_layers else input_size
+
         for i in range(n_layers):
-            self.fuse_module.append(ResMLPBlock(input_size + output_size, input_size + output_size))
+            self.fuse_module.append(ResMLPBlock(self.cond_dim + output_size, self.cond_dim + output_size))
 
     def forward(self, x, cond):
         cond = cond.reshape(cond.shape[0], -1)
-        inputs = torch.cat((x, cond), dim=-1)
+        enc_cond = self.cond_enc(cond)
+        inputs = torch.cat((x, enc_cond), dim=-1)
         for layer in self.fuse_module:
             inputs = layer(inputs)
         return inputs[..., :x.shape[-1]] * 0.01 + x
@@ -23,6 +32,7 @@ class CombinedModel(nn.Module):
         self.joints_layout = joints_layout
         self.full_input = full_input
         self.full_input_size = kwargs['input_size']
+        self.hidden_layers = kwargs.get('hidden_layers', [256])
         kwargs['input_size'] = len(self.get_pos_range(0, kwargs['input_size']))
         for joints in joints_layout:
             output_size = len(joints)
@@ -33,7 +43,8 @@ class CombinedModel(nn.Module):
             self.fuse_module = FusionModule(
                 input_size=self.full_input_size * 3,
                 output_size=sum(len(j) for j in joints_layout),
-                n_layers=num_fuse_layer
+                n_layers=num_fuse_layer,
+                hidden_layers=self.hidden_layers
             )
         else:
             self.fuse_module = lambda x, cond: x
