@@ -42,10 +42,10 @@ def save_data(poses, betas, output_dir, idx, hand_type, angle_normalizer):
                 'world_hand_joints': pose,
                 'betas': betas[side],
                 'mano_side': [side],
-                'robot_joint_pose': denormed_broadcast_pose,
+                'denormed_robot_joint_pose': denormed_broadcast_pose,
                 'robot_type': hand_type,
                 'pose_name': list(POSE_REGISTER.keys())[idx],
-                'normalized_robot_joint_pose': broadcast_pose
+                'robot_joint_pose': broadcast_pose
             }
             save_path = os.path.join(output_dir, f'{side}_{idx}.pkl')
             with open(save_path, 'wb') as f:
@@ -61,7 +61,7 @@ def main(output_dir: str,
          calibrate: bool=False,
          hand_model_path: str='',
          glove_model_path: str='',
-         frame_rate: int=60,
+         frame_rate: int=30,
          ):
     if collector_type == 'avp' and ip == '':
         raise ValueError("AVP IP address must be provided when collector_type is 'avp'.")
