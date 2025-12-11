@@ -3,8 +3,6 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.optim import Adam
-from manopth.manolayer import ManoLayer
 import zmq
 import tqdm
 from calibration_net.utils import FrameRateContext
@@ -63,13 +61,17 @@ class BaseCollector():
     def collect(self, timesteps:int=1, sides:list[str]=['left','right']):
         raise NotImplementedError()
 
+    def get_latest_pose(self, sides:list[str]=['left','right']):
+        res = self.collect(timesteps=1, sides=sides)
+        return {side: res[side][0] for side in sides}
+
 class PoseCollector(BaseCollector):
-    def __init__(self, frame_rate=60):
+    def __init__(self, frame_rate=60, zmq_port=5555):
         self._ctx = zmq.Context()
         self._sub = self._ctx.socket(zmq.SUB)
         self._sub.setsockopt(zmq.CONFLATE,   1) 
         self._sub.setsockopt(zmq.SUBSCRIBE, b"")
-        self._sub.connect("tcp://localhost:5555")
+        self._sub.connect(f"tcp://localhost:{zmq_port}")
         self.frame_rate=frame_rate
         self.frame_context = FrameRateContext(frame_rate=frame_rate)
 
@@ -194,6 +196,88 @@ class AvpPoseCollector(BaseCollector):
             hand_pose[side] = np.stack(hand_pose[side], axis=0)
         return hand_pose
 
+class MediaPipePoseCollector(BaseCollector):
+    def __init__(self, camera_index=0, frame_rate=60):
+        import mediapipe as mp
+        import cv2
+        self.mp_hands = mp.solutions.hands
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=2,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5)
+        self.cap = cv2.VideoCapture(int(camera_index))
+        self.frame_rate = frame_rate
+        self.frame_context = FrameRateContext(frame_rate=frame_rate)
+
+    def collect(self, timesteps:int=1, sides:list[str]=['left','right']):
+        import cv2
+        hand_pose={
+            'left':[],
+            'right':[]
+        }
+        
+        while True:
+            with self.frame_context:
+                stop_flag = True
+                for side in sides:
+                    if len(hand_pose[side]) < timesteps:
+                        stop_flag = False
+                if stop_flag:
+                    break
+
+                success, image = self.cap.read()
+                if not success:
+                    print("Ignoring empty camera frame.")
+                    continue
+
+                # Flip the image horizontally for a later selfie-view display, and convert
+                # the BGR image to RGB.
+                image = cv2.cvtColor(cv2.flip(image, 1), cv2.COLOR_BGR2RGB)
+                image.flags.writeable = False
+                results = self.hands.process(image)
+
+                current_frame_hands = {'left': None, 'right': None}
+
+                if results.multi_hand_landmarks and results.multi_handedness:
+                    for idx, hand_handedness in enumerate(results.multi_handedness):
+                        label = hand_handedness.classification[0].label.lower() # 'left' or 'right'
+                        
+                        # Use world landmarks for metric 3D coordinates
+                        if results.multi_hand_world_landmarks:
+                            landmarks = results.multi_hand_world_landmarks[idx]
+                            # Convert to numpy (21, 3)
+                            joints = np.array([[lm.x, lm.y, lm.z] for lm in landmarks.landmark])
+                            current_frame_hands[label] = joints
+
+                for side in sides:
+                    if current_frame_hands[side] is not None:
+                        hand_pose[side].append(current_frame_hands[side])
+                
+                print(f"Number of frames collected, left:{len(hand_pose['left'])}/{timesteps}, right:{len(hand_pose['right'])}/{timesteps}", end='\r')
+
+        for side in sides:
+            hand_pose[side] = np.stack(hand_pose[side], axis=0)
+        return hand_pose
+    
+    
+class DummyPoseCollector(BaseCollector):
+    def __init__(self):
+        pass
+
+    def collect(self, timesteps:int=1, sides:list[str]=['left','right']):
+        assert sides in [['left'], ['right'], ['left', 'right']]
+        hand_pose={
+            'left':[],
+            'right':[]
+        }
+        for side in sides:
+            for t in range(timesteps):
+                joints_xyz = np.zeros((21, 3), dtype=np.float32)
+                hand_pose[side].append(joints_xyz)
+            hand_pose[side] = np.stack(hand_pose[side], axis=0)
+        return hand_pose
+
 def get_pose_collector(collector_type, **kwargs) -> BaseCollector:
     """
     Factory function to create a pose collector based on the specified type.
@@ -209,12 +293,15 @@ def get_pose_collector(collector_type, **kwargs) -> BaseCollector:
     Returns
     """
     if collector_type == 'vuer':
-        return PoseCollector(kwargs.get('frame_rate', 60))
+        return PoseCollector(kwargs.get('frame_rate', 60), kwargs.get('zmq_port', 5555))
     
     elif collector_type == 'avp':
         assert 'avp_ip' in kwargs, "avp_ip must be provided for AvpPoseCollector"
         return AvpPoseCollector(kwargs['avp_ip'], kwargs.get('frame_rate', 60))
     
+    elif collector_type == 'mediapipe':
+        return MediaPipePoseCollector(kwargs.get('camera_index', 0), kwargs.get('frame_rate', 60))
+
     elif collector_type == 'glove':
         return GlovePoseCollector(kwargs['hand_model_path'], 
                                   left_glove_port=kwargs.get('left_glove_port', None), 
@@ -222,5 +309,7 @@ def get_pose_collector(collector_type, **kwargs) -> BaseCollector:
                                   glove_model_path=kwargs.get('glove_model_path', None),
                                   calibrate=kwargs.get('calibrate', False), 
                                   )
+    elif collector_type == "dummy":
+        return DummyPoseCollector()
     else:
         raise ValueError(f"Unknown collector type: {collector_type}")

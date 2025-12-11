@@ -8,9 +8,6 @@ import tyro
 import time
 from calibration_net.data_collection.poses import FIX_POSE_REGISTER
 from calibration_net.utils import AngleNormalizer
-from datetime import datetime
-import pyroki as pk
-import pickle
 
 DEX_URDF_PATH = os.environ.get('DEX_URDF_PATH', '')
 
@@ -31,8 +28,6 @@ def main(hand_type: str='inspire'):
 
     left_urdf = load_urdf(hand_type, 'left')   
     right_urdf = load_urdf(hand_type, 'right')
-
-    hand = pk.Robot.from_urdf(right_urdf)
 
     angle_normalizer = AngleNormalizer(Path(DEX_URDF_PATH) / "robots" / 'hands' / f'{hand_type}_hand' / f"{hand_type}_hand_left.urdf")
 
@@ -73,9 +68,6 @@ def main(hand_type: str='inspire'):
             joints = 1 - joints[::-1]
             joints = angle_normalizer.denormalize(joints)
             
-        # joints = joints * (joint_upper_limits - joint_lower_limits) + joint_lower_limits
-        wxyz_pos = hand.forward_kinematics(cfg=joints)
-        finger_pos = wxyz_pos[[4, 8, 12, 16, 20], -3:]
         with server.atomic():
             left_urdf_vis.update_cfg(np.array(joints))
             right_urdf_vis.update_cfg(np.array(joints))

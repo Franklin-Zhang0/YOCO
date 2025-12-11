@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Collection Manager</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        .sidebar { width: 300px; background: #f0f0f0; border-right: 1px solid #ccc; display: flex; flex-direction: column; padding: 10px; overflow-y: auto; }
+        .main { flex: 1; display: flex; flex-direction: column; background: #fff; }
+        
+        .section-title { font-weight: bold; margin-top: 10px; margin-bottom: 5px; }
+        .device-list { list-style: none; padding: 0; margin-bottom: 20px; }
+        .device-item { padding: 10px; background: #fff; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .device-item.robot { border-left: 5px solid #007bff; }
+        .device-item.input { border-left: 5px solid #28a745; }
+        
+        .controls { margin-top: auto; display: flex; flex-direction: column; gap: 5px; }
+        button { padding: 8px 12px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 4px; }
+        button:hover { background: #eee; }
+        button.primary { background: #007bff; color: white; border-color: #0056b3; }
+        button.success { background: #28a745; color: white; border-color: #1e7e34; }
+        button.danger { background: #dc3545; color: white; border-color: #bd2130; }
+        
+        .main-view { flex: 1; display: flex; flex-direction: column; height: 100%; }
+        iframe { flex: 1; border: none; width: 100%; height: 100%; }
+        .toolbar { padding: 10px; background: #f8f9fa; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 10px; }
+        
+        /* Modal */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 20px; border-radius: 5px; width: 400px; }
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; box-sizing: border-box; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        
+        /* Countdown Overlay */
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; flex-direction: column; z-index: 2000; color: white; }
+        .countdown-text { font-size: 5em; font-weight: bold; }
+        .progress-container { width: 80%; max-width: 600px; height: 30px; background: #444; border-radius: 15px; overflow: hidden; margin-top: 20px; display: none; }
+        .progress-bar { height: 100%; width: 0%; background: #28a745; transition: width 0.1s linear; }
+    </style>
+</head>
+<body>
+
+<div class="overlay" id="countdown-overlay">
+    <div id="countdown-text" class="countdown-text">Ready?</div>
+    <div class="progress-container" id="progress-container">
+        <div class="progress-bar" id="progress-bar"></div>
+    </div>
+</div>
+
+<div class="sidebar">
+    <h2>Collection Manager</h2>
+    
+    <div class="section-title">Robot Device</div>
+    <div id="robot-status">Not Running</div>
+    <button onclick="showRobotModal()" style="margin-top: 5px;">Configure Robot</button>
+
+    <div class="section-title">Input Devices</div>
+    <ul class="device-list" id="input-list">
+        <!-- Inputs listed here -->
+    </ul>
+    <button class="success" onclick="showInputModal()">+ Add Input Device</button>
+    
+    <div class="controls">
+        <div class="section-title">Global Controls</div>
+        <div style="display: flex; gap: 5px;">
+            <button style="flex:1" onclick="robotCommand('prev')">Prev Pose</button>
+            <button style="flex:1" onclick="robotCommand('next')">Next Pose</button>
+        </div>
+        <button class="primary" onclick="triggerCollect()" style="padding: 15px; font-size: 1.1em;">COLLECT ALL</button>
+        <button class="warning" onclick="triggerCalibrate()" style="margin-top: 10px;">Calibrate All</button>
+    </div>
+    <div class="section-title" style="margin-top: 20px;">Dataset Viewer</div>
+    <button onclick="showDatasetModal()">Browse Datasets</button>
+</div>
+
+<div class="main">
+    <div class="toolbar">
+        <strong>Robot Visualization</strong>
+        <span id="pose-info" style="margin-left: 20px; color: #666;">Pose: -</span>
+    </div>
+    <div class="main-view" id="main-view">
+        <div style="padding: 20px; text-align: center; color: #666; margin-top: 100px;">
+            Start the Robot Device to see visualization.
+        </div>
+    </div>
+</div>
+
+<!-- Robot Modal -->
+<div class="modal" id="robot-modal">
+    <div class="modal-content">
+        <h3>Configure Robot</h3>
+        <div class="form-group">
+            <label>Hand Type</label>
+            <select id="robot-hand-type">
+                <option value="inspire">Inspire</option>
+                <option value="omni">Omni</option>
+            </select>
+        </div>
+        <div class="form-group">
+                <label>Viser Port</label>
+                <input type="number" id="robot-viser-port" value="8080">
+            </div>
+        <div class="modal-actions">
+            <button onclick="hideModal('robot-modal')">Cancel</button>
+            <button class="primary" onclick="startRobot()">Start Robot</button>
+        </div>
+    </div>
+</div>
+
+<!-- Input Modal -->
+<div class="modal" id="input-modal">
+    <div class="modal-content">
+        <h3>Add Input Device</h3>
+        <div class="form-group">
+            <label>Collector Type</label>
+            <select id="collector-type" onchange="toggleFields()">
+                <option value="avp">AVP</option>
+                <option value="vuer">Vuer</option>
+                <option value="mediapipe">MediaPipe</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Hand Side</label>
+            <select id="input-side">
+                <option value="both">Both</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+            </select>
+        </div>
+        <div class="form-group" id="ip-group">
+            <label>AVP IP Address</label>
+            <input type="text" id="avp-ip" placeholder="192.168.x.x">
+        </div>
+        <div class="form-group" id="vuer-group" style="display:none;">
+            <label>Vuer Port</label>
+            <input type="text" id="vuer-port" placeholder="5555">
+        </div>
+        <div class="form-group" id="mediapipe-group" style="display:none;">
+            <label>Camera Index</label>
+            <input type="number" id="camera-index" value="0">
+        </div>
+        <div class="form-group">
+            <label>Output Dir</label>
+            <input type="text" id="output-dir" value="data">
+        </div>
+        <div class="modal-actions">
+            <button onclick="hideModal('input-modal')">Cancel</button>
+            <button class="primary" onclick="addInput()">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- Dataset Modal -->
+<div class="modal" id="dataset-modal">
+    <div class="modal-content" style="width: 600px;">
+        <h3>Select Dataset</h3>
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; margin-bottom: 10px;">
+            <ul id="dataset-list" style="list-style: none; padding: 0; margin: 0;">
+                <!-- Datasets listed here -->
+            </ul>
+        </div>
+        <div class="modal-actions">
+            <button onclick="hideModal('dataset-modal')">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function buildFileTree(files) {
+        const root = {};
+        files.forEach(file => {
+            const parts = file.name.split('/');
+            let current = root;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (i === parts.length - 1) {
+                    if (!current.__files__) current.__files__ = [];
+                    current.__files__.push({ name: part, path: file.path });
+                } else {
+                    if (!current[part]) current[part] = {};
+                    current = current[part];
+                }
+            }
+        });
+        return root;
+    }
+
+    function renderTree(node, container) {
+        const folders = Object.keys(node).filter(k => k !== '__files__').sort();
+        folders.forEach(folderName => {
+            const li = document.createElement('li');
+            li.style.margin = '5px 0';
+            
+            const details = document.createElement('details');
+            const summary = document.createElement('summary');
+            summary.style.cursor = 'pointer';
+            summary.style.padding = '5px';
+            summary.style.fontWeight = 'bold';
+            summary.innerText = folderName;
+            
+            details.appendChild(summary);
+            
+            const ul = document.createElement('ul');
+            ul.style.paddingLeft = '20px';
+            ul.style.listStyle = 'none';
+            
+            renderTree(node[folderName], ul);
+            details.appendChild(ul);
+            li.appendChild(details);
+            container.appendChild(li);
+        });
+
+        if (node.__files__) {
+            node.__files__.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
+                const li = document.createElement('li');
+                li.style.padding = '5px';
+                li.style.borderBottom = '1px solid #eee';
+                li.style.display = 'flex';
+                li.style.justifyContent = 'space-between';
+                li.style.alignItems = 'center';
+                
+                li.innerHTML = `
+                    <span>${file.name}</span>
+                    <button onclick="playDataset('${file.path}', this)" style="padding: 2px 8px; font-size: 0.9em;">Play</button>
+                `;
+                container.appendChild(li);
+            });
+        }
+    }
+
+    async function showDatasetModal() {
+        const modal = document.getElementById('dataset-modal');
+        const list = document.getElementById('dataset-list');
+        list.innerHTML = '<li>Loading...</li>';
+        modal.style.display = 'flex';
+        
+        try {
+            const res = await fetch('/api/datasets');
+            const files = await res.json();
+            
+            list.innerHTML = '';
+            if (files.length === 0) {
+                list.innerHTML = '<li style="padding: 10px;">No datasets found.</li>';
+                return;
+            }
+            
+            const tree = buildFileTree(files);
+            renderTree(tree, list);
+        } catch (e) {
+            list.innerHTML = `<li style="padding: 10px; color: red;">Error: ${e}</li>`;
+        }
+    }
+
+    async function playDataset(path, btn) {
+        // Open window immediately to avoid popup blocker
+        const newWindow = window.open('', '_blank');
+        if (newWindow) {
+            newWindow.document.write('<html><body style="font-family:sans-serif;text-align:center;padding-top:50px;"><h3>Loading Dataset Playback...</h3><p>Please wait while the visualization server starts.</p></body></html>');
+        }
+
+        const originalText = btn.innerText;
+        btn.innerText = "Loading...";
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/api/playback', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path})
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                const url = `http://${window.location.hostname}:${data.viser_port}`;
+                
+                if (newWindow) {
+                    newWindow.location.href = url;
+                }
+
+                // Replace button with a link
+                const link = document.createElement('a');
+                link.href = url;
+                link.target = '_blank';
+                link.innerText = 'Open';
+                link.style.cssText = "display:inline-block; padding: 8px 12px; border: 1px solid #ccc; background: #28a745; color: white; border-radius: 4px; text-decoration: none;";
+                
+                btn.parentNode.replaceChild(link, btn);
+            } else {
+                alert('Error: ' + data.message);
+                if (newWindow) newWindow.close();
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        } catch (e) {
+            alert('Error: ' + e);
+            if (newWindow) newWindow.close();
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    let status = null;
+
+        function toggleFields() {
+            const type = document.getElementById('collector-type').value;
+            const ipGroup = document.getElementById('ip-group');
+            const vuerGroup = document.getElementById('vuer-group');
+            const mpGroup = document.getElementById('mediapipe-group');
+            
+            ipGroup.style.display = 'none';
+            vuerGroup.style.display = 'none';
+            mpGroup.style.display = 'none';
+
+            if (type === 'avp') {
+                ipGroup.style.display = 'block';
+            } else if (type === 'vuer') {
+                vuerGroup.style.display = 'block';
+            } else if (type === 'mediapipe') {
+                mpGroup.style.display = 'block';
+            }
+        }    function showRobotModal() { document.getElementById('robot-modal').style.display = 'flex'; }
+    function showInputModal() { document.getElementById('input-modal').style.display = 'flex'; }
+    function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    async function refreshStatus() {
+        const res = await fetch('/api/status');
+        status = await res.json();
+        
+        // Update Robot Status
+        const robotDiv = document.getElementById('robot-status');
+        const mainView = document.getElementById('main-view');
+        
+        if (status.robot.running) {
+            robotDiv.innerHTML = `<div class="device-item robot">
+                <div>
+                    <strong>${status.robot.config.hand_type} Hand</strong><br>
+                    <small>Viser: ${status.robot.viser_port}</small>
+                </div>
+            </div>`;
+            
+            // Update iframe if not already there
+            if (!document.getElementById('viser-frame')) {
+                const url = `http://${window.location.hostname}:${status.robot.viser_port}`;
+                mainView.innerHTML = `
+                    <div style="flex: 1; display: flex; flex-direction: column; height: 100%;">
+                        <iframe id="viser-frame" src="${url}" style="flex: 1; width: 100%; height: 100%; border: none;"></iframe>
+                        <div style="text-align: center; padding: 5px; background: #f0f0f0; font-size: 0.8em;">
+                            <a href="${url}" target="_blank">Open Visualization in New Tab</a>
+                        </div>
+                    </div>`;
+            }
+        } else {
+            robotDiv.innerText = "Not Running";
+            mainView.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; margin-top: 100px;">Start the Robot Device to see visualization.</div>`;
+        }
+
+        // Update Inputs
+        const list = document.getElementById('input-list');
+        list.innerHTML = '';
+        for (let id in status.inputs) {
+            const dev = status.inputs[id];
+            const li = document.createElement('li');
+            li.className = 'device-item input';
+            li.innerHTML = `
+                <div>
+                    <strong>Device ${id} (${dev.config.collector_type})</strong><br>
+                    <small>ZMQ: ${dev.zmq_port}</small>
+                    ${dev.viser_port ? `<br><a href="http://${window.location.hostname}:${dev.viser_port}" target="_blank" style="display:inline-block; margin-top:5px; padding: 2px 5px; font-size: 0.8em; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: black; cursor: pointer;">Visualize</a>` : ''}
+                </div>
+                <button class="danger" onclick="removeInput('${id}')">X</button>
+            `;
+            list.appendChild(li);
+        }
+    }
+
+    async function startRobot() {
+        const config = {
+            hand_type: document.getElementById('robot-hand-type').value,
+            viser_port: document.getElementById('robot-viser-port').value
+        };
+        await fetch('/api/robot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+        });
+        hideModal('robot-modal');
+        // Refresh the page to ensure visualization loads correctly
+        window.location.reload();
+    }
+
+    async function addInput() {
+        const config = {
+            collector_type: document.getElementById('collector-type').value,
+            output_dir: document.getElementById('output-dir').value,
+            ip: document.getElementById('avp-ip').value,
+            vuer_port: document.getElementById('vuer-port').value,
+            camera_index: document.getElementById('camera-index').value,
+            side: document.getElementById('input-side').value
+        };
+        
+        await fetch('/api/inputs', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+        });
+        hideModal('input-modal');
+        refreshStatus();
+    }
+
+    async function removeInput(id) {
+        await fetch(`/api/inputs/${id}`, { method: 'DELETE' });
+        refreshStatus();
+    }
+
+    async function robotCommand(cmd) {
+        const res = await fetch('/api/robot/command', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cmd})
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            document.getElementById('pose-info').innerText = `Pose: ${data.idx} (${data.pose_name})`;
+        }
+    }
+
+    async function triggerCollect() {
+        if (status && !status.is_calibrated) {
+            alert("System has not been calibrated yet. Please calibrate before collecting data.");
+            return;
+        }
+
+        const overlay = document.getElementById('countdown-overlay');
+        const text = document.getElementById('countdown-text');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        
+        overlay.style.display = 'flex';
+        progressContainer.style.display = 'none';
+        
+        // Preparation Countdown
+        for (let i = 3; i > 0; i--) {
+            text.innerText = i;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        
+        text.innerText = "Collecting...";
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0%';
+        
+        // Start collection in background
+        const collectPromise = fetch('/api/collect', { method: 'POST' });
+        
+        // Collection Progress Bar (approx 3 seconds)
+        const duration = 3000;
+        const interval = 50;
+        const steps = duration / interval;
+        let currentStep = 0;
+        
+        const timer = setInterval(() => {
+            currentStep++;
+            const pct = Math.min(100, (currentStep / steps) * 100);
+            progressBar.style.width = `${pct}%`;
+            
+            if (currentStep >= steps) {
+                clearInterval(timer);
+            }
+        }, interval);
+        
+        try {
+            const res = await collectPromise;
+            const data = await res.json();
+            console.log(data);
+            
+            // Ensure bar is full
+            progressBar.style.width = '100%';
+            text.innerText = "Done!";
+            await new Promise(r => setTimeout(r, 500));
+        } catch (e) {
+            alert('Error: ' + e);
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }
+
+    async function triggerCalibrate() {
+        console.log("triggerCalibrate called");
+        
+        const overlay = document.getElementById('countdown-overlay');
+        const text = document.getElementById('countdown-text');
+        const progressBar = document.getElementById('progress-bar');
+        const progressContainer = document.getElementById('progress-container');
+        
+        overlay.style.display = 'flex';
+        progressContainer.style.display = 'block';
+        text.innerText = "Calibrating...";
+        progressBar.style.width = '0%';
+        
+        // Start calibration request
+        const calibratePromise = fetch('/api/calibrate', { method: 'POST' });
+        
+        // Animate progress bar for ~10s
+        const duration = 10000; 
+        const interval = 50;
+        const steps = duration / interval;
+        let currentStep = 0;
+        
+        const timer = setInterval(() => {
+            currentStep++;
+            const pct = Math.min(100, (currentStep / steps) * 100);
+            progressBar.style.width = `${pct}%`;
+            
+            if (currentStep >= steps) {
+                clearInterval(timer);
+            }
+        }, interval);
+        
+        try {
+            const res = await calibratePromise;
+            const data = await res.json();
+            console.log(data);
+            
+            progressBar.style.width = '100%';
+            text.innerText = "Calibration Done!";
+            await new Promise(r => setTimeout(r, 1000));
+            // Refresh status to update calibration flag
+            refreshStatus();
+        } catch (e) {
+            console.error(e);
+            alert('Error: ' + e);
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }
+
+    // Initial load
+    refreshStatus();
+    setInterval(refreshStatus, 5000); // Poll status every 5s
+</script>
+
+</body>
+</html>
