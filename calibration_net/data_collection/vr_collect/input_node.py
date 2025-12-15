@@ -66,7 +66,7 @@ def save_data(poses, betas, output_dir, idx, pose_name, hand_type, angle_normali
             print(f'Saved {side} hand pose to {save_path}')
 
 class InputNode:
-    def __init__(self, output_dir, hand_type, collector_type, ip, left_glove_port, right_glove_port, calibrate, hand_model_path, glove_model_path, frame_rate, zmq_port, device_id, vuer_zmq_port, viser_port=None, camera_index=0, sides='both'):
+    def __init__(self, output_dir, hand_type, collector_type, ip, left_glove_port, right_glove_port, calibrate, hand_model_path, glove_model_path, frame_rate, zmq_port, device_id, vuer_zmq_port, viser_port=None, camera_index=0, sides='both', vuer_port=8012):
         self.output_dir = output_dir
         self.hand_type = hand_type
         self.frame_rate = frame_rate
@@ -117,6 +117,7 @@ class InputNode:
         kwargs = {}
         if collector_type == 'vuer':
             kwargs['zmq_port'] = vuer_zmq_port
+            kwargs['vuer_port'] = vuer_port
         if collector_type == 'mediapipe':
             kwargs['camera_index'] = camera_index
 
@@ -215,10 +216,11 @@ def main(output_dir: str,
          vuer_zmq_port: int=5555,
          viser_port: int=None,
          camera_index: int=0,
-         sides: str='both'
+         sides: str='both',
+         vuer_port: int=8012
          ):
     
-    node = InputNode(output_dir, hand_type, collector_type, ip, left_glove_port, right_glove_port, calibrate, hand_model_path, glove_model_path, frame_rate, zmq_port, device_id, vuer_zmq_port, viser_port, camera_index, sides)
+    node = InputNode(output_dir, hand_type, collector_type, ip, left_glove_port, right_glove_port, calibrate, hand_model_path, glove_model_path, frame_rate, zmq_port, device_id, vuer_zmq_port, viser_port, camera_index, sides, vuer_port)
     node.run()
 
 if __name__ == "__main__":

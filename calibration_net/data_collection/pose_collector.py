@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import zmq
 import tqdm
+import multiprocessing
 from calibration_net.utils import FrameRateContext
 
 import matplotlib.pyplot as plt
@@ -55,6 +56,53 @@ def webxr_to_smplx(joints_xyz: np.ndarray) -> np.ndarray:
         raise ValueError("Expected (25,3) array in WebXR joint order.")
     return joints_xyz[WEBXR_TO_SMPLX]
 
+def run_vuer_server(zmq_port=5555, vuer_port=8012):
+    from vuer import Vuer, VuerSession
+    from vuer.schemas import Hands, Scene
+    from asyncio import sleep
+    import zmq.asyncio
+    import json
+    
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    print("Using SSL certs from:", file_dir+"/ssl/")
+
+    app = Vuer(port=vuer_port, host="0.0.0.0", cert=f"{file_dir}/ssl/localhost+2.pem", key=f"{file_dir}/ssl/localhost+2-key.pem")
+    
+    # ── ZMQ setup ──────────────────────────────────────────────────────────
+    ctx = zmq.asyncio.Context.instance()
+    pub = ctx.socket(zmq.PUB)
+    pub.bind(f"tcp://*:{zmq_port}")
+    # ───────────────────────────────────────────────────────────────────────
+
+    @app.add_handler("HAND_MOVE")
+    async def hand_move_handler(event, session):
+        # Convert the Vuer event to JSON-serialisable dict
+        value = event.value
+        # print(value)
+        if type(value['left']) != list:
+            value['left'] = None
+        if type(value['right']) != list:
+            value['right'] = None
+        # Fire-and-forget publish (no await needed for PUB)
+        await pub.send_json({"topic": "hand_pose", "data": value})
+
+    @app.spawn(start=True)
+    async def main(session: VuerSession):
+        # Set up scene with hand tracking
+        session.set @ Scene()
+        
+        # Add hands to the scene with streaming enabled
+        session.upsert(
+            Hands(
+                stream=True,
+                key="hands",
+            ),
+            to="bgChildren",
+        )
+        
+        while True:
+            await sleep(1)
+
 class BaseCollector():
     def __init__(self):
         raise NotImplementedError()
@@ -66,12 +114,19 @@ class BaseCollector():
         return {side: res[side][0] for side in sides}
 
 class PoseCollector(BaseCollector):
-    def __init__(self, frame_rate=60, zmq_port=5555):
+    def __init__(self, frame_rate=60, zmq_port=5555, start_server=False, vuer_port=8012):
+        if start_server:
+            self.server_process = multiprocessing.Process(target=run_vuer_server, args=(zmq_port, vuer_port))
+            self.server_process.daemon = True
+            self.server_process.start()
+            print(f"Vuer server started on default port ({vuer_port}) and ZMQ port {zmq_port}")
+
         self._ctx = zmq.Context()
         self._sub = self._ctx.socket(zmq.SUB)
         self._sub.setsockopt(zmq.CONFLATE,   1) 
         self._sub.setsockopt(zmq.SUBSCRIBE, b"")
         self._sub.connect(f"tcp://localhost:{zmq_port}")
+        print(f"Connected to Vuer server ZMQ port {zmq_port} for pose collection")
         self.frame_rate=frame_rate
         self.frame_context = FrameRateContext(frame_rate=frame_rate)
 
@@ -96,11 +151,11 @@ class PoseCollector(BaseCollector):
                 for side in sides:
                     matrix = obj[side]
                     if not isinstance(matrix, list):
-                        print(f"Invalid joint data for {side} hand, skipping")
+                        print(f"Invalid joint data for {side} hand, skipping", end='\r')
                         continue
                     joints = np.asarray(matrix, dtype=np.float32) 
                     if joints.shape != (400,):
-                        print(f"Bad joint array shape for {side} hand, skipping")
+                        print(f"Bad joint array shape for {side} hand, skipping", end='\r')
                         continue
                     joints = joints.reshape(25, 4, 4)
                     joints_xyz = joints[:, 3, :3]  # Extract XYZ positions from the 4x4 matrices
@@ -293,7 +348,7 @@ def get_pose_collector(collector_type, **kwargs) -> BaseCollector:
     Returns
     """
     if collector_type == 'vuer':
-        return PoseCollector(kwargs.get('frame_rate', 60), kwargs.get('zmq_port', 5555))
+        return PoseCollector(kwargs.get('frame_rate', 60), kwargs.get('zmq_port', 5555), start_server=True, vuer_port=kwargs.get('vuer_port', 8012))
     
     elif collector_type == 'avp':
         assert 'avp_ip' in kwargs, "avp_ip must be provided for AvpPoseCollector"

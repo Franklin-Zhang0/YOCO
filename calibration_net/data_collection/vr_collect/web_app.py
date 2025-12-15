@@ -34,6 +34,15 @@ def free_port(port):
     except Exception as e:
         print(f"Warning: Failed to clean up port {port}: {e}")
 
+def get_ip_address():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 class DeviceManager:
     def __init__(self):
@@ -95,13 +104,14 @@ class DeviceManager:
         # Control port: BASE + 1 + id
         zmq_port = BASE_ZMQ_PORT + 1 + int(device_id)
         # Vuer port (if needed): BASE_VUER + id
-        if config.get('vuer_port'):
-            vuer_zmq_port = int(config['vuer_port'])
-        else:
-            vuer_zmq_port = BASE_VUER_PORT + int(device_id)
+        vuer_zmq_port = BASE_VUER_PORT + int(device_id)
             
         # Viser port for input device
         viser_port = BASE_VISER_PORT + 100 + int(device_id)
+        
+        free_port(viser_port)
+        free_port(zmq_port)
+        free_port(vuer_zmq_port)
         
         cmd = [
             sys.executable, 
@@ -116,6 +126,9 @@ class DeviceManager:
             '--sides', config.get('side', 'both')
         ]
         
+        if config.get('vuer_port') and config['collector_type'] == 'vuer':
+            free_port(config['vuer_port'])
+            cmd.extend(['--vuer-port', str(config['vuer_port'])])
         if config.get('ip'):
             cmd.extend(['--ip', config['ip']])
         if config.get('camera_index'):
@@ -137,15 +150,12 @@ class DeviceManager:
         socket = self.context.socket(zmq.REQ)
         socket.connect(f"tcp://localhost:{zmq_port}")
         
-        free_port(viser_port)
-        free_port(zmq_port)
-        free_port(vuer_zmq_port)
-        
         self.input_devices[device_id] = {
             'process': process,
             'config': config,
             'zmq_port': zmq_port,
             'vuer_zmq_port': vuer_zmq_port,
+            'vuer_port': config.get('vuer_port'),
             'viser_port': viser_port,
             'socket': socket,
             'status': 'starting'
@@ -231,6 +241,7 @@ class DeviceManager:
 
     def get_status(self):
         return {
+            'ip': get_ip_address(),
             'is_calibrated': self.is_calibrated,
             'robot': {
                 'running': self.robot_process is not None,
@@ -242,7 +253,8 @@ class DeviceManager:
                     'config': dev['config'],
                     'zmq_port': dev['zmq_port'],
                     'vuer_zmq_port': dev['vuer_zmq_port'],
-                    'viser_port': dev.get('viser_port')
+                    'viser_port': dev.get('viser_port'),
+                    'vuer_port': dev.get('vuer_port'),
                 } for dev_id, dev in self.input_devices.items()
             }
         }

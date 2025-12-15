@@ -51,38 +51,47 @@
 </div>
 
 <div class="sidebar">
-    <h2>Collection Manager</h2>
+    <div style="margin-bottom: 10px;">
+        <select id="language-selector" onchange="setLanguage(this.value)" style="width: 100%; padding: 5px;">
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+        </select>
+    </div>
+    <div style="margin-bottom: 10px; padding: 5px; background: #e9ecef; border-radius: 4px; font-size: 0.9em;">
+        <strong data-i18n="server_ip">Server IP</strong>: <span id="server-ip">-</span>
+    </div>
+    <h2 data-i18n="collection_manager">Collection Manager</h2>
     
-    <div class="section-title">Robot Device</div>
-    <div id="robot-status">Not Running</div>
-    <button onclick="showRobotModal()" style="margin-top: 5px;">Configure Robot</button>
+    <div class="section-title" data-i18n="robot_device">Robot Device</div>
+    <div id="robot-status" data-i18n="not_running">Not Running</div>
+    <button onclick="showRobotModal()" style="margin-top: 5px;" data-i18n="configure_robot">Configure Robot</button>
 
-    <div class="section-title">Input Devices</div>
+    <div class="section-title" data-i18n="input_devices">Input Devices</div>
     <ul class="device-list" id="input-list">
         <!-- Inputs listed here -->
     </ul>
-    <button class="success" onclick="showInputModal()">+ Add Input Device</button>
+    <button class="success" onclick="showInputModal()" data-i18n="add_input_device">+ Add Input Device</button>
     
     <div class="controls">
-        <div class="section-title">Global Controls</div>
+        <div class="section-title" data-i18n="global_controls">Global Controls</div>
         <div style="display: flex; gap: 5px;">
-            <button style="flex:1" onclick="robotCommand('prev')">Prev Pose</button>
-            <button style="flex:1" onclick="robotCommand('next')">Next Pose</button>
+            <button style="flex:1" onclick="robotCommand('prev')" data-i18n="prev_pose">Prev Pose</button>
+            <button style="flex:1" onclick="robotCommand('next')" data-i18n="next_pose">Next Pose</button>
         </div>
-        <button class="primary" onclick="triggerCollect()" style="padding: 15px; font-size: 1.1em;">COLLECT ALL</button>
-        <button class="warning" onclick="triggerCalibrate()" style="margin-top: 10px;">Calibrate All</button>
+        <button class="primary" onclick="triggerCollect()" style="padding: 15px; font-size: 1.1em;" data-i18n="collect_all">COLLECT ALL</button>
+        <button class="warning" onclick="triggerCalibrate()" style="margin-top: 10px;" data-i18n="calibrate_all">Calibrate All</button>
     </div>
-    <div class="section-title" style="margin-top: 20px;">Dataset Viewer</div>
-    <button onclick="showDatasetModal()">Browse Datasets</button>
+    <div class="section-title" style="margin-top: 20px;" data-i18n="dataset_viewer">Dataset Viewer</div>
+    <button onclick="showDatasetModal()" data-i18n="browse_datasets">Browse Datasets</button>
 </div>
 
 <div class="main">
     <div class="toolbar">
-        <strong>Robot Visualization</strong>
-        <span id="pose-info" style="margin-left: 20px; color: #666;">Pose: -</span>
+        <strong data-i18n="robot_visualization">Robot Visualization</strong>
+        <span style="margin-left: 20px; color: #666;"><span data-i18n="pose">Pose</span>: <span id="pose-value">-</span></span>
     </div>
     <div class="main-view" id="main-view">
-        <div style="padding: 20px; text-align: center; color: #666; margin-top: 100px;">
+        <div style="padding: 20px; text-align: center; color: #666; margin-top: 100px;" data-i18n="start_robot_msg">
             Start the Robot Device to see visualization.
         </div>
     </div>
@@ -91,21 +100,21 @@
 <!-- Robot Modal -->
 <div class="modal" id="robot-modal">
     <div class="modal-content">
-        <h3>Configure Robot</h3>
+        <h3 data-i18n="configure_robot">Configure Robot</h3>
         <div class="form-group">
-            <label>Hand Type</label>
+            <label data-i18n="hand_type">Hand Type</label>
             <select id="robot-hand-type">
                 <option value="inspire">Inspire</option>
                 <option value="omni">Omni</option>
             </select>
         </div>
         <div class="form-group">
-                <label>Viser Port</label>
+                <label data-i18n="viser_port">Viser Port</label>
                 <input type="number" id="robot-viser-port" value="8080">
             </div>
         <div class="modal-actions">
-            <button onclick="hideModal('robot-modal')">Cancel</button>
-            <button class="primary" onclick="startRobot()">Start Robot</button>
+            <button onclick="hideModal('robot-modal')" data-i18n="cancel">Cancel</button>
+            <button class="primary" onclick="startRobot()" data-i18n="start_robot">Start Robot</button>
         </div>
     </div>
 </div>
@@ -113,9 +122,9 @@
 <!-- Input Modal -->
 <div class="modal" id="input-modal">
     <div class="modal-content">
-        <h3>Add Input Device</h3>
+        <h3 data-i18n="add_input_device">Add Input Device</h3>
         <div class="form-group">
-            <label>Collector Type</label>
+            <label data-i18n="collector_type">Collector Type</label>
             <select id="collector-type" onchange="toggleFields()">
                 <option value="avp">AVP</option>
                 <option value="vuer">Vuer</option>
@@ -123,32 +132,32 @@
             </select>
         </div>
         <div class="form-group">
-            <label>Hand Side</label>
+            <label data-i18n="hand_side">Hand Side</label>
             <select id="input-side">
-                <option value="both">Both</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
+                <option value="both" data-i18n="both">Both</option>
+                <option value="left" data-i18n="left">Left</option>
+                <option value="right" data-i18n="right">Right</option>
             </select>
         </div>
         <div class="form-group" id="ip-group">
-            <label>AVP IP Address</label>
-            <input type="text" id="avp-ip" placeholder="192.168.x.x">
+            <label data-i18n="avp_ip">AVP IP Address</label>
+            <input type="text" id="avp-ip" placeholder="x.x.x.x">
         </div>
         <div class="form-group" id="vuer-group" style="display:none;">
-            <label>Vuer Port</label>
-            <input type="text" id="vuer-port" placeholder="5555">
+            <label data-i18n="vuer_port">Vuer Port</label>
+            <input type="text" id="vuer-port" value="8012">
         </div>
         <div class="form-group" id="mediapipe-group" style="display:none;">
-            <label>Camera Index</label>
+            <label data-i18n="camera_index">Camera Index</label>
             <input type="number" id="camera-index" value="0">
         </div>
         <div class="form-group">
-            <label>Output Dir</label>
+            <label data-i18n="output_dir">Output Dir</label>
             <input type="text" id="output-dir" value="data">
         </div>
         <div class="modal-actions">
-            <button onclick="hideModal('input-modal')">Cancel</button>
-            <button class="primary" onclick="addInput()">Add</button>
+            <button onclick="hideModal('input-modal')" data-i18n="cancel">Cancel</button>
+            <button class="primary" onclick="addInput()" data-i18n="add">Add</button>
         </div>
     </div>
 </div>
@@ -156,19 +165,153 @@
 <!-- Dataset Modal -->
 <div class="modal" id="dataset-modal">
     <div class="modal-content" style="width: 600px;">
-        <h3>Select Dataset</h3>
+        <h3 data-i18n="select_dataset">Select Dataset</h3>
         <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; margin-bottom: 10px;">
             <ul id="dataset-list" style="list-style: none; padding: 0; margin: 0;">
                 <!-- Datasets listed here -->
             </ul>
         </div>
         <div class="modal-actions">
-            <button onclick="hideModal('dataset-modal')">Close</button>
+            <button onclick="hideModal('dataset-modal')" data-i18n="close">Close</button>
         </div>
     </div>
 </div>
 
 <script>
+    const translations = {
+        en: {
+            collection_manager: "Collection Manager",
+            robot_device: "Robot Device",
+            not_running: "Not Running",
+            configure_robot: "Configure Robot",
+            input_devices: "Input Devices",
+            add_input_device: "+ Add Input Device",
+            global_controls: "Global Controls",
+            prev_pose: "Prev Pose",
+            next_pose: "Next Pose",
+            collect_all: "COLLECT ALL",
+            calibrate_all: "Calibrate All",
+            dataset_viewer: "Dataset Viewer",
+            browse_datasets: "Browse Datasets",
+            robot_visualization: "Robot Visualization",
+            start_robot_msg: "Start the Robot Device to see visualization.",
+            hand_type: "Hand Type",
+            viser_port: "Viser Port",
+            cancel: "Cancel",
+            start_robot: "Start Robot",
+            collector_type: "Collector Type",
+            hand_side: "Hand Side",
+            both: "Both",
+            left: "Left",
+            right: "Right",
+            avp_ip: "AVP IP Address",
+            vuer_port: "Vuer Port",
+            camera_index: "Camera Index",
+            output_dir: "Output Dir",
+            add: "Add",
+            select_dataset: "Select Dataset",
+            close: "Close",
+            play: "Play",
+            visualize: "Visualize",
+            device: "Device",
+            loading: "Loading...",
+            open: "Open",
+            calibrating: "Calibrating...",
+            collecting: "Collecting...",
+            done: "Done!",
+            calibration_done: "Calibration Done!",
+            ready: "Ready?",
+            remove_device_confirm: "Remove this device?",
+            calibrate_confirm: "Start calibration for all devices? This will take about 10 seconds.",
+            not_calibrated_alert: "System has not been calibrated yet. Click 'COLLECT ALL' again to proceed anyway.",
+            not_calibrated_msg: "System has not been calibrated yet. Please calibrate before collecting data.",
+            error: "Error: ",
+            no_datasets: "No datasets found.",
+            open_vis: "Open Visualization in New Tab",
+            pose: "Pose",
+            server_ip: "Server IP",
+            start_robot_first: "Please start the robot device first."
+        },
+        zh: {
+            collection_manager: "采集管理器",
+            robot_device: "机器人设备",
+            not_running: "未运行",
+            configure_robot: "配置机器人",
+            input_devices: "输入设备",
+            add_input_device: "+ 添加输入设备",
+            global_controls: "全局控制",
+            prev_pose: "上一姿态",
+            next_pose: "下一姿态",
+            collect_all: "采集所有",
+            calibrate_all: "校准所有",
+            dataset_viewer: "数据集查看器",
+            browse_datasets: "浏览数据集",
+            robot_visualization: "机器人可视化",
+            start_robot_msg: "启动机器人设备以查看可视化。",
+            hand_type: "手型",
+            viser_port: "Viser 端口",
+            cancel: "取消",
+            start_robot: "启动机器人",
+            collector_type: "采集器类型",
+            hand_side: "手侧",
+            both: "双手",
+            left: "左手",
+            right: "右手",
+            avp_ip: "AVP IP 地址",
+            vuer_port: "Vuer 端口",
+            camera_index: "相机索引",
+            output_dir: "输出目录",
+            add: "添加",
+            select_dataset: "选择数据集",
+            close: "关闭",
+            play: "播放",
+            visualize: "可视化",
+            device: "设备",
+            loading: "加载中...",
+            open: "打开",
+            calibrating: "校准中...",
+            collecting: "采集中...",
+            done: "完成!",
+            calibration_done: "校准完成!",
+            ready: "准备?",
+            remove_device_confirm: "移除此设备?",
+            calibrate_confirm: "开始校准所有设备？这将大约需要10秒。",
+            not_calibrated_alert: "系统尚未校准。再次点击“采集所有”以继续。",
+            not_calibrated_msg: "系统尚未校准。请在采集数据前进行校准。",
+            error: "错误: ",
+            no_datasets: "未找到数据集。",
+            open_vis: "在新标签页打开可视化",
+            pose: "姿态",
+            server_ip: "服务器 IP",
+            start_robot_first: "请先启动机器人设备。"
+        }
+    };
+
+    let currentLang = localStorage.getItem('language') || 'en';
+
+    function setLanguage(lang) {
+        currentLang = lang;
+        localStorage.setItem('language', lang);
+        
+        // Update selector if needed
+        const selector = document.getElementById('language-selector');
+        if (selector && selector.value !== lang) {
+            selector.value = lang;
+        }
+
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (translations[lang][key]) {
+                el.innerText = translations[lang][key];
+            }
+        });
+        refreshStatus(); // Refresh dynamic content
+    }
+
+    function t(key) {
+        return translations[currentLang][key] || key;
+    }
+
     function buildFileTree(files) {
         const root = {};
         files.forEach(file => {
@@ -224,7 +367,7 @@
                 
                 li.innerHTML = `
                     <span>${file.name}</span>
-                    <button onclick="playDataset('${file.path}', this)" style="padding: 2px 8px; font-size: 0.9em;">Play</button>
+                    <button onclick="playDataset('${file.path}', this)" style="padding: 2px 8px; font-size: 0.9em;">${t('play')}</button>
                 `;
                 container.appendChild(li);
             });
@@ -234,7 +377,7 @@
     async function showDatasetModal() {
         const modal = document.getElementById('dataset-modal');
         const list = document.getElementById('dataset-list');
-        list.innerHTML = '<li>Loading...</li>';
+        list.innerHTML = `<li>${t('loading')}</li>`;
         modal.style.display = 'flex';
         
         try {
@@ -243,14 +386,14 @@
             
             list.innerHTML = '';
             if (files.length === 0) {
-                list.innerHTML = '<li style="padding: 10px;">No datasets found.</li>';
+                list.innerHTML = `<li style="padding: 10px;">${t('no_datasets')}</li>`;
                 return;
             }
             
             const tree = buildFileTree(files);
             renderTree(tree, list);
         } catch (e) {
-            list.innerHTML = `<li style="padding: 10px; color: red;">Error: ${e}</li>`;
+            list.innerHTML = `<li style="padding: 10px; color: red;">${t('error')}${e}</li>`;
         }
     }
 
@@ -258,11 +401,11 @@
         // Open window immediately to avoid popup blocker
         const newWindow = window.open('', '_blank');
         if (newWindow) {
-            newWindow.document.write('<html><body style="font-family:sans-serif;text-align:center;padding-top:50px;"><h3>Loading Dataset Playback...</h3><p>Please wait while the visualization server starts.</p></body></html>');
+            newWindow.document.write(`<html><body style="font-family:sans-serif;text-align:center;padding-top:50px;"><h3>${t('loading')}</h3><p>Please wait while the visualization server starts.</p></body></html>`);
         }
 
         const originalText = btn.innerText;
-        btn.innerText = "Loading...";
+        btn.innerText = t('loading');
         btn.disabled = true;
 
         try {
@@ -283,18 +426,18 @@
                 const link = document.createElement('a');
                 link.href = url;
                 link.target = '_blank';
-                link.innerText = 'Open';
+                link.innerText = t('open');
                 link.style.cssText = "display:inline-block; padding: 8px 12px; border: 1px solid #ccc; background: #28a745; color: white; border-radius: 4px; text-decoration: none;";
                 
                 btn.parentNode.replaceChild(link, btn);
             } else {
-                alert('Error: ' + data.message);
+                alert(t('error') + data.message);
                 if (newWindow) newWindow.close();
                 btn.innerText = originalText;
                 btn.disabled = false;
             }
         } catch (e) {
-            alert('Error: ' + e);
+            alert(t('error') + e);
             if (newWindow) newWindow.close();
             btn.innerText = originalText;
             btn.disabled = false;
@@ -321,13 +464,23 @@
                 mpGroup.style.display = 'block';
             }
         }    function showRobotModal() { document.getElementById('robot-modal').style.display = 'flex'; }
-    function showInputModal() { document.getElementById('input-modal').style.display = 'flex'; }
+    function showInputModal() { 
+        if (!status || !status.robot || !status.robot.running) {
+            alert(t('start_robot_first'));
+            return;
+        }
+        document.getElementById('input-modal').style.display = 'flex'; 
+    }
     function hideModal(id) { document.getElementById(id).style.display = 'none'; }
 
     async function refreshStatus() {
         const res = await fetch('/api/status');
         status = await res.json();
         
+        if (status.ip) {
+            document.getElementById('server-ip').innerText = status.ip;
+        }
+
         // Update Robot Status
         const robotDiv = document.getElementById('robot-status');
         const mainView = document.getElementById('main-view');
@@ -336,7 +489,7 @@
             robotDiv.innerHTML = `<div class="device-item robot">
                 <div>
                     <strong>${status.robot.config.hand_type} Hand</strong><br>
-                    <small>Viser: ${status.robot.viser_port}</small>
+                    <small>${t('viser_port')}: ${status.robot.viser_port}</small>
                 </div>
             </div>`;
             
@@ -347,13 +500,13 @@
                     <div style="flex: 1; display: flex; flex-direction: column; height: 100%;">
                         <iframe id="viser-frame" src="${url}" style="flex: 1; width: 100%; height: 100%; border: none;"></iframe>
                         <div style="text-align: center; padding: 5px; background: #f0f0f0; font-size: 0.8em;">
-                            <a href="${url}" target="_blank">Open Visualization in New Tab</a>
+                            <a href="${url}" target="_blank">${t('open_vis')}</a>
                         </div>
                     </div>`;
             }
         } else {
-            robotDiv.innerText = "Not Running";
-            mainView.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; margin-top: 100px;">Start the Robot Device to see visualization.</div>`;
+            robotDiv.innerText = t('not_running');
+            mainView.innerHTML = `<div style="padding: 20px; text-align: center; color: #666; margin-top: 100px;">${t('start_robot_msg')}</div>`;
         }
 
         // Update Inputs
@@ -363,11 +516,17 @@
             const dev = status.inputs[id];
             const li = document.createElement('li');
             li.className = 'device-item input';
+            
+            let portInfo = `ZMQ: ${dev.zmq_port}`;
+            if (dev.config.collector_type === 'vuer') {
+                portInfo = `${t('vuer_port')}: ${dev.vuer_port}`;
+            }
+
             li.innerHTML = `
                 <div>
-                    <strong>Device ${id} (${dev.config.collector_type})</strong><br>
-                    <small>ZMQ: ${dev.zmq_port}</small>
-                    ${dev.viser_port ? `<br><a href="http://${window.location.hostname}:${dev.viser_port}" target="_blank" style="display:inline-block; margin-top:5px; padding: 2px 5px; font-size: 0.8em; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: black; cursor: pointer;">Visualize</a>` : ''}
+                    <strong>${t('device')} ${id} (${dev.config.collector_type})</strong><br>
+                    <small>${portInfo}</small>
+                    ${dev.viser_port ? `<br><a href="http://${window.location.hostname}:${dev.viser_port}" target="_blank" style="display:inline-block; margin-top:5px; padding: 2px 5px; font-size: 0.8em; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: black; cursor: pointer;">${t('visualize')}</a>` : ''}
                 </div>
                 <button class="danger" onclick="removeInput('${id}')">X</button>
             `;
@@ -422,13 +581,13 @@
         });
         const data = await res.json();
         if (data.status === 'success') {
-            document.getElementById('pose-info').innerText = `Pose: ${data.idx} (${data.pose_name})`;
+            document.getElementById('pose-value').innerText = `${data.idx} (${data.pose_name})`;
         }
     }
 
     async function triggerCollect() {
         if (status && !status.is_calibrated) {
-            alert("System has not been calibrated yet. Please calibrate before collecting data.");
+            alert(t('not_calibrated_msg'));
             return;
         }
 
@@ -446,7 +605,7 @@
             await new Promise(r => setTimeout(r, 1000));
         }
         
-        text.innerText = "Collecting...";
+        text.innerText = t('collecting');
         progressContainer.style.display = 'block';
         progressBar.style.width = '0%';
         
@@ -476,10 +635,10 @@
             
             // Ensure bar is full
             progressBar.style.width = '100%';
-            text.innerText = "Done!";
+            text.innerText = t('done');
             await new Promise(r => setTimeout(r, 500));
         } catch (e) {
-            alert('Error: ' + e);
+            alert(t('error') + ': ' + e);
         } finally {
             overlay.style.display = 'none';
         }
@@ -495,7 +654,7 @@
         
         overlay.style.display = 'flex';
         progressContainer.style.display = 'block';
-        text.innerText = "Calibrating...";
+        text.innerText = t('calibrating');
         progressBar.style.width = '0%';
         
         // Start calibration request
@@ -523,19 +682,20 @@
             console.log(data);
             
             progressBar.style.width = '100%';
-            text.innerText = "Calibration Done!";
+            text.innerText = t('calibration_done');
             await new Promise(r => setTimeout(r, 1000));
             // Refresh status to update calibration flag
             refreshStatus();
         } catch (e) {
             console.error(e);
-            alert('Error: ' + e);
+            alert(t('error') + ': ' + e);
         } finally {
             overlay.style.display = 'none';
         }
     }
 
     // Initial load
+    setLanguage(currentLang);
     refreshStatus();
     setInterval(refreshStatus, 5000); // Poll status every 5s
 </script>
