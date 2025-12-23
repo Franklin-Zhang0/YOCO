@@ -48,6 +48,20 @@
     <div class="progress-container" id="progress-container">
         <div class="progress-bar" id="progress-bar"></div>
     </div>
+    <div id="calibration-bars" style="width: 80%; max-width: 600px; display: none; flex-direction: column; gap: 20px; margin-top: 20px;">
+        <div>
+            <div style="margin-bottom: 5px; text-align: center;" data-i18n="collecting">Collecting...</div>
+            <div class="progress-container" style="display: block; margin-top: 0; width: 100%;">
+                <div class="progress-bar" id="collection-bar"></div>
+            </div>
+        </div>
+        <div>
+            <div style="margin-bottom: 5px; text-align: center;" data-i18n="calibrating">Calibrating...</div>
+            <div class="progress-container" style="display: block; margin-top: 0; width: 100%;">
+                <div class="progress-bar" id="computing-bar" style="background: #007bff;"></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="sidebar">
@@ -177,6 +191,22 @@
     </div>
 </div>
 
+<!-- Output Dir Modal -->
+<div class="modal" id="output-dir-modal">
+    <div class="modal-content">
+        <h3 data-i18n="save_dir">Save Dir</h3>
+        <input type="hidden" id="output-dir-device-id">
+        <div class="form-group">
+            <label data-i18n="output_dir">Output Dir</label>
+            <input type="text" id="new-output-dir">
+        </div>
+        <div class="modal-actions">
+            <button onclick="hideModal('output-dir-modal')" data-i18n="cancel">Cancel</button>
+            <button class="primary" onclick="submitOutputDir()" data-i18n="update">Update</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const translations = {
         en: {
@@ -230,7 +260,9 @@
             open_vis: "Open Visualization in New Tab",
             pose: "Pose",
             server_ip: "Server IP",
-            start_robot_first: "Please start the robot device first."
+            start_robot_first: "Please start the robot device first.",
+            update: "Update",
+            save_dir: "Save Dir"
         },
         zh: {
             collection_manager: "采集管理器",
@@ -283,7 +315,9 @@
             open_vis: "在新标签页打开可视化",
             pose: "姿态",
             server_ip: "服务器 IP",
-            start_robot_first: "请先启动机器人设备。"
+            start_robot_first: "请先启动机器人设备。",
+            update: "更新",
+            save_dir: "保存目录"
         }
     };
 
@@ -523,12 +557,16 @@
             }
 
             li.innerHTML = `
-                <div>
+                <div style="flex: 1;">
                     <strong>${t('device')} ${id} (${dev.config.collector_type})</strong><br>
-                    <small>${portInfo}</small>
-                    ${dev.viser_port ? `<br><a href="http://${window.location.hostname}:${dev.viser_port}" target="_blank" style="display:inline-block; margin-top:5px; padding: 2px 5px; font-size: 0.8em; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: black; cursor: pointer;">${t('visualize')}</a>` : ''}
+                    <small>${portInfo}</small><br>
+                    <small><strong>${t('save_dir')}:</strong> ${dev.config.output_dir}</small><br>
+                    <div style="margin-top: 5px; display: flex; gap: 5px;">
+                        <button style="padding: 2px 5px; font-size: 0.8em;" onclick="showOutputDirModal('${id}', '${dev.config.output_dir}')">${t('update')} ${t('save_dir')}</button>
+                        ${dev.viser_port ? `<a href="http://${window.location.hostname}:${dev.viser_port}" target="_blank" style="display:inline-block; padding: 2px 5px; font-size: 0.8em; border: 1px solid #ccc; background: #fff; border-radius: 4px; text-decoration: none; color: black; cursor: pointer;">${t('visualize')}</a>` : ''}
+                    </div>
                 </div>
-                <button class="danger" onclick="removeInput('${id}')">X</button>
+                <button class="danger" onclick="removeInput('${id}')" style="margin-left: 10px;">X</button>
             `;
             list.appendChild(li);
         }
@@ -573,6 +611,29 @@
         refreshStatus();
     }
 
+    function showOutputDirModal(id, currentDir) {
+        document.getElementById('output-dir-device-id').value = id;
+        document.getElementById('new-output-dir').value = currentDir;
+        document.getElementById('output-dir-modal').style.display = 'flex';
+    }
+
+    async function submitOutputDir() {
+        const id = document.getElementById('output-dir-device-id').value;
+        const newDir = document.getElementById('new-output-dir').value;
+        const res = await fetch(`/api/inputs/${id}/output_dir`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({output_dir: newDir})
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            hideModal('output-dir-modal');
+            refreshStatus();
+        } else {
+            alert(t('error') + (data.message || 'Failed to update directory'));
+        }
+    }
+
     async function robotCommand(cmd) {
         const res = await fetch('/api/robot/command', {
             method: 'POST',
@@ -595,6 +656,7 @@
         const text = document.getElementById('countdown-text');
         const progressContainer = document.getElementById('progress-container');
         const progressBar = document.getElementById('progress-bar');
+        const calibrationBars = document.getElementById('calibration-bars');
         
         overlay.style.display = 'flex';
         progressContainer.style.display = 'none';
@@ -607,13 +669,14 @@
         
         text.innerText = t('collecting');
         progressContainer.style.display = 'block';
+        calibrationBars.style.display = 'none';
         progressBar.style.width = '0%';
         
         // Start collection in background
         const collectPromise = fetch('/api/collect', { method: 'POST' });
         
-        // Collection Progress Bar (approx 3 seconds)
-        const duration = 3000;
+        // Collection Progress Bar (approx 10 seconds)
+        const duration = 10000;
         const interval = 50;
         const steps = duration / interval;
         let currentStep = 0;
@@ -633,6 +696,20 @@
             const data = await res.json();
             console.log(data);
             
+            if (data.status === 'success') {
+                let errors = [];
+                for (const [devId, result] of Object.entries(data.results)) {
+                    if (result.status === 'error') {
+                        errors.push(`Device ${devId}: ${result.message}`);
+                    }
+                }
+                if (errors.length > 0) {
+                    alert(t('error') + '\n' + errors.join('\n'));
+                }
+            } else {
+                alert(t('error') + ': ' + data.message);
+            }
+            
             // Ensure bar is full
             progressBar.style.width = '100%';
             text.innerText = t('done');
@@ -649,18 +726,31 @@
         
         const overlay = document.getElementById('countdown-overlay');
         const text = document.getElementById('countdown-text');
-        const progressBar = document.getElementById('progress-bar');
         const progressContainer = document.getElementById('progress-container');
+        const calibrationBars = document.getElementById('calibration-bars');
+        const collectionBar = document.getElementById('collection-bar');
+        const computingBar = document.getElementById('computing-bar');
         
         overlay.style.display = 'flex';
-        progressContainer.style.display = 'block';
+        progressContainer.style.display = 'none';
+        calibrationBars.style.display = 'none';
+        
+        // Preparation Countdown
+        for (let i = 3; i > 0; i--) {
+            text.innerText = i;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        
+        calibrationBars.style.display = 'flex';
         text.innerText = t('calibrating');
-        progressBar.style.width = '0%';
+        
+        collectionBar.style.width = '0%';
+        computingBar.style.width = '0%';
         
         // Start calibration request
         const calibratePromise = fetch('/api/calibrate', { method: 'POST' });
         
-        // Animate progress bar for ~10s
+        // Phase 1: Collection (10s)
         const duration = 10000; 
         const interval = 50;
         const steps = duration / interval;
@@ -669,28 +759,59 @@
         const timer = setInterval(() => {
             currentStep++;
             const pct = Math.min(100, (currentStep / steps) * 100);
-            progressBar.style.width = `${pct}%`;
+            collectionBar.style.width = `${pct}%`;
             
             if (currentStep >= steps) {
                 clearInterval(timer);
+                startComputingAnimation();
             }
         }, interval);
+
+        let computingTimer;
+        function startComputingAnimation() {
+            let compPct = 0;
+            computingTimer = setInterval(() => {
+                compPct += 0.5; // Slow progress
+                if (compPct > 95) compPct = 95; // Don't reach 100 until done
+                computingBar.style.width = `${compPct}%`;
+            }, 100);
+        }
         
         try {
             const res = await calibratePromise;
             const data = await res.json();
             console.log(data);
             
-            progressBar.style.width = '100%';
+            if (computingTimer) clearInterval(computingTimer);
+
+            if (data.status === 'success') {
+                let errors = [];
+                for (const [devId, result] of Object.entries(data.results)) {
+                    if (result.status === 'error') {
+                        errors.push(`Device ${devId}: ${result.message}`);
+                    }
+                }
+                if (errors.length > 0) {
+                    alert(t('error') + '\n' + errors.join('\n'));
+                }
+            } else {
+                alert(t('error') + ': ' + data.message);
+            }
+
+            collectionBar.style.width = '100%';
+            computingBar.style.width = '100%';
             text.innerText = t('calibration_done');
             await new Promise(r => setTimeout(r, 1000));
             // Refresh status to update calibration flag
             refreshStatus();
         } catch (e) {
             console.error(e);
+            if (computingTimer) clearInterval(computingTimer);
             alert(t('error') + ': ' + e);
         } finally {
             overlay.style.display = 'none';
+            calibrationBars.style.display = 'none';
+            progressContainer.style.display = 'block';
         }
     }
 

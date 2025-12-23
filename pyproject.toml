@@ -31,7 +31,13 @@ dependencies = [
     "Omegaconf",
     "tqdm",
     "wandb",
-    "viser"
+    "viser",
+    "flask",
+    "pyzmq",
+    "h5py",
+    "colorama",
+    "tyro",
+    "yourdfpy",
 ]
 
 [tool.ruff.lint.isort]

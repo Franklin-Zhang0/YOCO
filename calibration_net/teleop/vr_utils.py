@@ -23,7 +23,7 @@ def calibration(pose_collector: BaseCollector, n_comps:int, sides:list[str], tim
         out = mano_fitter.fit_sequence(poses[side], optimize_scale=False)
         betas[side] = out['betas']
         
-    return betas
+    return poses, betas
 
 def initialize_fitter(n_comps:int, sides:list[str]):
     mano_fitter = {}

@@ -101,6 +101,7 @@ class PlaybackNode:
         # Update Human Hand
         # world_hand_joints is (N, 21, 3)
         joints = self.data['world_hand_joints'][self.frame_idx]
+        joints -= joints[0:1, :]  # Center at wrist
         
         # We need to know which side this data belongs to. 
         # The pickle seems to be per-side based on input_node.py save_data:

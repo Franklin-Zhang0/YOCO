@@ -75,7 +75,7 @@ def main():
     pose_collector = PoseCollector(args.control_frequency)
 
     if args.calibration:
-        betas = calibration(pose_collector, n_comps, sides)
+        _, betas = calibration(pose_collector, n_comps, sides)
     else:
         betas = {'left': torch.zeros((10,), dtype=torch.float32).to(device), 
                  'right': torch.zeros((10,), dtype=torch.float32).to(device)}

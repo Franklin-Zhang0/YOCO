@@ -138,6 +138,19 @@ class InputNode:
         elif cmd == 'calibrate':
             self.trigger_calibration()
             return {'status': 'success'}
+        elif cmd == 'set_output_dir':
+            new_dir = command.get('output_dir')
+            try:
+                if new_dir:
+                    self.output_dir = new_dir
+                    if not os.path.exists(self.output_dir):
+                        os.makedirs(self.output_dir)
+                    print(f"[Device {self.device_id}] Output directory changed to: {self.output_dir}")
+                    return {'status': 'success'}
+                else:
+                    return {'status': 'error', 'message': 'No output_dir provided'}
+            except Exception as e:
+                return {'status': 'error', 'message': str(e)}
         elif cmd == 'ping':
             return {'status': 'alive'}
         else:
@@ -156,7 +169,26 @@ class InputNode:
     def trigger_calibration(self):
         print(f'\n[Device {self.device_id}] Starting calibration...')
         print('Fitting betas, please randomly move your hands for 10 seconds...')
-        self.betas = calibration(self.pose_collector, n_comps=21, sides=self.sides, timesteps=self.frame_rate*10)
+        poses, self.betas = calibration(self.pose_collector, n_comps=21, sides=self.sides, timesteps=self.frame_rate*10)
+        
+        # Save calibration data
+        for side in self.sides:
+            if side in poses and side in self.betas:
+                save_dict = {
+                    'world_hand_joints': poses[side],
+                    'betas': self.betas[side],
+                    'mano_side': [side],
+                    # 'denormed_robot_joint_pose': np.repeat(dummy_robot_pose[np.newaxis, ...], num_frames, axis=0),
+                    'robot_type': self.hand_type,
+                    'pose_name': 'calibration',
+                    # 'robot_joint_pose': np.repeat(dummy_robot_pose[np.newaxis, ...], num_frames, axis=0),
+                    'device_id': self.device_id
+                }
+                save_path = os.path.join(self.output_dir, f'{side}_calibration_{self.device_id}.pkl')
+                with open(save_path, 'wb') as f:
+                    pickle.dump(save_dict, f)
+                print(f'Saved {side} calibration data to {save_path}')
+
         print(f'[Device {self.device_id}] Calibration done.')
 
     def update_visualization(self, pose):

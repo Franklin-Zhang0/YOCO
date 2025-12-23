@@ -119,7 +119,7 @@ def main(output_dir: str,
 
     pose_collector = get_pose_collector(collector_type, avp_ip=ip, frame_rate=60, left_glove_port=left_glove_port, right_glove_port=right_glove_port, hand_model_path=hand_model_path, glove_model_path=glove_model_path, calibrate=calibrate)
     print('Fitting betas, please randomly move your hands for 10 seconds...')
-    betas = calibration(pose_collector, n_comps=21, sides=['left'], timesteps=frame_rate*10)
+    _, betas = calibration(pose_collector, n_comps=21, sides=['left'], timesteps=frame_rate*10)
 
     key_idx = 0
     poses = None

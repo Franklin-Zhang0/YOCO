@@ -97,6 +97,7 @@ class DeviceManager:
             self.robot_socket = None
 
     def add_input_device(self, config):
+        self.is_calibrated = False
         device_id = str(self.next_id)
         self.next_id += 1
         
@@ -175,6 +176,23 @@ class DeviceManager:
             return True
         return False
 
+    def set_input_output_dir(self, device_id, output_dir):
+        if device_id in self.input_devices:
+            device = self.input_devices[device_id]
+            try:
+                device['socket'].send_json({
+                    'cmd': 'set_output_dir',
+                    'output_dir': output_dir
+                })
+                reply = device['socket'].recv_json()
+                if reply.get('status') == 'success':
+                    device['config']['output_dir'] = output_dir
+                    self.is_calibrated = False
+                    return True
+            except Exception as e:
+                print(f"Error setting output dir for device {device_id}: {e}")
+        return False
+
     def send_robot_command(self, cmd):
         if self.robot_socket:
             try:
@@ -209,10 +227,17 @@ class DeviceManager:
         for dev_id, dev in self.input_devices.items():
             if dev_id in results: continue
             try:
+                # Set a 10s timeout for collection
+                dev['socket'].setsockopt(zmq.RCVTIMEO, 10000)
                 reply = dev['socket'].recv_json()
                 results[dev_id] = reply
+            except zmq.Again:
+                results[dev_id] = {'status': 'error', 'message': 'Timeout: Please check all the devices can see the hands properly'}
             except Exception as e:
                 results[dev_id] = {'status': 'error', 'message': str(e)}
+            finally:
+                # Reset timeout
+                dev['socket'].setsockopt(zmq.RCVTIMEO, -1)
                 
         return {'status': 'success', 'results': results}
 
@@ -231,10 +256,17 @@ class DeviceManager:
         for dev_id, dev in self.input_devices.items():
             if dev_id in results: continue
             try:
+                # Set a 60s timeout for calibration (10s collection + fitting)
+                dev['socket'].setsockopt(zmq.RCVTIMEO, 60000)
                 reply = dev['socket'].recv_json()
                 results[dev_id] = reply
+            except zmq.Again:
+                results[dev_id] = {'status': 'error', 'message': 'Timeout: Calibration took too long (>60s)'}
             except Exception as e:
                 results[dev_id] = {'status': 'error', 'message': str(e)}
+            finally:
+                # Reset timeout
+                dev['socket'].setsockopt(zmq.RCVTIMEO, -1)
         print("Calibration results:", results)
         self.is_calibrated = True
         return {'status': 'success', 'results': results}
@@ -292,6 +324,13 @@ def remove_input(dev_id):
     if manager.remove_input_device(dev_id):
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 404
+
+@app.route('/api/inputs/<dev_id>/output_dir', methods=['POST'])
+def set_input_output_dir(dev_id):
+    output_dir = request.json.get('output_dir')
+    if manager.set_input_output_dir(dev_id, output_dir):
+        return jsonify({'status': 'success'})
+    return jsonify({'status': 'error'}), 400
 
 @app.route('/api/collect', methods=['POST'])
 def collect():
