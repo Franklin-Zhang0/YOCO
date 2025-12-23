@@ -95,6 +95,12 @@ class DeviceManager:
             self.robot_process.terminate()
             self.robot_process = None
             self.robot_socket = None
+            
+    def create_socket(self, port, mode=zmq.REQ):
+        socket = self.context.socket(mode)
+        socket.setsockopt(zmq.CONFLATE, 1)
+        socket.connect(f"tcp://localhost:{port}")
+        return socket
 
     def add_input_device(self, config):
         self.is_calibrated = False
@@ -148,8 +154,7 @@ class DeviceManager:
         
         process = subprocess.Popen(cmd, env=env)
         
-        socket = self.context.socket(zmq.REQ)
-        socket.connect(f"tcp://localhost:{zmq_port}")
+        socket = self.create_socket(zmq_port, mode=zmq.REQ)
         
         self.input_devices[device_id] = {
             'process': process,
@@ -236,8 +241,12 @@ class DeviceManager:
             except Exception as e:
                 results[dev_id] = {'status': 'error', 'message': str(e)}
             finally:
-                # Reset timeout
+                # create a new socket to avoid issues
                 dev['socket'].setsockopt(zmq.RCVTIMEO, -1)
+                if results[dev_id]['status'] != 'success':
+                    dev['socket'].close()
+                    new_socket = self.create_socket(dev['zmq_port'], mode=zmq.REQ)
+                    dev['socket'] = new_socket
                 
         return {'status': 'success', 'results': results}
 
@@ -251,7 +260,7 @@ class DeviceManager:
                 })
             except Exception as e:
                 results[dev_id] = {'status': 'error', 'message': str(e)}
-        
+        self.is_calibrated = True
         # Wait for all replies
         for dev_id, dev in self.input_devices.items():
             if dev_id in results: continue
@@ -267,9 +276,14 @@ class DeviceManager:
             finally:
                 # Reset timeout
                 dev['socket'].setsockopt(zmq.RCVTIMEO, -1)
+                # create a new socket to avoid issues
+                if results[dev_id]['status'] != 'success':
+                    dev['socket'].close()
+                    new_socket = self.create_socket(dev['zmq_port'], mode=zmq.REQ)
+                    dev['socket'] = new_socket
+                    self.is_calibrated = False
         print("Calibration results:", results)
-        self.is_calibrated = True
-        return {'status': 'success', 'results': results}
+        return {'status': 'success' if self.is_calibrated else 'error', 'results': results}
 
     def get_status(self):
         return {
