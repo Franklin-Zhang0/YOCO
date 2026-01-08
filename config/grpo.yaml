@@ -1,0 +1,24 @@
+dataset:
+  input_keys: "world_hand_joints"
+  output_keys: "denormed_robot_joint_pose"
+
+model:
+  type: "MLP"
+  hidden_layers: [256, 256, 256]
+
+trainer:
+  expname: "GRPO_finetune"
+  num_epochs: 10
+  batch_size: 32
+  learning_rate: 0.001
+  grad_clipping: 1.0
+  device: 'mps'
+  save_path: "expdata/grpo_models"
+  
+  # GRPO specific
+  group_size: 16
+  eps_clip: 0.2
+  beta: 0.01
+  std: 1.0
+  std_decay: 0.995
+  loss_type: "dex_retarget_mse"

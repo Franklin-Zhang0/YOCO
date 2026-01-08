@@ -117,6 +117,8 @@ def load_model(model_dir: str, device: str = 'cpu') -> Model:
         
     Returns:
         Model: The loaded model.
+        Normalization stats: dict
+        Config: dict
     """
     model_dir = os.path.expanduser(model_dir)
     cfg_path = os.path.join(model_dir, 'config.yaml')

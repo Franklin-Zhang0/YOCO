@@ -2,6 +2,8 @@ import numpy as np
 import time
 from typing import Union
 from enum import Enum
+import os
+import torch
 
 class Side(Enum):
     LEFT = 1
@@ -236,9 +238,63 @@ def apply_transformation(joint_xyz: np.ndarray, transformation_matrix: np.ndarra
     transformed_joint_xyz = joint_xyz @ np.swapaxes(transformation_matrix, -2, -1)
     return transformed_joint_xyz[..., :3]
 
-def transform_joint3d(joint_xyz: np.ndarray):
-    tran, inv_tran = build_axes_from_joints3d(joint_xyz)
-    transformed_joint_xyz = apply_transformation(joint_xyz, inv_tran)
+def build_axes_from_joints3d_torch(joints_xyz: torch.Tensor):
+    """
+    Batched wrist–palm frame from 3-D hand joints (PyTorch version).
+    """
+    if joints_xyz.shape[-2:] != (21, 3):
+        raise ValueError("expected (..., 21, 3) input, but got shape " + str(joints_xyz.shape))
+
+    eps = 1e-8
+
+    z_axis = (joints_xyz[..., 9, :] + joints_xyz[..., 13, :]) / 2 - joints_xyz[..., 0, :]
+    z_axis = z_axis / (torch.norm(z_axis, dim=-1, keepdim=True) + eps)
+
+    y_aux = joints_xyz[..., 5, :] - joints_xyz[..., 13, :]
+    y_aux = y_aux / (torch.norm(y_aux, dim=-1, keepdim=True) + eps)
+
+    x_axis = torch.cross(y_aux, z_axis, dim=-1)
+    x_axis = x_axis / (torch.norm(x_axis, dim=-1, keepdim=True) + eps)
+
+    y_axis = torch.cross(z_axis, x_axis, dim=-1)
+    y_axis = y_axis / (torch.norm(y_axis, dim=-1, keepdim=True) + eps)
+
+    R = torch.stack([x_axis, y_axis, z_axis], dim=-1)
+    t = joints_xyz[..., 0, :]
+
+    batch_shape = joints_xyz.shape[:-2]
+    
+    T = torch.eye(4, device=joints_xyz.device, dtype=joints_xyz.dtype).repeat(batch_shape + (1, 1))
+
+    T[..., :3, :3] = R
+    T[..., :3, 3] = t
+
+    R_T = R.transpose(-1, -2)
+    t_inv = -torch.matmul(R_T, t.unsqueeze(-1)).squeeze(-1)
+
+    T_inv = torch.eye(4, device=joints_xyz.device, dtype=joints_xyz.dtype).repeat(batch_shape + (1, 1))
+    
+    T_inv[..., :3, :3] = R_T
+    T_inv[..., :3, 3] = t_inv
+
+    return T, T_inv
+
+def apply_transformation_torch(joint_xyz: torch.Tensor, transformation_matrix: torch.Tensor):
+    """
+    Apply a transformation matrix to a joint pose (PyTorch version).
+    """
+    ones = torch.ones((*joint_xyz.shape[:-1], 1), device=joint_xyz.device, dtype=joint_xyz.dtype)
+    joint_xyz_homo = torch.cat((joint_xyz, ones), dim=-1)
+    transformed_joint_xyz = joint_xyz_homo @ transformation_matrix.transpose(-2, -1)
+    return transformed_joint_xyz[..., :3]
+
+def transform_joint3d(joint_xyz: Union[np.ndarray, torch.Tensor]):
+    if isinstance(joint_xyz, torch.Tensor):
+        tran, inv_tran = build_axes_from_joints3d_torch(joint_xyz)
+        transformed_joint_xyz = apply_transformation_torch(joint_xyz, inv_tran)
+    else:
+        tran, inv_tran = build_axes_from_joints3d(joint_xyz)
+        transformed_joint_xyz = apply_transformation(joint_xyz, inv_tran)
     return transformed_joint_xyz
     
 class AngleNormalizer():
@@ -281,3 +337,73 @@ class AngleNormalizer():
         else:
             raise ValueError(f"Expected angles to be 1D or 2D array, but got {normalized_angles.ndim}D array")
         return angles
+
+
+mano = None
+mano_root = os.environ.get('MANO_PATH')
+def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, transl: torch.Tensor = None) -> [torch.Tensor, torch.Tensor]:
+    from  manopth import manolayer
+    theta_dim = mano_theta_pred.shape[-1]
+    global mano
+    if mano is None:
+        mano = manolayer.ManoLayer(
+            mano_root=mano_root,
+            use_pca=True,
+            ncomps=theta_dim,
+            flat_hand_mean=True,
+        ).to(mano_theta_pred.device)
+    theta_shape = mano_theta_pred.shape
+    if transl is None:
+        transl = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(mano_theta_pred.device)
+    
+    if mano_orient is None:
+        mano_orient = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(mano_theta_pred.device)
+        
+    pose_coeffs = torch.cat([mano_orient, mano_theta_pred], dim=-1)
+    
+    pose_coeffs = pose_coeffs.view(-1, pose_coeffs.shape[-1])
+    transl = transl.view(-1, 3)
+    
+    pred_vertices, pred_joints = mano(
+        th_pose_coeffs=pose_coeffs,
+        th_trans=transl,
+    )
+    
+    pred_vertices = pred_vertices.view(*theta_shape[:-1], -1, 3)
+    pred_joints = pred_joints.view(*theta_shape[:-1], -1, 3)
+    return pred_vertices / 1000.0, pred_joints / 1000.0
+
+
+INSPIRE_JOINT_ORDER = [
+    'pinky_proximal_joint',
+    'ring_proximal_joint', 
+    'middle_proximal_joint',
+    'index_proximal_joint',
+    'thumb_proximal_pitch_joint',
+    'thumb_proximal_yaw_joint'
+]
+
+OMNI_JOINT_ORDER = [ 'thumb_roll_joint', 'thumb_abad_joint', 'thumb_mcp_joint', 'thumb_pip_joint',
+                        'index_abad_joint', 'index_mcp_joint',  'index_pip_joint',
+                        'middle_abad_joint', 'middle_mcp_joint',  'middle_pip_joint',
+                        'ring_mcp_joint',
+                        'pinky_mcp_joint']
+
+ROHAND_JOINT_ORDER = [ "if_proximal_link", "mf_proximal_link", "rf_proximal_link", "lf_proximal_link",
+                        "th_proximal_link", "th_root_link" ]
+
+ROBOT_JOINT_ORDER = {
+    "inspire": INSPIRE_JOINT_ORDER,
+    "omni": OMNI_JOINT_ORDER,
+    "ro": ROHAND_JOINT_ORDER,
+}
+
+def reorder_qpos(qpos, target_names, source_names):
+    """
+    Reorder qpos from source_names order to target_names order.
+    """
+    retargeting_to_target = np.array(
+            [source_names.index(name) for name in target_names]
+        ).astype(int)
+    target_qpos = qpos[retargeting_to_target]
+    return target_qpos
