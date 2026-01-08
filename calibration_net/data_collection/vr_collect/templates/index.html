@@ -143,6 +143,7 @@
                 <option value="avp">AVP</option>
                 <option value="vuer">Vuer</option>
                 <option value="mediapipe">MediaPipe</option>
+                <option value="glove">Glove</option>
             </select>
         </div>
         <div class="form-group">
@@ -164,6 +165,28 @@
         <div class="form-group" id="mediapipe-group" style="display:none;">
             <label data-i18n="camera_index">Camera Index</label>
             <input type="number" id="camera-index" value="0">
+        </div>
+        <div id="glove-group" style="display:none;">
+            <div class="form-group">
+                <label data-i18n="left_glove_port">Left Glove Port</label>
+                <input type="text" id="left-glove-port">
+            </div>
+            <div class="form-group">
+                <label data-i18n="right_glove_port">Right Glove Port</label>
+                <input type="text" id="right-glove-port">
+            </div>
+            <div class="form-group">
+                <label data-i18n="hand_model_path">Hand Model Path</label>
+                <input type="text" id="hand-model-path">
+            </div>
+            <div class="form-group">
+                <label data-i18n="glove_model_path">Glove Model Path</label>
+                <input type="text" id="glove-model-path">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center;">
+                <input type="checkbox" id="calibrate-glove" style="width: auto; margin-right: 10px;">
+                <label for="calibrate-glove" data-i18n="calibrate" style="margin-bottom: 0;">Calibrate</label>
+            </div>
         </div>
         <div class="form-group">
             <label data-i18n="output_dir">Output Dir</label>
@@ -262,7 +285,12 @@
             server_ip: "Server IP",
             start_robot_first: "Please start the robot device first.",
             update: "Update",
-            save_dir: "Save Dir"
+            save_dir: "Save Dir",
+            left_glove_port: "Left Glove Port",
+            right_glove_port: "Right Glove Port",
+            hand_model_path: "Hand Model Path",
+            glove_model_path: "Glove Model Path",
+            calibrate: "Calibrate"
         },
         zh: {
             collection_manager: "采集管理器",
@@ -317,7 +345,12 @@
             server_ip: "服务器 IP",
             start_robot_first: "请先启动机器人设备。",
             update: "更新",
-            save_dir: "保存目录"
+            save_dir: "保存目录",
+            left_glove_port: "左手手套端口",
+            right_glove_port: "右手手套端口",
+            hand_model_path: "手模型路径",
+            glove_model_path: "手套模型路径",
+            calibrate: "校准"
         }
     };
 
@@ -485,10 +518,12 @@
             const ipGroup = document.getElementById('ip-group');
             const vuerGroup = document.getElementById('vuer-group');
             const mpGroup = document.getElementById('mediapipe-group');
+            const gloveGroup = document.getElementById('glove-group');
             
             ipGroup.style.display = 'none';
             vuerGroup.style.display = 'none';
             mpGroup.style.display = 'none';
+            gloveGroup.style.display = 'none';
 
             if (type === 'avp') {
                 ipGroup.style.display = 'block';
@@ -496,6 +531,8 @@
                 vuerGroup.style.display = 'block';
             } else if (type === 'mediapipe') {
                 mpGroup.style.display = 'block';
+            } else if (type === 'glove') {
+                gloveGroup.style.display = 'block';
             }
         }    function showRobotModal() { document.getElementById('robot-modal').style.display = 'flex'; }
     function showInputModal() { 
@@ -594,7 +631,12 @@
             ip: document.getElementById('avp-ip').value,
             vuer_port: document.getElementById('vuer-port').value,
             camera_index: document.getElementById('camera-index').value,
-            side: document.getElementById('input-side').value
+            side: document.getElementById('input-side').value,
+            left_glove_port: document.getElementById('left-glove-port').value,
+            right_glove_port: document.getElementById('right-glove-port').value,
+            hand_model_path: document.getElementById('hand-model-path').value,
+            glove_model_path: document.getElementById('glove-model-path').value,
+            calibrate: document.getElementById('calibrate-glove').checked
         };
         
         await fetch('/api/inputs', {

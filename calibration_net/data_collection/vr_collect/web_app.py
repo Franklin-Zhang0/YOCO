@@ -144,6 +144,10 @@ class DeviceManager:
             cmd.extend(['--left-glove-port', config['left_glove_port']])
         if config.get('right_glove_port'):
             cmd.extend(['--right-glove-port', config['right_glove_port']])
+        if config.get('hand_model_path'):
+            cmd.extend(['--hand-model-path', config['hand_model_path']])
+        if config.get('glove_model_path'):
+            cmd.extend(['--glove-model-path', config['glove_model_path']])
         if config.get('calibrate'):
             cmd.append('--calibrate')
             
