@@ -10,12 +10,18 @@ class FiLM(nn.Module):
         return h * (1 + self.to_scale(e)) + self.to_shift(e)
 
 class ResMLPBlock(nn.Module):
-    def __init__(self, input_dim, output_dim, film_dim=None):
+    def __init__(self, input_dim, output_dim, film_dim=None, activation='gelu'):
         super(ResMLPBlock, self).__init__()
         self.linear = nn.Linear(input_dim, output_dim)
         self.norm = nn.LayerNorm(output_dim)
-        self.activation = nn.GELU()
-
+        if activation == 'gelu':
+            self.activation = nn.GELU()
+        elif activation == 'relu':
+            self.activation = nn.ReLU()
+        elif activation == 'leaky_relu':
+            self.activation = nn.LeakyReLU()
+        else:
+            raise ValueError(f"Unsupported activation: {activation}")
         if film_dim is not None:
             self.film = FiLM(output_dim, film_dim)
         else:

@@ -3,3 +3,4 @@ calibrate/
 expdata/
 wandb/
 data/
+data_generation/

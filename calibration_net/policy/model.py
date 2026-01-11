@@ -39,6 +39,29 @@ class Model(nn.Module):
                 input_channel=self.input_channel,
                 hidden_layers=self.hidden_layers
             )
+            
+        elif self.model_type == 'CNN_MLP':
+            self.network = CNN_MLP(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
+            )
+            
+        elif self.model_type == 'Combined_CNN_MLP':
+            self.network = Combined_CNN_MLP(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
+            )
+        elif self.model_type == 'Combined_CNN_MLP_MIXER':
+            self.network = Combined_CNN_MLP_MIXER(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
+            )
 
         elif self.model_type == 'CombinedMLP':
             self.network = CombinedModel(
@@ -57,6 +80,9 @@ class Model(nn.Module):
                 output_dim=self.output_size,
                 hidden_layers=self.hidden_layers,
             )
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")    
+        
         if self.iknet_cfg.get('enabled', False):
             iknet_cfg = dict(self.iknet_cfg)
             del iknet_cfg['enabled']

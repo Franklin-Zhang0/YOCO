@@ -1,6 +1,7 @@
 from calibration_net.utils import transform_joint3d
 import numpy as np
 from typing import OrderedDict
+import os
 
 def get_normalize(norm_stats):
     def normalize(x):
@@ -56,6 +57,58 @@ def get_flatten():
         return x.reshape(x.shape[0], -1)
     return flatten
 
+class MANO_PCA:
+    def __init__(self, num_components=6, side='right'):
+        mano_root = os.environ.get('MANO_PATH')
+        from manopth.manolayer import ready_arguments
+        if side == 'right':
+            self.mano_path = os.path.join(mano_root, 'MANO_RIGHT.pkl')
+        elif side == 'left':
+            self.mano_path = os.path.join(mano_root, 'MANO_LEFT.pkl')
+
+        smpl_data = ready_arguments(self.mano_path)
+        
+        self.hands_components = smpl_data['hands_components']
+        self.num_components = num_components
+        
+    def transform(self, pose):
+        '''
+        INPUT:
+            pose: (N, 45) np.array
+        OUTPUT:
+            pca_pose: (N, num_components) np.array
+        '''
+        if pose.ndim == 1:
+            pose = pose[None, :]
+        num_samples = pose.shape[0]
+        pca_pose = np.linalg.lstsq(self.hands_components[:self.num_components].T, pose.T, rcond=None)[0].T
+        return pca_pose
+            
+    def inv_transform(self, pca_pose):
+        '''
+        INPUT:
+            pca_pose: (N, num_components) np.array
+        OUTPUT:
+            pose: (N, 45) np.array
+        '''
+        if pca_pose.ndim == 1:
+            pca_pose = pca_pose[None, :]
+        num_samples = pca_pose.shape[0]
+        pose = np.zeros((num_samples, 45), dtype=np.float32)
+        pose[:,] = np.dot(pca_pose[:,], self.hands_components[:self.num_components])
+        return pose
+
+mano_pca = None    
+def get_mano_pca(mano_angles, num_components=12, side='right'):
+    global mano_pca
+    if mano_pca is None:
+        mano_pca = {
+            'left': MANO_PCA(num_components=num_components, side='left'),
+            'right': MANO_PCA(num_components=num_components, side='right'),
+        }
+    return mano_pca[side].transform(mano_angles)
+
+
 TRANSFORM_REGISTRY = {
     'joint_3d_world_to_local': lambda: transform_joint3d,
     'bone_normalize': lambda: bone_normalize,
@@ -66,6 +119,7 @@ TRANSFORM_REGISTRY = {
     'discard_wrist': get_discard_wrist,
     'joint_layout_to_5x4': get_layout_to_5x4,
     'flatten': get_flatten,
+    'mano_pca': lambda: get_mano_pca,
 }
 
 def build_preprocessing(preprocess_types, key, norm_stats=None):

@@ -339,18 +339,19 @@ class AngleNormalizer():
         return angles
 
 
-mano = None
+mano = {}
 mano_root = os.environ.get('MANO_PATH')
-def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, transl: torch.Tensor = None) -> [torch.Tensor, torch.Tensor]:
+def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, transl: torch.Tensor = None, side='right', betas: torch.Tensor = None) -> [torch.Tensor, torch.Tensor]:
     from  manopth import manolayer
     theta_dim = mano_theta_pred.shape[-1]
     global mano
-    if mano is None:
-        mano = manolayer.ManoLayer(
+    if side not in mano:
+        mano[side] = manolayer.ManoLayer(
             mano_root=mano_root,
-            use_pca=True,
+            use_pca=theta_dim!=45,
             ncomps=theta_dim,
-            flat_hand_mean=True,
+            side=side,
+            flat_hand_mean=False,
         ).to(mano_theta_pred.device)
     theta_shape = mano_theta_pred.shape
     if transl is None:
@@ -359,14 +360,18 @@ def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, tran
     if mano_orient is None:
         mano_orient = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(mano_theta_pred.device)
         
+    if betas is None:
+        betas = torch.zeros(mano_theta_pred.shape[:-1] + (10,)).to(mano_theta_pred.device)
+        
     pose_coeffs = torch.cat([mano_orient, mano_theta_pred], dim=-1)
     
     pose_coeffs = pose_coeffs.view(-1, pose_coeffs.shape[-1])
     transl = transl.view(-1, 3)
     
-    pred_vertices, pred_joints = mano(
+    pred_vertices, pred_joints = mano[side](
         th_pose_coeffs=pose_coeffs,
         th_trans=transl,
+        th_betas=betas
     )
     
     pred_vertices = pred_vertices.view(*theta_shape[:-1], -1, 3)

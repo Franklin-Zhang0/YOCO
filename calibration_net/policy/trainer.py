@@ -35,6 +35,7 @@ class Trainer():
         self.load_dataset()
         example = self.trainset[0]
         print("Example input shape:", example['input'].shape)
+        print("Example output shape:", example['output'].shape)
         
         if self.args.model.input_size < 45:
             self.args.model.iknet_cfg.output_pca = True
@@ -129,7 +130,9 @@ class Trainer():
         
     def get_loss(self, data, result):
         finger_mask = data.get('finger_mask', torch.ones(5, dtype=torch.bool)).to(self.device)
-        original_input = data.get('original_data', None).float().to(self.device)
+        original_input = data.get('original_data', None)
+        if original_input is not None:
+            original_input = original_input.float().to(self.device)
         loss_type = self.trainer_args.loss_type
 
         def get_masked_loss(loss, mask):
@@ -163,6 +166,9 @@ class Trainer():
             for key in self.loss_weights:
                 total_loss += loss[key] * self.loss_weights[key]
             loss['loss'] = total_loss
+        elif loss_type == 'mse':
+            loss = {'loss': result['loss'].mean()}
+            return loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 
