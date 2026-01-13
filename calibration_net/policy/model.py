@@ -128,7 +128,8 @@ class Model(nn.Module):
     @torch.no_grad()
     def predict(self, x, hypernet_x=None, noisy_act=None, side=None):
         self.eval()
-        x = torch.tensor(x, dtype=torch.float32)
+        device = next(self.network.parameters()).device
+        x = torch.tensor(x, dtype=torch.float32).to(device)
         y = self.forward(x, hypernet_x=hypernet_x, noisy_act=noisy_act, side=side)
         return y
     

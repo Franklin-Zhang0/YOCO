@@ -338,6 +338,44 @@ class AngleNormalizer():
             raise ValueError(f"Expected angles to be 1D or 2D array, but got {normalized_angles.ndim}D array")
         return angles
 
+def scale_hand_fingers(keypoints, finger_scales):
+    """
+    Scales the length of fingers relative to the wrist.
+    
+    Args:
+        keypoints (torch.Tensor): Shape [B, 21, 3] or [B, G, 21, 3]
+                                  The absolute 3D coordinates of hand joints.
+        finger_scales (torch.Tensor): Shape [B, 5] or [B, G, 5]
+                                      Scaling factors for (Thumb, Index, Middle, Ring, Pinky).
+                                      
+    Returns:
+        torch.Tensor: Scaled keypoints with same shape as input.
+    """
+    finger_indices = [
+        [1, 2, 3, 4],     # Thumb
+        [5, 6, 7, 8],     # Index
+        [9, 10, 11, 12],  # Middle
+        [13, 14, 15, 16], # Ring
+        [17, 18, 19, 20]  # Pinky
+    ]
+    finger_scales = torch.ones_like(finger_scales) * finger_scales.mean(dim=-1).unsqueeze(-1)
+    shape_prefix = finger_scales.shape[:-1] # e.g. [B] or [B, G]
+    full_scales = torch.ones(*shape_prefix, 21, device=keypoints.device)
+    
+    # Fill in the scales for each finger
+    for i, indices in enumerate(finger_indices):
+        full_scales[..., indices] = finger_scales[..., i:i+1]
+        
+    # Unsqueeze last dim to broadcast over (x, y, z) coordinates -> [..., 21, 1]
+    full_scales = full_scales.unsqueeze(-1)
+    
+    wrist = keypoints[..., 0:1, :] # [..., 1, 3]
+    local_joints = keypoints - wrist
+    
+    scaled_local_joints = local_joints * full_scales
+    
+    return wrist + scaled_local_joints
+
 
 mano = {}
 mano_root = os.environ.get('MANO_PATH')
@@ -367,7 +405,7 @@ def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, tran
     
     pose_coeffs = pose_coeffs.view(-1, pose_coeffs.shape[-1])
     transl = transl.view(-1, 3)
-    
+    betas = betas.view(-1, 10)
     pred_vertices, pred_joints = mano[side](
         th_pose_coeffs=pose_coeffs,
         th_trans=transl,

@@ -14,6 +14,7 @@ from copy import deepcopy
 from .logger import get_logger_cls 
 from .loss import get_geort_loss, get_alignment_loss
 from contextlib import nullcontext
+from omegaconf import OmegaConf
 
 class Trainer():
     def __init__(self, args):
@@ -61,9 +62,12 @@ class Trainer():
             self.model, normalization_stats, loaded_cfg = load_model(self.trainer_args.load_path)
             self.dataset.normalization_stats = normalization_stats
             if loaded_cfg['model']['output_size'] != self.args.model.output_size:
-                self.switch_last_layer()
-                loaded_cfg['model']['output_size'] = self.args.model.output_size
-            # assert all other model configurations match
+                # self.switch_last_layer()
+                # loaded_cfg['model']['output_size'] = self.args.model.output_size
+                Warning("Model output shape doen't match dataset output shape")
+                # for key in loaded_cfg['model']:
+                self.args.model = OmegaConf.merge(self.args.model, loaded_cfg['model'])
+            # assert all model configurations match
             assert loaded_cfg['model'] == self.args.model
         else:
             self.model = Model(**self.args.model)

@@ -84,6 +84,7 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         
         conv_channel = 64
         encoder_out_dim = conv_channel * 5 # 320
+        self.finger_scaling = nn.Parameter(torch.ones(5))
         
         # --- NEW: Fingertip Encoder ---
         self.tip_encoder = FingertipFeatureEncoder(input_channel, encoder_out_dim)
@@ -134,7 +135,7 @@ class Combined_CNN_MLP_MIXER(nn.Module):
             self.mano_regressor.append(layers)
             
     
-    def forward(self, x):
+    def forward(self, x, return_feat=False):
         if x.dim() == 2:
             x = x.reshape(x.shape[0], self.input_size, self.input_channel)
         
@@ -186,7 +187,11 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         quat = normalize_quaternion(quat)
         so3 = quaternion_to_angle_axis(quat).contiguous()
         so3 = so3.view(x.shape[0], 15 * 3)
-        return so3
+        
+        if return_feat:
+            return so3, updated_finger_feats
+        else:
+            return so3
 
     def train_forward(self, x, y):
         pred_y = self.forward(x)

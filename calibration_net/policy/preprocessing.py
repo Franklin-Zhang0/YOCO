@@ -2,6 +2,7 @@ from calibration_net.utils import transform_joint3d
 import numpy as np
 from typing import OrderedDict
 import os
+import torch
 
 def get_normalize(norm_stats):
     def normalize(x):
@@ -80,8 +81,11 @@ class MANO_PCA:
         '''
         if pose.ndim == 1:
             pose = pose[None, :]
-        num_samples = pose.shape[0]
-        pca_pose = np.linalg.lstsq(self.hands_components[:self.num_components].T, pose.T, rcond=None)[0].T
+        if isinstance(pose, np.ndarray):
+            pca_pose = np.linalg.lstsq(self.hands_components[:self.num_components].T, pose.T, rcond=None)[0].T
+        elif isinstance(pose, torch.Tensor):
+            hands_componets = torch.tensor(self.hands_components[:self.num_components].T, device=pose.device, dtype=pca_pose.dtype)
+            pca_pose = torch.linalg.lstsq(hands_componets, pose.T)
         return pca_pose
             
     def inv_transform(self, pca_pose):
@@ -94,8 +98,11 @@ class MANO_PCA:
         if pca_pose.ndim == 1:
             pca_pose = pca_pose[None, :]
         num_samples = pca_pose.shape[0]
-        pose = np.zeros((num_samples, 45), dtype=np.float32)
-        pose[:,] = np.dot(pca_pose[:,], self.hands_components[:self.num_components])
+        if isinstance(pca_pose, np.ndarray):
+            pose = np.zeros((num_samples, 45), dtype=np.float32)
+            pose[:,] = np.dot(pca_pose[:,], self.hands_components[:self.num_components])
+        elif isinstance(pca_pose, torch.Tensor):
+            pose = pca_pose @ torch.tensor(self.hands_components[:self.num_components], device=pca_pose.device, dtype=pca_pose.dtype)
         return pose
 
 mano_pca = None    

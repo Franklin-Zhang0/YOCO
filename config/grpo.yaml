@@ -4,21 +4,22 @@ dataset:
 
 model:
   type: "MLP"
-  hidden_layers: [256, 256, 256]
 
 trainer:
   expname: "GRPO_finetune"
   num_epochs: 10
-  batch_size: 32
+  batch_size: 16
   learning_rate: 0.001
   grad_clipping: 1.0
-  device: 'mps'
+  device: 'cuda'
   save_path: "expdata/grpo_models"
   
   # GRPO specific
-  group_size: 16
+  group_size: 32
   eps_clip: 0.2
-  beta: 0.01
-  std: 1.0
+  std: 0.02
+  mano_kl_coeff: 0.0
+  scale_kl_coeff: 1e-5
   std_decay: 0.995
   loss_type: "dex_retarget_mse"
+  mano_comp: 5
