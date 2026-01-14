@@ -358,7 +358,7 @@ def scale_hand_fingers(keypoints, finger_scales):
         [13, 14, 15, 16], # Ring
         [17, 18, 19, 20]  # Pinky
     ]
-    finger_scales = torch.ones_like(finger_scales) * finger_scales.mean(dim=-1).unsqueeze(-1)
+    # finger_scales = torch.ones_like(finger_scales) * finger_scales.mean(dim=-1).unsqueeze(-1)
     shape_prefix = finger_scales.shape[:-1] # e.g. [B] or [B, G]
     full_scales = torch.ones(*shape_prefix, 21, device=keypoints.device)
     

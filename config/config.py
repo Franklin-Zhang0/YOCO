@@ -61,7 +61,7 @@ class ModelConfig:
 
 @dataclass
 class LoggerConfig:
-    type: list[str] = field(default_factory=lambda: ['terminal'])  # 'wandb', 'tensorboard', 'csv', etc.
+    type: list[str] = field(default_factory=lambda: ['terminal','file'])  # 'wandb', 'file', 'terminal'.
     project: str = 'Calibration_net'
 
 @dataclass

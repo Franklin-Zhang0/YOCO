@@ -6,6 +6,9 @@ import torch
 from pathlib import Path
 import pyroki as pk
 import yourdfpy
+from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
+import hashlib
 
 OPERATOR2MANO_RIGHT = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
 OPERATOR2MANO_LEFT = np.array([[0, 0, -1], [1, 0, 0], [0, -1, 0]])
@@ -110,6 +113,10 @@ class RobotFK:
         # Get actuated joint names from URDF for reordering
         self.urdf_joint_names = [urdf.robot.joints[i].name for i in urdf.actuated_joint_indices]
         
+        # Precompute link mapping as numpy array
+        self._link_mapping = np.array(LINK_MAPPING, dtype=np.int64)
+        self._tip_indices = np.array(TIP_INDICES, dtype=np.int64)
+        
     def compute_keypoints(self, qpos: np.ndarray) -> np.ndarray:
         """
         Compute 21 hand keypoints from joint angles using forward kinematics.
@@ -126,21 +133,20 @@ class RobotFK:
             qpos = qpos[None, :]
         
         batch_size = qpos.shape[0]
-        all_keypoints = []
+        
+        # Preallocate output
+        all_keypoints = np.empty((batch_size, 21, 3), dtype=np.float64)
         
         for i in range(batch_size):
             # Compute FK for all links
             fk_result = self.robot.forward_kinematics(cfg=qpos[i])
             # Extract position (last 3 columns) and select links according to LINK_MAPPING
-            keypoints = fk_result[:, -3:][np.array(LINK_MAPPING)]
-            all_keypoints.append(keypoints)
-        
-        result = np.stack(all_keypoints, axis=0)
+            all_keypoints[i] = fk_result[:, -3:][self._link_mapping]
         
         if not is_batched:
-            result = result[0]
+            return all_keypoints[0]
         
-        return result
+        return all_keypoints
     
     def compute_fingertips(self, qpos: np.ndarray) -> np.ndarray:
         """
@@ -157,9 +163,9 @@ class RobotFK:
         
         # Extract fingertips using TIP_INDICES
         if keypoints.ndim == 2:
-            return keypoints[TIP_INDICES, :]
+            return keypoints[self._tip_indices, :]
         else:
-            return keypoints[:, TIP_INDICES, :]
+            return keypoints[:, self._tip_indices, :]
     
     def reorder_qpos_to_urdf(self, qpos: np.ndarray, source_joint_order: list) -> np.ndarray:
         """
@@ -208,6 +214,12 @@ class DexRetargeter:
         
         # Build retargeter
         self.retargeting = self.config.build()
+        
+        # Precompute reorder indices to avoid repeated list.index() calls
+        self._idx_retarget_to_robot = np.array(
+            [self.retargeting.joint_names.index(n) for n in ROBOT_JOINT_ORDER[self.robot_name]],
+            dtype=np.int64
+        )
 
 
     def retarget(self, keypoints):
@@ -234,11 +246,25 @@ class DexRetargeter:
             ref_value = joint_pos[task_indices, :] - joint_pos[origin_indices, :]
 
         qpos = self.retargeting.retarget(ref_value)
-        target_qpos = qpos
-
-        target_qpos = reorder_qpos(np.array(qpos), ROBOT_JOINT_ORDER[self.robot_name], self.retargeting.joint_names)
+        
+        # Use precomputed indices instead of reorder_qpos
+        target_qpos = np.asarray(qpos, dtype=np.float32)[self._idx_retarget_to_robot]
         
         return target_qpos
+
+# Worker function for parallel retargeting (must be at module level for pickling)
+def _retarget_worker_init(robot_name, hand_type, retargeting_type, urdf_path):
+    """Initialize a retargeter in a worker process."""
+    global _worker_retargeter
+    _worker_retargeter = DexRetargeter(robot_name, hand_type, retargeting_type, urdf_path)
+
+def _retarget_worker_func(keypoints_chunk):
+    """Retarget a chunk of keypoints using the worker's retargeter."""
+    global _worker_retargeter
+    results = []
+    for keypoints in keypoints_chunk:
+        results.append(_worker_retargeter.retarget(keypoints))
+    return np.array(results, dtype=np.float32)
 
 class DexRewarder:
     def __init__(self, config):
@@ -247,10 +273,73 @@ class DexRewarder:
         
         # Initialize FK model for computing robot fingertip positions
         self.robot_fk = RobotFK(
-            urdf_file=config.urdf_path,
+            urdf_file=config.urdf_file,
             robot_name=config.robot_name,
             hand_type=config.hand_type
         )
+        
+        # Precompute reorder indices for robot->URDF conversion
+        self._idx_robot_to_urdf = np.array(
+            [ROBOT_JOINT_ORDER[config.robot_name].index(n) for n in self.robot_fk.urdf_joint_names],
+            dtype=np.int64
+        )
+        
+        # Optional: LRU cache for target FK
+        self._target_fk_cache = OrderedDict()
+        self._target_fk_cache_size = getattr(config, 'target_fk_cache_size', 128)
+        
+        # Optional: multiprocessing pool for retargeting
+        self._retarget_workers = getattr(config, 'retarget_workers', 0)
+        self._retarget_min_chunk = getattr(config, 'retarget_min_chunk', 32)
+        self._executor = None
+        
+        if self._retarget_workers > 0:
+            # Create persistent process pool
+            self._executor = ProcessPoolExecutor(
+                max_workers=self._retarget_workers,
+                initializer=_retarget_worker_init,
+                initargs=(config.robot_name, config.hand_type, config.retargeting_type, config.urdf_path)
+            )
+    
+    def __del__(self):
+        """Clean up process pool on deletion."""
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+    
+    def _compute_target_fk_cached(self, target_qpos_urdf: np.ndarray) -> np.ndarray:
+        """
+        Compute FK for target qpos with optional caching.
+        
+        Args:
+            target_qpos_urdf: (M, n_joints) in URDF order
+        Returns:
+            fingertips: (M, 5, 3)
+        """
+        M = target_qpos_urdf.shape[0]
+        result = np.empty((M, 5, 3), dtype=np.float64)
+        
+        if self._target_fk_cache_size <= 0:
+            # No caching
+            return self.robot_fk.compute_fingertips(target_qpos_urdf)
+        
+        # Check cache for each row
+        for i in range(M):
+            key = target_qpos_urdf[i].tobytes()
+            if key in self._target_fk_cache:
+                result[i] = self._target_fk_cache[key]
+                # Move to end (LRU)
+                self._target_fk_cache.move_to_end(key)
+            else:
+                # Compute and cache
+                fk_result = self.robot_fk.compute_fingertips(target_qpos_urdf[i])
+                result[i] = fk_result
+                self._target_fk_cache[key] = fk_result
+                
+                # Evict oldest if cache is full
+                if len(self._target_fk_cache) > self._target_fk_cache_size:
+                    self._target_fk_cache.popitem(last=False)
+        
+        return result
     
     def compute_fingertip_distance_matrix(self, fingertips: np.ndarray) -> np.ndarray:
         """
@@ -284,81 +373,75 @@ class DexRewarder:
             reward: Combined negative loss, shape (B, N_act)
         """
         B, N_act = hand_keypoints.shape[:2]
-        hand_keypoints_np = hand_keypoints.reshape(B * N_act, 21, 3).cpu().numpy()
-        target_robot_qpos_np = target_robot_qpos.reshape(B * N_act, -1).cpu().numpy()
+        M = B * N_act
+        hand_keypoints_np = hand_keypoints.reshape(M, 21, 3).cpu().numpy()
+        target_robot_qpos_np = target_robot_qpos.reshape(M, -1).cpu().numpy()
 
         # Retarget hand keypoints to robot joint positions
-        retargeted_qpos = []
-        for i in range(hand_keypoints_np.shape[0]):
-            retargeted_qpos.append(self.retargeter.retarget(hand_keypoints_np[i]))
-        retargeted_qpos = np.stack(retargeted_qpos, axis=0)  # (B*N_act, n_joints)
+        if self._executor is not None and M >= self._retarget_min_chunk:
+            # Parallel retargeting
+            chunk_size = max(1, M // self._retarget_workers)
+            chunks = [hand_keypoints_np[i:i+chunk_size] for i in range(0, M, chunk_size)]
+            futures = [self._executor.submit(_retarget_worker_func, chunk) for chunk in chunks]
+            results = [f.result() for f in futures]
+            retargeted_qpos = np.concatenate(results, axis=0)
+        else:
+            # Single-process retargeting with preallocated output
+            retargeted_qpos = np.empty((M, len(ROBOT_JOINT_ORDER[self.config.robot_name])), dtype=np.float32)
+            for i in range(M):
+                retargeted_qpos[i] = self.retargeter.retarget(hand_keypoints_np[i])
         
-        # Reorder target_robot_qpos from ROBOT_JOINT_ORDER to URDF order for FK
-        target_qpos_urdf = np.stack([
-            self.robot_fk.reorder_qpos_to_urdf(
-                target_robot_qpos_np[i],
-                ROBOT_JOINT_ORDER[self.config.robot_name]
-            )
-            for i in range(target_robot_qpos_np.shape[0])
-        ], axis=0)
+        # Vectorized reorder from ROBOT_JOINT_ORDER to URDF order for FK
+        target_qpos_urdf = target_robot_qpos_np[:, self._idx_robot_to_urdf]
+        retargeted_qpos_urdf = retargeted_qpos[:, self._idx_robot_to_urdf]
         
-        # Reorder retargeted_qpos from ROBOT_JOINT_ORDER to URDF order for FK
-        retargeted_qpos_urdf = np.stack([
-            self.robot_fk.reorder_qpos_to_urdf(
-                retargeted_qpos[i],
-                ROBOT_JOINT_ORDER[self.config.robot_name]
-            )
-            for i in range(retargeted_qpos.shape[0])
-        ], axis=0)
-        
-        # Compute fingertip positions using FK
-        target_fingertips = self.robot_fk.compute_fingertips(target_qpos_urdf)  # (B*N_act, 5, 3)
-        retargeted_fingertips = self.robot_fk.compute_fingertips(retargeted_qpos_urdf)  # (B*N_act, 5, 3)
+        # Compute fingertip positions using FK with caching for targets
+        target_fingertips = self._compute_target_fk_cached(target_qpos_urdf)  # (M, 5, 3)
+        retargeted_fingertips = self.robot_fk.compute_fingertips(retargeted_qpos_urdf)  # (M, 5, 3)
         
         target_fingertips = np.concatenate([target_fingertips, np.zeros_like(target_fingertips[..., :])], axis=-1)       # add wrist point
         retargeted_fingertips = np.concatenate([retargeted_fingertips, np.zeros_like(retargeted_fingertips[..., :])], axis=-1)
         
         
         # 1. Compute L2 loss between fingertip positions
-        fingertip_diff = retargeted_fingertips - target_fingertips  # (B*N_act, 5, 3)
-        l2_loss = np.mean(fingertip_diff ** 2, axis=(1, 2))  # (B*N_act,)
-        l2_reward = np.clip((0.002 - l2_loss) / 0.002, 0.0, 1.0)
+        fingertip_diff = retargeted_fingertips - target_fingertips  # (M, 5, 3)
+        l2_loss = np.mean(fingertip_diff ** 2, axis=(1, 2))  # (M,)
+        l2_reward = np.clip((0.003 - l2_loss) / 0.003, 0.0, 1.0)
         
         # 2. Compute pairwise normed vector similarity loss (5x5 cosine similarity matrix)
         # Normalize fingertip vectors
-        target_fingertips_norm = target_fingertips / (np.linalg.norm(target_fingertips, axis=-1, keepdims=True) + 1e-8)  # (B*N_act, 5, 3)
-        retargeted_fingertips_norm = retargeted_fingertips / (np.linalg.norm(retargeted_fingertips, axis=-1, keepdims=True) + 1e-8)  # (B*N_act, 5, 3)
+        target_fingertips_norm = target_fingertips / (np.linalg.norm(target_fingertips, axis=-1, keepdims=True) + 1e-8)  # (M, 5, 3)
+        retargeted_fingertips_norm = retargeted_fingertips / (np.linalg.norm(retargeted_fingertips, axis=-1, keepdims=True) + 1e-8)  # (M, 5, 3)
         
         # Compute pairwise cosine similarity: target[i] · retargeted[j] for all i,j pairs
         # Using einsum for efficient computation: (B, i, d) x (B, j, d) -> (B, i, j)
-        cosine_sim_matrix = np.einsum('bid,bjd->bij', target_fingertips_norm, retargeted_fingertips_norm)  # (B*N_act, 5, 5)
+        cosine_sim_matrix = np.einsum('bid,bjd->bij', target_fingertips_norm, retargeted_fingertips_norm)  # (M, 5, 5)
         
         # Convert to loss: 1 - cosine_similarity (ranges from 0 to 2, where 0 is perfect alignment)
-        vector_similarity_matrix_reward = cosine_sim_matrix  # (B*N_act, 5, 5)
-        vector_similarity_reward = np.mean(vector_similarity_matrix_reward, axis=(1, 2))  # (B*N_act,)
+        vector_similarity_matrix_reward = cosine_sim_matrix  # (M, 5, 5)
+        vector_similarity_reward = np.mean(vector_similarity_matrix_reward, axis=(1, 2))  # (M,)
         
         # 3. Compute weighted fingertip distance loss (5x5 pairwise distances)
-        target_distances = self.compute_fingertip_distance_matrix(target_fingertips)  # (B*N_act, 5, 5)
-        retargeted_distances = self.compute_fingertip_distance_matrix(retargeted_fingertips)  # (B*N_act, 5, 5)
+        target_distances = self.compute_fingertip_distance_matrix(target_fingertips)  # (M, 5, 5)
+        retargeted_distances = self.compute_fingertip_distance_matrix(retargeted_fingertips)  # (M, 5, 5)
         
         # Compute distance-based weights: closer distances get higher weights
         # Weight = 1 / (distance + epsilon), normalized
-        distance_weights = 1.0 / (target_distances + 1e-4)  # (B*N_act, 5, 5)
+        distance_weights = 0.05 / (target_distances + 1e-4)  # (M, 5, 5)
         
-        # Set diagonal to zero (distance from fingertip to itself)
-        batch_size = distance_weights.shape[0]
-        for b in range(batch_size):
-            np.fill_diagonal(distance_weights[b], 0.0)
+        # Set diagonal to zero (distance from fingertip to itself) - vectorized
+        idx = np.arange(5)
+        distance_weights[:, idx, idx] = 0.0
         
         # Normalize weights so they sum to 1 for each sample
-        weight_sum = np.sum(distance_weights, axis=(1, 2), keepdims=True)  # (B*N_act, 1, 1)
-        distance_weights = distance_weights / (weight_sum + 1e-8)  # (B*N_act, 5, 5)
+        # weight_sum = np.sum(distance_weights, axis=(1, 2), keepdims=True)  # (M, 1, 1)
+        # distance_weights = distance_weights / (weight_sum + 1e-8)  # (M, 5, 5)
         
         # Weighted L2 loss on distance matrices
-        distance_diff = target_distances - retargeted_distances  # (B*N_act, 5, 5)
-        weighted_distance_diff_sq = distance_weights * np.abs(distance_diff)  # (B*N_act, 5, 5)
-        fingertip_distance_loss = np.sum(weighted_distance_diff_sq, axis=(1, 2))  # (B*N_act,)
-        fingertip_distance_reward = np.clip((0.01 - fingertip_distance_loss) / 0.01, 0.0, 1.0)
+        distance_diff = target_distances - retargeted_distances  # (M, 5, 5)
+        weighted_distance_diff_sq = distance_weights * np.abs(distance_diff)  # (M, 5, 5)
+        fingertip_distance_loss = np.sum(weighted_distance_diff_sq, axis=(1, 2))  # (M,)
+        fingertip_distance_reward = np.clip((3.0 - fingertip_distance_loss) / 3.0, 0.0, 1.0)
         
         # Combine losses with weights (can be made configurable)
         l2_weight = getattr(self.config, 'l2_weight', 1.0)

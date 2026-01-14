@@ -6,6 +6,14 @@ from .rewarder import DexRewarder
 from calibration_net.utils import mano_recon, transform_joint3d, Side, scale_hand_fingers
 import quaternion
 from calibration_net.policy.preprocessing import MANO_PCA
+from tqdm import tqdm
+
+try:
+    from peft import get_peft_model, LoraConfig, TaskType
+    PEFT_AVAILABLE = True
+except ImportError:
+    PEFT_AVAILABLE = False
+    print("Warning: peft library not available. LoRA mode will be disabled.")
 
 class GRPOTrainer(Trainer):
     def __init__(self, args):
@@ -26,16 +34,111 @@ class GRPOTrainer(Trainer):
             'right': MANO_PCA(self.mano_comp, 'right'),
         }
         
+        # LoRA configuration
+        self.lora_config = getattr(self.trainer_args, 'lora', None)
+        self.use_lora = self.lora_config and getattr(self.lora_config, 'enabled', False)
+        
+        # Apply LoRA if enabled
+        if self.use_lora:
+            if not PEFT_AVAILABLE:
+                raise ImportError("peft library is required for LoRA mode. Install with: pip install peft")
+            self._apply_lora()
+        
         # Reference model for KL penalty
         self.ref_model = deepcopy(self.model)
         self.ref_model.eval()
         for param in self.ref_model.parameters():
             param.requires_grad = False
-        for param in self.model.parameters():
-            param.requires_grad = False
-        for param in self.model.network.mano_regressor.parameters():
-            param.requires_grad = True
-        self.model.network.finger_scaling.requires_grad = True
+        
+        # Set trainable parameters based on mode
+        if self.use_lora:
+            # LoRA mode: freeze all base weights, only LoRA adapters are trainable
+            # (peft already handles this, but we need to handle finger_scaling separately)
+            for param in self.model.parameters():
+                param.requires_grad = False
+            # Re-enable LoRA parameters (peft sets these as trainable)
+            for name, param in self.model.named_parameters():
+                if 'lora_' in name:
+                    param.requires_grad = True
+            # Optionally train finger_scaling
+            if getattr(self.lora_config, 'train_finger_scaling', True):
+                self.model.network.finger_scaling.requires_grad = True
+            
+            # Recreate optimizer with only trainable parameters
+            trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+            self.optimizer = torch.optim.AdamW(trainable_params, lr=self.trainer_args.learning_rate)
+            
+            print(f"LoRA mode enabled. Trainable parameters: {sum(p.numel() for p in trainable_params)}")
+            print(f"Optimizer updated with {len(trainable_params)} parameter groups")
+        else:
+            # Standard mode: train mano_regressor, fusion_attention, and finger_scaling
+            for param in self.model.parameters():
+                param.requires_grad = False
+            for param in self.model.network.mano_regressor.parameters():
+                param.requires_grad = True
+            for param in self.model.network.fusion_attention.parameters():
+                param.requires_grad = True
+            self.model.network.finger_scaling.requires_grad = True
+            
+            # Recreate optimizer with updated trainable parameters
+            trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+            self.optimizer = torch.optim.AdamW(trainable_params, lr=self.trainer_args.learning_rate)
+    
+    def _apply_lora(self):
+        """Apply LoRA adapters to the model using peft library"""
+        print("Applying LoRA to model...")
+        
+        # Get target modules from config
+        target_modules = getattr(self.lora_config, 'target_modules', None)
+        if target_modules is None:
+            # Default: target all Linear layers in mano_regressor and fusion_attention
+            target_modules = []
+        
+        # If target_modules is a simple list like ["mano_regressor", "fusion_attention"],
+        # we need to expand it to actual Linear layer paths that peft can understand
+        expanded_modules = []
+        
+        # Collect all Linear layer names in the network
+        for name, module in self.model.network.named_modules():
+            if isinstance(module, nn.Linear):
+                # Check if this module matches any of the target patterns
+                if target_modules:
+                    for pattern in target_modules:
+                        if pattern in name:
+                            expanded_modules.append(name)
+                            break
+                else:
+                    # If no target_modules specified, include all Linear layers
+                    expanded_modules.append(name)
+        
+        if not expanded_modules:
+            raise ValueError(
+                f"No Linear layers found matching target_modules: {target_modules}. "
+                f"Available modules: {[n for n, m in self.model.network.named_modules() if isinstance(m, nn.Linear)]}"
+            )
+        
+        print(f"Found {len(expanded_modules)} Linear layers to apply LoRA:")
+        for mod in expanded_modules[:5]:  # Show first 5
+            print(f"  - {mod}")
+        if len(expanded_modules) > 5:
+            print(f"  ... and {len(expanded_modules) - 5} more")
+        
+        # Create peft LoRA config with expanded module names
+        peft_config = LoraConfig(
+            r=getattr(self.lora_config, 'rank', 8),
+            lora_alpha=getattr(self.lora_config, 'alpha', 16.0),
+            lora_dropout=getattr(self.lora_config, 'dropout', 0.1),
+            target_modules=expanded_modules,
+            bias="none",
+            task_type=TaskType.FEATURE_EXTRACTION,  # Generic task type for custom models
+        )
+        
+        # Apply LoRA to the network (not the whole model, just the base network)
+        # We need to wrap only self.model.network
+        self.model.network = get_peft_model(self.model.network, peft_config)
+        
+        print("LoRA applied successfully!")
+        self.model.network.print_trainable_parameters()
             
     def get_log_prob(self, mean, action):
         # Gaussian log prob: -0.5 * ((x-mu)/sigma)^2 - log(sigma * sqrt(2*pi))
@@ -46,8 +149,66 @@ class GRPOTrainer(Trainer):
         return log_prob
     
     def validate(self):
-        #dummy val
-        return 0.0
+        """Validate the model using reward as the metric."""
+        print("Start Validation")
+        self.model.eval()
+        total_reward = 0.0
+        num_batches = 0
+        for data in tqdm(self.valloader, desc='Validation'):
+            
+            with torch.no_grad():
+                x, y, side = data['input'], data['output'], data['side']
+                x, y, side = x.float().to(self.device), y.float().to(self.device), side.to(self.device)
+                
+                # Handle hypernet input
+                if 'hypernet_input' in data:
+                    hypernet_input = data['hypernet_input'].float().to(self.device)
+                    if self.args.model.preference_extractor_cfg.enabled:
+                        preference_feat, _ = self.model.preference_extractor.train_forward(
+                            data['preference_input'].float().to(self.device),
+                            data['preference_mask'].to(self.device)
+                        )
+                        hypernet_input = torch.cat([hypernet_input, preference_feat], dim=-1)
+                else:
+                    hypernet_input = None
+                
+                # Get model predictions (mean actions)
+                mu = self.model(x, hypernet_x=hypernet_input, side=side)
+                mu_scale = self.model.network.finger_scaling
+                
+                # Reconstruct hand keypoints from MANO parameters
+                _, hand_keypoints = mano_recon(mu)
+                
+                # Apply scaling factors
+                hand_keypoints = scale_hand_fingers(hand_keypoints, mu_scale)
+                
+                # Rotation and Projection
+                orient_params = torch.zeros(3, device=self.device)
+                orient_quat = quaternion.from_euler_angles(orient_params.cpu().numpy())
+                rot_matrix = quaternion.as_rotation_matrix(orient_quat)
+                rot_matrix = rot_matrix[None, None]  # [1, 1, 3, 3]
+                
+                hand_keypoints_np = hand_keypoints.detach().cpu().numpy()
+                hand_keypoints_rotated = hand_keypoints_np @ rot_matrix.transpose((0, 1, 3, 2))
+                hand_keypoints_rotated = torch.tensor(hand_keypoints_rotated)
+                
+                # Compute rewards (no group sampling for validation, just evaluate mean)
+                # Add batch dimension for compatibility with rewarder
+                y_target = y.unsqueeze(1)  # [B, 1, output_dim]
+                hand_keypoints_rotated = hand_keypoints_rotated  # [B, 1, 21, 3]
+                
+            rewards, _, _ = self.rewarder.compute_reward(hand_keypoints_rotated, y_target)
+            
+            # Average reward for this batch
+            batch_reward = rewards.mean().item()
+            total_reward += batch_reward
+            num_batches += 1
+        
+        avg_reward = total_reward / num_batches
+        self.log_step({'val/reward': avg_reward}, self.global_steps)
+        print(f"Validation Reward: {avg_reward}")
+        
+        return avg_reward
 
     def train_step(self, data, do_backward=True):
         x, y, side = data['input'], data['output'], data['side']
@@ -94,9 +255,9 @@ class GRPOTrainer(Trainer):
             
             # Sample G scaling factors: [batch_size, group_size, 5]
             # We use Gaussian noise here to support PPO log_prob calculation
-            # scale_noise = torch.randn(batch_size, self.group_size, 5, device=self.device) * scale_std
-            scale_noise = torch.randn(batch_size, self.group_size, 1, device=self.device) * scale_std
-            scale_noise = scale_noise.repeat(1, 1, 5)
+            scale_noise = torch.randn(batch_size, self.group_size, 5, device=self.device) * scale_std
+            # scale_noise = torch.randn(batch_size, self.group_size, 1, device=self.device) * scale_std
+            # scale_noise = scale_noise.repeat(1, 1, 5)
             scale_actions = mu_scale_old.unsqueeze(0) + scale_noise
             
             # --- C. Reconstruction & Rewards ---
