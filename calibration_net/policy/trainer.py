@@ -54,21 +54,28 @@ class Trainer():
             if self.args.model.preference_extractor_cfg.enabled:
                 self.args.model.hypernet_cfg.input_size += self.args.model.preference_extractor_cfg.hidden_dim
                 self.args.model.preference_extractor_cfg.input_dim = example['preference_input'].shape[-1]
-        else:
-            self.args.model.hypernet_cfg.input_size = 0
+        # else:
+        #     self.args.model.hypernet_cfg.input_size = 0
 
         if self.trainer_args.load_path:
             print(f"Loading model from {self.trainer_args.load_path}")
-            self.model, normalization_stats, loaded_cfg = load_model(self.trainer_args.load_path)
+            model, normalization_stats, loaded_cfg = load_model(self.trainer_args.load_path)
             self.dataset.normalization_stats = normalization_stats
             if loaded_cfg['model']['output_size'] != self.args.model.output_size:
                 # self.switch_last_layer()
                 # loaded_cfg['model']['output_size'] = self.args.model.output_size
                 Warning("Model output shape doen't match dataset output shape")
                 # for key in loaded_cfg['model']:
-                self.args.model = OmegaConf.merge(self.args.model, loaded_cfg['model'])
+            hypernet_cfg = deepcopy(self.args.model.hypernet_cfg)
+            preference_extractor_cfg = deepcopy(self.args.model.preference_extractor_cfg)
+            
+            self.args.model = OmegaConf.merge(self.args.model, loaded_cfg['model'])
             # assert all model configurations match
-            assert loaded_cfg['model'] == self.args.model
+            # assert loaded_cfg['model'] == self.args.model
+            self.args.model.hypernet_cfg = hypernet_cfg # switch the hypernet cfg in case of finetuning
+            self.args.model.preference_extractor_cfg = preference_extractor_cfg
+            self.model = Model(**self.args.model)
+            self.model.load_state_dict(model.state_dict(), strict=False)
         else:
             self.model = Model(**self.args.model)
             
@@ -95,23 +102,60 @@ class Trainer():
         self.create_optimizer()
 
     def set_trainable(self, main_network=True, calib=True):
+        """Set which parts of the model are trainable.
+
+        Notes:
+        - When calibrating (calib_finetune), we typically freeze the base network weights.
+        - If the preference extractor shares the base network as its pose encoder, freezing
+          the base network weights is still fine, but we should avoid updating BatchNorm
+          running stats / Dropout behavior by keeping the base network in eval() mode.
+        """
         for param in self.model.parameters():
             param.requires_grad = main_network
-        if self.model.calib_block is not None:
-            for param in self.model.calib_block.parameters():
-                param.requires_grad = calib
+
+        # if hasattr(self.model, 'calib_block') and self.model.calib_block is not None:
+        for param in self.model.calib_block.parameters():
+            param.requires_grad = calib
+        
+        for param in self.model.network.parameters():
+            param.requires_grad = main_network
+
+        # Also explicitly enable calibration components that are not in calib_block
+        # if calib:
+        #     if hasattr(self.model, 'hyperlora') and self.model.hyperlora is not None:
+        #         for param in self.model.hyperlora.parameters():
+        #             param.requires_grad = True
+        #     if hasattr(self.model, 'preference_extractor') and self.model.preference_extractor is not None:
+        #         for param in self.model.preference_extractor.parameters():
+        #             param.requires_grad = True
 
     def switch_last_layer(self):
         self.model.fc = nn.Linear(self.model.fc.in_features, self.args.model.output_size)
         self.model.network[-1] = self.model.fc
 
     def create_optimizer(self):
-        if not self.trainer_args.calib_finetune:
-            parameters = self.model.parameters()
+        # Freeze/unfreeze according to mode
+        if self.trainer_args.calib_finetune:
+            self.set_trainable(main_network=False, calib=True)
         else:
-            parameters = self.model.calib_block.parameters()
-        self.optimizer = torch.optim.AdamW(parameters, lr=self.trainer_args.learning_rate)
+            self.set_trainable(main_network=True, calib=True)
+
+        # Collect only trainable parameters (robust even if calib_block misses some modules)
+        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
+
+        # Basic sanity: avoid silent no-op training
+        if len(trainable_params) == 0:
+            raise RuntimeError(
+                "No trainable parameters found. Check calib_finetune and model wiring."
+            )
+
+        self.optimizer = torch.optim.AdamW(trainable_params, lr=self.trainer_args.learning_rate)
         self.loss_function = nn.MSELoss()
+
+        # Lightweight diagnostic
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_num = sum(p.numel() for p in trainable_params)
+        print(f"Trainable params: {trainable_num:,} / {total_params:,} ({100.0*trainable_num/max(total_params,1):.2f}%)")
     
     def load_dataset(self):
         self.dataset = SequenceDataset(**self.args.dataset)
@@ -129,8 +173,8 @@ class Trainer():
         # self.trainset = torch.utils.data.Subset(self.dataset, range(256))  
         # self.valset = torch.utils.data.Subset(self.dataset, range(128))
         
-        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=4)
-        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=4)
+        self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=0)
+        self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=0)
         
     def get_loss(self, data, result):
         finger_mask = data.get('finger_mask', torch.ones(5, dtype=torch.bool)).to(self.device)
@@ -179,29 +223,61 @@ class Trainer():
         if self.prefer_feat_loss is not None:
             loss['loss'] += self.prefer_feat_loss * 0.1  # weight for preference feature loss
             loss['prefer_feat_loss'] = self.prefer_feat_loss
-        
+
+        # Add HyperLoRA regularization loss (only during training)
+        if hasattr(self.model, 'hyperlora') and self.model.hyperlora is not None:
+            if self.model.training and self.args.model.hypernet_cfg.reg_weight > 0:
+                hyperlora_reg = self.model.hyperlora.reg_loss()
+                if hyperlora_reg.item() > 0:
+                    loss['hyperlora_reg'] = hyperlora_reg
+                    loss['loss'] += hyperlora_reg * self.args.model.hypernet_cfg.reg_weight
+
         return loss
 
     def train_step(self, data, do_backward=True):
         x, y, side = data['input'], data['output'], data['side']
         x, y, side = x.float().to(self.device), y.float().to(self.device), side.to(self.device)
-        
-        if 'ik_y' in data:
-            ik_y = data['ik_y'].float().to(self.device)
-        else:
-            ik_y = None
 
-        if 'hypernet_input' in data:
+        # Determine hypernet_input based on available data
+        hypernet_input = None
+        self.prefer_feat_loss = None
+        
+        if self.args.model.preference_extractor_cfg.enabled:
+            # New paired-pose mode: preference extractor produces the full conditioning vector
+            if 'preference_pairs' in data:
+                # New PairedPoseExtractor path
+                preference_pairs = data['preference_pairs'].float().to(self.device)
+                preference_mask = data['preference_mask'].to(self.device)
+                
+                if do_backward:
+                    hypernet_input, self.prefer_feat_loss = self.model.preference_extractor.train_forward(
+                        preference_pairs, preference_mask
+                    )
+                else:
+                    hypernet_input = self.model.preference_extractor(preference_pairs, preference_mask)
+                    
+            elif 'preference_input' in data:
+                # Legacy TransformerExtractor path
+                if do_backward:
+                    preference_feat, self.prefer_feat_loss = self.model.preference_extractor.train_forward(
+                        data['preference_input'].float().to(self.device),
+                        data['preference_mask'].to(self.device)
+                    )
+                else:
+                    preference_feat = self.model.preference_extractor(
+                        data['preference_input'].float().to(self.device),
+                        data['preference_mask'].to(self.device)
+                    )
+                
+                # Optionally concatenate with hypernet_input if provided
+                if 'hypernet_input' in data:
+                    base_hypernet = data['hypernet_input'].float().to(self.device)
+                    hypernet_input = torch.cat([base_hypernet, preference_feat], dim=-1)
+                else:
+                    hypernet_input = preference_feat
+        elif 'hypernet_input' in data:
+            # No preference extractor, use raw hypernet_input
             hypernet_input = data['hypernet_input'].float().to(self.device)
-            if self.args.model.preference_extractor_cfg.enabled:
-                preference_feat, self.prefer_feat_loss = self.model.preference_extractor.train_forward(
-                    data['preference_input'].float().to(self.device),
-                    data['preference_mask'].to(self.device)
-                )
-                hypernet_input = torch.cat([hypernet_input, preference_feat], dim=-1)
-        else:
-            hypernet_input = None
-            self.prefer_feat_loss = None
 
         step_info = {}
 
@@ -210,10 +286,27 @@ class Trainer():
             if do_backward: #training
                 self.global_steps += 1
                 # result = self.model(x, y, hypernet_input, side=side, ik_y=ik_y)
-                result = self.model(x, y, side=side, ik_y=ik_y)
+                result = self.model(x, y, side=side)
                 loss = self.get_loss(data, result)
                 self.optimizer.zero_grad()
                 loss['loss'].backward()
+
+                # Gradient diagnostics (lightweight; helps catch zero-grad issues)
+                if self.global_steps % 200 == 0:
+                    grads = {}
+                    for name, p in self.model.named_parameters():
+                        if p.requires_grad and p.grad is not None:
+                            grads[name] = float(p.grad.detach().abs().mean().cpu())
+                    # Report a few key gradients if present
+                    for key in [
+                        'preference_extractor.pool_queries.weight',
+                        'preference_extractor.pool_attn.in_proj_weight',
+                        'hyperlora.gates.0',
+                        'hyperlora.lora_modules.0.fc.weight',
+                    ]:
+                        if key in grads:
+                            print(f"grad|{key}|mean={grads[key]:.3e}")
+
                 nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
                 self.optimizer.step()
                 for key, value in loss.items():
@@ -230,7 +323,11 @@ class Trainer():
         return step_info
     
     def train_epoch(self):
+        # If we're in calib_finetune, keep the base network in eval() to prevent
+        # BatchNorm running-stat updates and Dropout noise drift.
         self.model.train()
+        if self.trainer_args.calib_finetune and hasattr(self.model, 'network'):
+            self.model.network.eval()
         data_tqdm = tqdm(self.trainloader, desc='Training')
         train_loss = []
         info = {}

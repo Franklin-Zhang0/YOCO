@@ -1,0 +1,119 @@
+# HyperLoRA Calibration Training Configuration
+# Uses OFFLINE-precomputed MANO-angle-space bias + PairedPoseExtractor for conditioning
+#
+# Important:
+# - `bias_cfg` is kept to indicate "use bias" and to record intended bias parameters,
+#   but MANO forward + bias generation is NOT performed inside the dataset at runtime.
+# - First create a new biased HDF5 with:
+#   [`scripts/precompute_bias_hdf5.py`](scripts/precompute_bias_hdf5.py:1)
+
+dataset:
+  path: "path/to/your/dataset"  # Update with actual dataset path
+  input_keys: "world_hand_joints"
+  hypernet_input_keys: ""  # Empty: use paired-pose mode
+  output_keys: "mano_angles"
+  augmentations: {}
+  preprocessing_x: []
+  preprocessing_y: []
+  preference_cfg: {}
+  data_caching: true
+  cat_side: false
+  
+  # MANO-angle-space bias configuration
+  bias_cfg:
+    enabled: true
+    per_finger_offset_prob: 0.9
+    per_finger_offset_std: 0.15  # radians
+    per_joint_residual_prob: 0.7
+    per_joint_residual_std: 0.05  # radians
+    biased_joint_indices: null  # null = all joints; or list like [3,4,5,6,7,8] for specific joints
+    clamp_delta_norm: null  # null = no clamp; or float like 0.3 to clamp max delta
+    seed: 42
+  
+  num_hypernet_pairs: 4  # Number of paired poses for conditioning
+
+val_dataset:
+  path: ""  # Empty = use train/val split
+
+model:
+  type: "Combined_CNN_MLP_MIXER"
+  input_size: 21  # Will be auto-set by trainer
+  input_channel: 3  # Will be auto-set by trainer
+  hidden_layers: []
+  output_size: 45  # Will be auto-set by trainer
+  joints_layout: [[0,1,2,3], [4,5,6], [7,8,9], [10], [11]]
+  full_input: false
+  num_fuse_layer: 0
+  
+  hypernet_cfg:
+    input_size: 256  # Will match preference_extractor output_dim
+    max_modules: -1  # -1 = inject into all Linear layers
+    rank: 4
+    alpha: 4.0
+    hidden_layers: [256, 256]
+    name_filter: ["mano_regressor", "fusion_attention"]  # Target modules for LoRA injection
+    drop_out: 0.1
+    
+    # Stability improvements (NEW)
+    train_init: false  # Disable expensive Wasserstein initialization
+    init_method: "xavier"  # 'xavier' (recommended) | 'wasserstein'
+    use_tanh: true  # Bound LoRA outputs with tanh for stability
+    scale_A: 0.1  # Scale for A matrix (after tanh) - controls adaptation magnitude
+    scale_B: 0.1  # Scale for B matrix (after tanh) - controls adaptation magnitude
+    use_gates: true  # Per-module learnable gates (start near-identity)
+    gate_init: 0.0  # Initial gate value: sigmoid(0) = 0.5
+    max_norm: null  # Optional: max Frobenius norm for delta weights (null = disabled)
+    reg_weight: 0.01  # Weight for regularization loss (penalize large deltas)
+    reg_type: "frobenius"  # 'frobenius' (recommended) | 'b_only' | 'nuclear'
+  
+  preference_extractor_cfg:
+    enabled: true
+    use_paired_pose_extractor: true  # Use new PairedPoseExtractor with RoPE
+    pair_fusion_dim: 256
+    output_dim: 256  # Must match hypernet_cfg.input_size
+    num_heads: 4
+    n_layers: 4  # Number of transformer layers with RoPE
+    dropout: 0.1
+
+    # NEW: Shared-transformer, per-module attention pooling.
+    # When true, preference extractor returns (B, M, output_dim) where M = number of HyperLoRA modules.
+    per_module_pooling: true
+
+    # Legacy settings (ignored when use_paired_pose_extractor=true)
+    input_dim: 0
+    hidden_dim: 32
+    max_tokens: 10
+    min_tokens: 5
+  
+  iknet_cfg:
+    enabled: false
+
+trainer:
+  expname: "hyperlora_mano_bias_calib"
+  batch_size: 32
+  learning_rate: 1.0e-4
+  weight_decay: 0.0
+  grad_clipping: 1.0
+  calibnet_warmup_epochs: 0
+  num_epochs: 50
+  val_split: 0.2
+  device: "cuda"
+  loss_type: "mse"  # or "composite" for multi-loss
+  loss_weights:
+    qpos: 1.0
+    geort: 0.01
+    alignment: 0.1
+  loss_weights_decay:
+    qpos: 0.0
+    geort: 0.02
+    alignment: 0.02
+  save_path: "expdata/"
+  load_path: null  # Set to checkpoint path to resume training
+  fk_model_path: "expdata/fk/model/omni.pth"
+  fk_ds_path: "expdata/fk/dataset/omni.npz"
+  save_interval: 5
+  calib_finetune: true  # Train only HyperLoRA + preference extractor
+  
+  logger:
+    type: ["terminal", "file", 'wandb']  # Add "wandb" for W&B logging
+    project: "Calibration_net_HyperLoRA"

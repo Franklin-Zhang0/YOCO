@@ -9,7 +9,20 @@ import numpy as np
 from tqdm import tqdm
 
 
-def lora_hook(module, input, output, lora_weight, rank, alpha=1.0, drop_out=0.0):
+def lora_hook(module, input, output, lora_weight, rank, alpha=1.0, drop_out=0.0, gate=None, max_norm=None):
+    """LoRA forward hook with optional gating and max-norm constraint.
+    
+    Args:
+        module: Target nn.Linear layer
+        input: Tuple of input tensors
+        output: Base layer output
+        lora_weight: Generated LoRA weights (B, in_dim*rank + rank*out_dim)
+        rank: LoRA rank
+        alpha: LoRA scaling factor
+        drop_out: Dropout probability
+        gate: Optional learnable gate parameter (scalar)
+        max_norm: Optional max Frobenius norm for delta weights
+    """
     rand = torch.rand(1).item()
     if rand < drop_out:
         return output
@@ -18,11 +31,32 @@ def lora_hook(module, input, output, lora_weight, rank, alpha=1.0, drop_out=0.0)
     batch_size = lora_weight.shape[0]
     lora_A = lora_weight[:, :in_dim*rank].reshape(batch_size, in_dim, rank)
     lora_B = lora_weight[:, in_dim*rank:].reshape(batch_size, rank, out_dim)
-    lora_output = input[0].unsqueeze(1) @ lora_A @ lora_B / float(rank) * alpha
-    output = output + lora_output.squeeze(1)
+    
+    # Compute delta weights
+    delta_w = lora_A @ lora_B / float(rank) * alpha  # (B, in_dim, out_dim)
+    
+    # Optional: max-norm constraint
+    if max_norm is not None:
+        norm = torch.norm(delta_w, p='fro', dim=(-2, -1), keepdim=True)  # (B, 1, 1)
+        scale = torch.clamp(max_norm / (norm + 1e-8), max=1.0)
+        delta_w = delta_w * scale
+    # Apply delta
+    if input[0].dim() == 2:
+        lora_output = input[0].unsqueeze(1) @ delta_w  # (B, 1, out_dim)
+        lora_output = lora_output.squeeze(1)  # (B, out_dim)
+    else:
+        lora_output = input[0] @ delta_w 
+    
+    # Optional: learnable gate (starts near 0)
+    if gate is not None:
+        gate_value = torch.sigmoid(gate)
+        lora_output = gate_value * lora_output
+    
+    output = output + lora_output
     return output
 
 class HyperLoRAHookContext(AbstractContextManager):
+    """Context manager for HyperLoRA forward hooks."""
     def __init__(self, outer, hyper_lora_input: Tensor):
         self.outer = outer
         self.hyper = hyper_lora_input
@@ -35,9 +69,7 @@ class HyperLoRAHookContext(AbstractContextManager):
         return False  # don’t suppress exceptions
 
 def w1_to_uniform(x: torch.Tensor, a: float = 0.0, b: float = 1.0):
-    """
-    1D Wasserstein-1 distance between empirical samples x and Uniform(a,b).
-    """
+    """1D Wasserstein-1 distance between empirical samples x and Uniform(a,b)."""
     x = x.flatten().to(torch.float64)
     n = x.numel()
     if n == 0:
@@ -49,6 +81,7 @@ def w1_to_uniform(x: torch.Tensor, a: float = 0.0, b: float = 1.0):
     return torch.mean(torch.abs(xs - target))
 
 def init_hypernet(net, sample_num=128, n_steps=20):
+    """Initialize hypernet to match uniform distribution (Wasserstein method)."""
     optim = torch.optim.Adam(net.parameters(), lr=0.01)
     for i in range(n_steps):
         optim.zero_grad()
@@ -63,8 +96,36 @@ def init_hypernet(net, sample_num=128, n_steps=20):
         optim.step()
     return net
 
+
 class HyperBlock(nn.Module):
-    def __init__(self, input_dim, in_feat, out_feat, rank, hidden_layers=[], train_init=True):
+    """Hypernetwork block that generates LoRA weights.
+    
+    Args:
+        input_dim: Conditioning vector dimension
+        in_feat: Input features of target layer
+        out_feat: Output features of target layer
+        rank: LoRA rank
+        hidden_layers: List of hidden layer sizes
+        train_init: Whether to use Wasserstein initialization
+        init_method: 'xavier' | 'wasserstein'
+        use_tanh: Whether to bound outputs with tanh
+        scale_A: Scale for A matrix (after tanh)
+        scale_B: Scale for B matrix (after tanh)
+    """
+    
+    def __init__(
+        self,
+        input_dim,
+        in_feat,
+        out_feat,
+        rank,
+        hidden_layers=[],
+        train_init=True,
+        init_method='xavier',
+        use_tanh=False,
+        scale_A=1.0,
+        scale_B=1.0,
+    ):
         super(HyperBlock, self).__init__()
         self.input_dim = input_dim
         if hidden_layers == [] or hidden_layers is None:
@@ -83,24 +144,101 @@ class HyperBlock(nn.Module):
             hidden_dim = dim
 
         self.fc = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
-        if train_init:
+        
+        # Bounded parameterization
+        self.use_tanh = use_tanh
+        self.scale_A = scale_A
+        self.scale_B = scale_B
+        
+        # Initialize based on method
+        if init_method == 'wasserstein' and train_init:
             init_hypernet(self, sample_num=256, n_steps=30)
+        elif init_method == 'xavier':
+            # Xavier initialization for A part
+            fan_in_A = in_feat
+            bound_A = 1.0 / np.sqrt(fan_in_A)
+            with torch.no_grad():
+                # Initialize A part
+                self.fc.weight[:, :in_feat * rank].uniform_(-bound_A, bound_A)
+                self.fc.bias[:in_feat * rank].uniform_(-bound_A, bound_A)
 
-        # nn.init.zeros_(self.fc.weight[:in_feat * rank])
-        # nn.init.zeros_(self.fc.bias[:in_feat * rank])
-        nn.init.zeros_(self.fc.weight[in_feat * rank:])
+        # B always zero-initialized (standard LoRA)
+        nn.init.zeros_(self.fc.weight[:, in_feat * rank:])
         nn.init.zeros_(self.fc.bias[in_feat * rank:])
 
     def forward(self, x):
+        """Generate LoRA weights from conditioning vector.
+        
+        Args:
+            x: Conditioning vector (B, input_dim)
+        
+        Returns:
+            LoRA weights (B, in_feat*rank + rank*out_feat)
+        """
         x = self.linear1(x)
         x = self.gelu(x)
         for layer in self.layers:
             x = layer(x)
-        x = self.fc(x)
-        return x
+        raw_weights = self.fc(x)
+        
+        if self.use_tanh:
+            # Split and bound separately
+            lora_A_raw = raw_weights[:, :self.in_feat * self.rank]
+            lora_B_raw = raw_weights[:, self.in_feat * self.rank:]
+            
+            lora_A = torch.tanh(lora_A_raw) * self.scale_A
+            lora_B = torch.tanh(lora_B_raw) * self.scale_B
+            
+            return torch.cat([lora_A, lora_B], dim=-1)
+        else:
+            return raw_weights
+
 
 class HyperLoRA(nn.Module):
-    def __init__(self, input_size, base_model: nn.Module, max_modules:int = -1, rank: int = 2, alpha: float = 2.0, drop_out: float=0.0, hidden_layers=[], name_filter=[], train_init=True):
+    """HyperLoRA: Hypernetwork-generated LoRA for dynamic adaptation.
+    
+    Args:
+        input_size: Conditioning vector dimension
+        base_model: Base model to adapt
+        max_modules: Maximum number of modules to adapt (-1 for all)
+        rank: LoRA rank
+        alpha: LoRA scaling factor
+        drop_out: Dropout probability
+        hidden_layers: Hidden layer sizes for hypernetwork
+        name_filter: List of name patterns to filter modules
+        train_init: Whether to use Wasserstein initialization
+        init_method: 'xavier' | 'wasserstein'
+        use_tanh: Whether to bound LoRA outputs with tanh
+        scale_A: Scale for A matrix (after tanh)
+        scale_B: Scale for B matrix (after tanh)
+        use_gates: Whether to use per-module learnable gates
+        gate_init: Initial gate value (before sigmoid)
+        max_norm: Optional max Frobenius norm for delta weights
+        reg_weight: Weight for regularization loss
+        reg_type: 'frobenius' | 'b_only' | 'nuclear'
+    """
+    
+    def __init__(
+        self,
+        input_size,
+        base_model: nn.Module,
+        max_modules: int = -1,
+        rank: int = 2,
+        alpha: float = 2.0,
+        drop_out: float = 0.0,
+        hidden_layers=[],
+        name_filter=[],
+        train_init=True,
+        init_method='xavier',
+        use_tanh=False,
+        scale_A=1.0,
+        scale_B=1.0,
+        use_gates=False,
+        gate_init=0.0,
+        max_norm=None,
+        reg_weight=0.0,
+        reg_type='frobenius',
+    ):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
         self.base_model = base_model
@@ -111,54 +249,230 @@ class HyperLoRA(nn.Module):
         self.name_filter = name_filter
         self.drop_out = drop_out
         self.train_init = train_init
+        self.init_method = init_method
+        self.use_tanh = use_tanh
+        self.scale_A = scale_A
+        self.scale_B = scale_B
+        self.use_gates = use_gates
+        self.gate_init = gate_init
+        self.max_norm = max_norm
+        self.reg_weight = reg_weight
+        self.reg_type = reg_type
+        
+        # Hook management
+        self._hook_handles = []
+        self._cached_lora_weights = None
+        
         self.build_lora()
 
     def build_lora(self):
+        """Build HyperLoRA modules for target layers."""
         print("building hyper lora")
-        self.modules = []
+        self.modules_list = []
+        self.gates = nn.ParameterList() if self.use_gates else None
+        
         for name, layers in self.base_model.named_modules():
-            if self.name_filter is not None:
+            if self.name_filter is not None and len(self.name_filter)>0:
                 for filter in self.name_filter:
                     if filter in name: break
                 else: continue
             print(f"building {name} hyper lora module")
-            if self.max_modules > 0 and len(self.modules) >= self.max_modules:
+            if self.max_modules > 0 and len(self.modules_list) >= self.max_modules:
                 break
             if isinstance(layers, nn.Linear):
-                module = HyperBlock(input_dim=self.input_dim, in_feat=layers.in_features, out_feat=layers.out_features, rank=self.rank, hidden_layers=self.hidden_layers, train_init=self.train_init)
-                self.modules.append((layers, module))
-        self.lora_modules = nn.ModuleList([m for _, m in self.modules])
+                module = HyperBlock(
+                    input_dim=self.input_dim,
+                    in_feat=layers.in_features,
+                    out_feat=layers.out_features,
+                    rank=self.rank,
+                    hidden_layers=self.hidden_layers,
+                    train_init=self.train_init,
+                    init_method=self.init_method,
+                    use_tanh=self.use_tanh,
+                    scale_A=self.scale_A,
+                    scale_B=self.scale_B,
+                )
+                self.modules_list.append((layers, module))
+                
+                # Add gate if enabled
+                if self.use_gates:
+                    gate = nn.Parameter(torch.tensor(self.gate_init))
+                    self.gates.append(gate)
+        
+        self.lora_modules = nn.ModuleList([m for _, m in self.modules_list])
 
     def prepare_lora_weights(self, hyper_lora_input: Tensor):
+        """Generate LoRA weights from conditioning vector.
+
+        Supports either:
+          - shared conditioning: (B, input_dim)
+          - per-module conditioning: (B, M, input_dim), where module i consumes hyper[:, i, :]
+
+        Args:
+            hyper_lora_input: Conditioning vector(s)
+
+        Returns:
+            List of (layer, lora_weight) tuples
+        """
         lora_weights = []
-        for layers, module in self.modules:
-            lora_weight = module(hyper_lora_input)
+
+        # Determine conditioning mode
+        if hyper_lora_input.dim() == 2:
+            per_module = False
+        elif hyper_lora_input.dim() == 3:
+            per_module = True
+            if hyper_lora_input.shape[1] != len(self.modules_list):
+                raise ValueError(
+                    f"Per-module hyper input has M={hyper_lora_input.shape[1]} but HyperLoRA has "
+                    f"{len(self.modules_list)} modules"
+                )
+        else:
+            raise ValueError(
+                f"hyper_lora_input must have shape (B, D) or (B, M, D); got {tuple(hyper_lora_input.shape)}"
+            )
+
+        for idx, (layers, module) in enumerate(self.modules_list):
+            if per_module:
+                cond = hyper_lora_input[:, idx, :]
+            else:
+                cond = hyper_lora_input
+            lora_weight = module(cond)
             lora_weights.append((layers, lora_weight))
         return lora_weights
 
     def register_hooks(self, hyper_lora_input, lora_weights=None):
+        """Register forward hooks with safe handle management.
+        
+        Args:
+            hyper_lora_input: Conditioning vector
+            lora_weights: Pre-computed LoRA weights (optional)
+        """
+        # Clear old hooks first
+        self.unregister_hooks()
+        
         if lora_weights is None:
             lora_weights = self.prepare_lora_weights(hyper_lora_input)
-        assert len(lora_weights) == len(self.modules)
-        for layers, lora_weights in lora_weights:
-            layers.register_forward_hook(partial(lora_hook, lora_weight=lora_weights, rank=self.rank, alpha=self.alpha, drop_out=self.drop_out))
+        
+        # Cache for regularization
+        self._cached_lora_weights = lora_weights
+        
+        assert len(lora_weights) == len(self.modules_list)
+        for idx, (layers, lora_weight) in enumerate(lora_weights):
+            gate = self.gates[idx] if self.use_gates else None
+            handle = layers.register_forward_hook(
+                partial(
+                    lora_hook,
+                    lora_weight=lora_weight,
+                    rank=self.rank,
+                    alpha=self.alpha,
+                    drop_out=self.drop_out,
+                    gate=gate,
+                    max_norm=self.max_norm,
+                )
+            )
+            self._hook_handles.append(handle)
 
     def unregister_hooks(self):
-        for layers, _ in self.modules:
-            layers._forward_hooks.clear()
+        """Safely remove only our hooks."""
+        for handle in self._hook_handles:
+            handle.remove()
+        self._hook_handles.clear()
+        self._cached_lora_weights = None
 
     def forward(self, x: Tensor, hyper_lora_input: Tensor) -> Tensor:
+        """Forward pass with HyperLoRA.
+        
+        Args:
+            x: Input to base model
+            hyper_lora_input: Conditioning vector
+        
+        Returns:
+            Base model output with LoRA adaptation
+        """
         self.register_hooks(hyper_lora_input)
         x = self.base_model(x)
         self.unregister_hooks()
         return x
     
     def use(self, hyper_lora_input: Tensor) -> HyperLoRAHookContext:
-        """Factory that returns a context manager carrying your argument."""
+        """Context manager for HyperLoRA forward pass.
+        
+        Args:
+            hyper_lora_input: Conditioning vector
+        
+        Returns:
+            Context manager
+        """
         return HyperLoRAHookContext(self, hyper_lora_input)
+    
+    def reg_loss(self, lora_weights=None, reg_type=None):
+        """Compute regularization loss on LoRA deltas.
+        
+        Args:
+            lora_weights: Pre-computed LoRA weights (optional, uses cached)
+            reg_type: 'frobenius' | 'b_only' | 'nuclear' (optional, uses self.reg_type)
+        
+        Returns:
+            Scalar regularization loss
+        """
+        if lora_weights is None:
+            lora_weights = self._cached_lora_weights
+        
+        if lora_weights is None:
+            return torch.tensor(0.0, device=next(self.parameters()).device)
+        
+        if reg_type is None:
+            reg_type = self.reg_type
+        
+        total_reg = 0.0
+        count = 0
+        
+        for layers, lora_weight in lora_weights:
+            B, _ = lora_weight.shape
+            in_dim, out_dim = layers.in_features, layers.out_features
+            
+            # Reshape to matrices
+            lora_A = lora_weight[:, :in_dim*self.rank].reshape(B, in_dim, self.rank)
+            lora_B = lora_weight[:, in_dim*self.rank:].reshape(B, self.rank, out_dim)
+            
+            if reg_type == 'frobenius':
+                # Penalize ||A @ B||_F^2
+                delta_w = lora_A @ lora_B  # (B, in_dim, out_dim)
+                reg = torch.mean(torch.norm(delta_w.reshape(B, -1), p=2, dim=-1) ** 2)
+            elif reg_type == 'b_only':
+                # Penalize ||B||_F^2 (common in LoRA literature)
+                reg = torch.mean(torch.norm(lora_B.reshape(B, -1), p=2, dim=-1) ** 2)
+            elif reg_type == 'nuclear':
+                # Penalize nuclear norm (sum of singular values)
+                delta_w = lora_A @ lora_B
+                # Nuclear norm via SVD
+                reg = 0.0
+                for b in range(B):
+                    _, s, _ = torch.svd(delta_w[b])
+                    reg += s.sum()
+                reg = reg / B
+            else:
+                reg = torch.tensor(0.0, device=lora_weight.device)
+            
+            total_reg += reg
+            count += 1
+        
+        return total_reg / max(count, 1)
     
     @torch.no_grad()
     def merge_weight(self, hyper_lora_input: Tensor):
+        """Merge LoRA weights into base model (for inference).
+
+        Supports either:
+          - shared conditioning: (1, input_dim)
+          - per-module conditioning: (1, M, input_dim)
+
+        Args:
+            hyper_lora_input: Conditioning vector(s) (batch size must be 1)
+
+        Returns:
+            Base model with merged weights
+        """
         assert hyper_lora_input.shape[0] == 1, "only support batch size 1 for merging weight"
         lora_weights = self.prepare_lora_weights(hyper_lora_input)
         for layers, lora_weight in lora_weights:
@@ -170,13 +484,27 @@ class HyperLoRA(nn.Module):
             layers.weight.data += delta_w.T
         return self.base_model
 
+
 if __name__ == "__main__":
     simple_mlp = nn.Sequential(
         nn.Linear(256, 256),
         nn.ReLU(),
-        nn.Linear(256, 512)
+        nn.Linear(256, 5)
     )
-    hyper_lora = HyperLoRA(input_size=5, base_model=simple_mlp, rank=2, max_modules=1, hidden_layers=[256])
-    print(hyper_lora(torch.randn(1, 256), torch.randn(1, 5)))
-    print(hyper_lora)
-    breakpoint()
+    hyper_lora = HyperLoRA(
+        input_size=5,
+        base_model=simple_mlp,
+        rank=2,
+        max_modules=-1,
+        hidden_layers=[256],
+        use_tanh=True,
+        scale_A=0.1,
+        scale_B=0.1,
+        use_gates=True,
+    )
+    # print(hyper_lora(torch.randn(1, 256), torch.randn(1, 5)))
+    inputs = torch.ones(1,256)
+    print(simple_mlp(inputs))
+    nn.init.xavier_normal_(hyper_lora.modules_list[0][1].fc.weight[:, :])
+    with hyper_lora.use(torch.randn((1,5))):
+        print(simple_mlp(inputs))

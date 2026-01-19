@@ -12,7 +12,11 @@ class DatasetConfig:
     preprocessing_x: list = field(default_factory=list)
     preprocessing_y: list = field(default_factory=list)
     preference_cfg: Dict[str, Any] = field(default_factory=dict)
+    data_caching: bool = True
     cat_side: bool = False
+    # New: MANO-angle-space bias configuration
+    bias_cfg: Optional[Dict[str, Any]] = None
+    num_hypernet_pairs: int = 4
 
 @dataclass
 class ValDatasetConfig:
@@ -27,6 +31,17 @@ class HypernetCfg:
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     name_filter: list[str] = field(default_factory=list)
     drop_out: float = 0.0
+    # Stability improvements
+    train_init: bool = False  # Use Wasserstein initialization (expensive)
+    init_method: str = 'xavier'  # 'xavier' | 'wasserstein'
+    use_tanh: bool = False  # Bound LoRA outputs with tanh
+    scale_A: float = 1.0  # Scale for A matrix (after tanh)
+    scale_B: float = 1.0  # Scale for B matrix (after tanh)
+    use_gates: bool = False  # Per-module learnable gates
+    gate_init: float = 0.0  # Initial gate value (before sigmoid)
+    max_norm: Optional[float] = None  # Max Frobenius norm for delta weights
+    reg_weight: float = 0.0  # Weight for regularization loss
+    reg_type: str = 'frobenius'  # 'frobenius' | 'b_only' | 'nuclear'
 
 @dataclass
 class IKNetCfg:
@@ -38,12 +53,21 @@ class IKNetCfg:
 @dataclass
 class PreferenceExtractorConfig:
     enabled: bool = False
+    # Legacy TransformerExtractor settings
     input_dim: int = field(default_factory=int)
     hidden_dim: int = 32
     num_heads: int = 4
     n_layers: int = 4
     max_tokens: int = 10
     min_tokens: int = 5
+    # New PairedPoseExtractor settings
+    use_paired_pose_extractor: bool = False
+    pair_fusion_dim: int = 256
+    output_dim: int = 256
+    dropout: float = 0.1
+
+    # NEW: Shared-transformer, per-module attention pooling for HyperLoRA
+    per_module_pooling: bool = False
 
 @dataclass
 class ModelConfig:

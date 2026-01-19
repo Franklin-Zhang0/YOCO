@@ -135,17 +135,55 @@ class Combined_CNN_MLP_MIXER(nn.Module):
             self.mano_regressor.append(layers)
             
     
+    def extract_features(self, x):
+        """Extract intermediate token features for use in preference extractor.
+        
+        Args:
+            x: (B, 21, 3) or (B, 63) keypoints
+            
+        Returns:
+            features: (B, 6, 320) token features after fusion
+                     6 tokens = [5 finger tokens, 1 fingertip context token]
+        """
+        if x.dim() == 2:
+            x = x.reshape(x.shape[0], self.input_size, self.input_channel)
+        
+        # Permute to (Batch, Channel, Points) for Conv1d
+        x = x.permute(0, 2, 1)
+        
+        # 1. Individual Finger Encoding
+        finger_feats_list = []
+        for i in range(5):
+            finger_input = torch.cat([x[:, :, :1], x[:, :, np.array(Mediapipe2Mano[i])]], dim=2)
+            finger_feat = self.finger_encoder[i](finger_input) # (B, 320)
+            finger_feats_list.append(finger_feat)
+        
+        # Stack finger features: (B, 5, 320)
+        finger_feats_stack = torch.stack(finger_feats_list, dim=1)
+        
+        # 2. Fingertip Feature Extraction
+        tips = x[:, :, TIP_INDICES] # (B, C, 5)
+        tip_feat = self.tip_encoder(tips) # (B, 320)
+        tip_feat = tip_feat.unsqueeze(1)  # (B, 1, 320)
+        
+        # 3. Fusion (Self-Attention)
+        fusion_input = torch.cat([finger_feats_stack, tip_feat], dim=1)  # (B, 6, 320)
+        fusion_out = self.fusion_attention(fusion_input) # (B, 6, 320)
+        
+        # Return full token features (not pooled)
+        return fusion_out  # (B, 6, 320)
+    
     def forward(self, x, return_feat=False):
         if x.dim() == 2:
             x = x.reshape(x.shape[0], self.input_size, self.input_channel)
         
         # Permute to (Batch, Channel, Points) for Conv1d
-        x = x.permute(0, 2, 1) 
+        x = x.permute(0, 2, 1)
         
         # 1. Individual Finger Encoding
         finger_feats_list = []
         for i in range(5):
-            finger_input = torch.cat([x[:, :, :1], x[:, :, np.array(Mediapipe2Mano[i])]], dim=2) 
+            finger_input = torch.cat([x[:, :, :1], x[:, :, np.array(Mediapipe2Mano[i])]], dim=2)
             finger_feat = self.finger_encoder[i](finger_input) # (B, 320)
             finger_feats_list.append(finger_feat)
         

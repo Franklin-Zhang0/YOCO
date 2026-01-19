@@ -3,14 +3,16 @@ from torch.utils.data import Dataset
 import torch
 from calibration_net.utils import walk_dict, index_dict, Side
 import numpy as np
-from .preprocessing import TRANSFORM_REGISTRY, build_preprocessing
-from .augmentation import AUGMENTATION_REGISTRY, build_augmentation
-from typing import OrderedDict, Union
+from .preprocessing import build_preprocessing
+from .augmentation import build_augmentation
+from .bias_generator import BiasGenerator, BiasConfig
+from typing import Union, Optional
 from functools import partial
 from tqdm import tqdm
 import h5py
 import multiprocessing as mp
 import random
+import warnings
 
 class ConcatHDF5():
     def __init__(self, paths:list[str]):
@@ -89,18 +91,20 @@ class TeleopDataset(Dataset):  # point-wise dataset
         return {'input': x, 'output': y}
     
 class SequenceDataset(Dataset):
-    def __init__(self, 
-                 path, 
-                 input_keys, 
+    def __init__(self,
+                 path,
+                 input_keys,
                  hypernet_input_keys,
-                 output_keys, 
-                 augmentations={}, 
-                 preprocessing_x=[], 
+                 output_keys,
+                 augmentations={},
+                 preprocessing_x=[],
                  preprocessing_y=[],
                  data_caching=True,
                  cat_side=False,
                  preference_cfg={},
                  is_train=True,
+                 bias_cfg: Optional[dict] = None,
+                 num_hypernet_pairs: int = 4,
                  ):
         if ',' in path:
             path = path.split(',')
@@ -118,11 +122,24 @@ class SequenceDataset(Dataset):
         self.data_caching = data_caching
         self.is_train = is_train
         self.preference_cfg = preference_cfg
+        self.num_hypernet_pairs = num_hypernet_pairs
 
         self.input_keys = input_keys
         self.cat_side = cat_side
         self.output_keys = output_keys
         self.hypernet_input_keys = hypernet_input_keys
+        
+        # Bias handling
+        #
+        # NOTE: Bias generation (MANO forward) is intentionally NOT done at runtime.
+        # If enabled, we only *consume* precomputed columns:
+        #   - f"{input_keys}_true"
+        #   - f"{input_keys}_biased"
+        #   - "mano_angles_biased" (optional, kept for provenance)
+        if bias_cfg is not None:
+            self.bias_generator = BiasGenerator(BiasConfig(**bias_cfg))
+        else:
+            self.bias_generator = None
         
         assert self.input_keys in self.data[0].keys(), f"Input keys '{self.input_keys}' not in dataset columns {self.data.column_names}"
         assert self.output_keys in self.data[0].keys(), f"Output keys '{self.output_keys}' not in dataset columns {self.data.column_names}"
@@ -145,7 +162,7 @@ class SequenceDataset(Dataset):
     def prefetch_data(self):
         from concurrent.futures import ThreadPoolExecutor, as_completed
         print("Prefetching data...")
-        with ThreadPoolExecutor(max_workers=512) as executor:
+        with ThreadPoolExecutor(max_workers=32) as executor:
             futures = {executor.submit(self.fetch_demo, i): i for i in range(len(self.data))}
             for future in tqdm(as_completed(futures), total=len(futures)):
                 demo_id = futures[future]
@@ -240,18 +257,34 @@ class SequenceDataset(Dataset):
         return self.length
 
     def fetch_demo(self, demo_id):
-        if self.data_caching: 
-            if demo_id in self.data_cache:
-                data = self.data_cache[demo_id]
-            else:
-                data = {}
-                for key, value in walk_dict(self.data[demo_id]):
-                    data[key] = np.array(value)
-                data[self.input_keys] = self.preprocessing_x(data[self.input_keys])
-                data[self.output_keys] = self.preprocessing_y(data[self.output_keys])
-                self.data_cache[demo_id] = data
+        if self.data_caching and demo_id in self.data_cache:
+            data = self.data_cache[demo_id]
         else:
-            data = self.data[demo_id]
+            data = {}
+            for key, value in walk_dict(self.data[demo_id]):
+                data[key] = np.array(value)
+
+            # Base preprocessing
+            data[self.input_keys] = self.preprocessing_x(data[self.input_keys])
+            data[self.output_keys] = self.preprocessing_y(data[self.output_keys])
+
+            # Bias is consumed from precomputed columns only.
+            if self.bias_generator is not None and self.bias_generator.config.enabled:
+                true_key = f"{self.input_keys}_true"
+                biased_key = f"{self.input_keys}_biased"
+
+                if true_key not in data or biased_key not in data:
+                    raise KeyError(
+                        "Bias is enabled, but precomputed columns are missing. "
+                        f"Expected '{true_key}' and '{biased_key}' in HDF5 demo {demo_id}. "
+                        "Run the offline preprocessing via scripts/precompute_bias_hdf5.py first."
+                    )
+
+                data[true_key] = self.preprocessing_x(data[true_key])
+                data[biased_key] = self.preprocessing_x(data[biased_key])
+
+            if self.data_caching:
+                self.data_cache[demo_id] = data
         return data
     
     def __augment__(self, item):
@@ -271,7 +304,18 @@ class SequenceDataset(Dataset):
         idx_in_demo = self.mapping['idx_to_idx_in_demo'][idx]
         data = self.fetch_demo(demo_id)
         
-        x = index_dict(dict(data), self.input_keys)
+        # Check if bias is enabled
+        use_bias = self.bias_generator is not None and self.bias_generator.config.enabled
+        
+        if use_bias:
+            # Use biased keypoints as input, true keypoints as ground truth reference
+            x_biased = index_dict(dict(data), f'{self.input_keys}_biased')
+            x_true = index_dict(dict(data), f'{self.input_keys}_true')
+            x = x_biased  # Model receives biased input
+        else:
+            x = index_dict(dict(data), self.input_keys)
+            x_true = x  # No bias, true = input
+        
         y = index_dict(dict(data), self.output_keys)
         
         inputs = torch.tensor(x[idx_in_demo], dtype=torch.float32)
@@ -283,18 +327,15 @@ class SequenceDataset(Dataset):
         assert type(side) == str
         enc_side = Side.__dict__[side.upper()].value
 
-        if self.input_keys == 'world_hand_joints':
-            inputs[..., 0] *= -enc_side  # flip x axis based on side
-
         item = {'input': inputs, 'output': outputs, 'side': enc_side}
+        
+        # Store original (true) data for drift error computation
+        if use_bias:
+            item['original_data'] = torch.tensor(x_true[idx_in_demo], dtype=torch.float32)
 
-        if 'pca_mano_pose' in data:
-            pca_mano_pose = index_dict(dict(data), 'pca_mano_pose')
-            pca_mano_pose = torch.tensor(pca_mano_pose[idx_in_demo], dtype=torch.float32)
-            item['ik_y'] = pca_mano_pose
-
-
+        # Build HyperLoRA conditioning input from paired biased/true keypoints
         if self.hypernet_input_keys is not None and self.hypernet_input_keys != '':
+            # Legacy mode: use specified hypernet_input_keys
             hypernet_x = index_dict(dict(data), self.hypernet_input_keys)
             hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
             if self.cat_side:
@@ -314,6 +355,43 @@ class SequenceDataset(Dataset):
                 item['preference_y'] = torch.cat([item['preference_y'], torch.zeros((pad_length, *item['preference_y'].shape[1:]), dtype=torch.float32)], dim=0)
             item['preference_input'] = torch.cat([item['preference_x'].reshape(total_length, -1), item['preference_y'].reshape(total_length, -1)], dim=-1)
             item['preference_mask'] = torch.cat([torch.ones((rand_length,), dtype=torch.bool), torch.zeros((pad_length,), dtype=torch.bool)], dim=0)
+        
+        elif use_bias:
+            # New mode: build paired-pose input for preference extractor
+            # Sample K random frames from the same demo
+            seq_len = len(x)
+            num_pairs = min(self.num_hypernet_pairs, seq_len)
+            
+            # Sample indices (can include current frame)
+            if seq_len > num_pairs:
+                sampled_indices = random.sample(range(seq_len), num_pairs)
+            else:
+                sampled_indices = list(range(seq_len))
+            
+            # Pad to num_hypernet_pairs if needed
+            actual_pairs = len(sampled_indices)
+            if actual_pairs < self.num_hypernet_pairs:
+                # Repeat last sample to pad
+                sampled_indices += [sampled_indices[-1]] * (self.num_hypernet_pairs - actual_pairs)
+            
+            # Get paired samples: (K, 2, 21, 3) where dim=1 is [biased, true]
+            biased_samples = x_biased[sampled_indices]  # (K, 21, 3)
+            true_samples = x_true[sampled_indices]      # (K, 21, 3)
+            
+            # Stack as pairs: (K, 2, 21, 3)
+            paired_keypoints = np.stack([biased_samples, true_samples], axis=1)
+            
+            # Convert to tensor
+            item['preference_pairs'] = torch.tensor(paired_keypoints, dtype=torch.float32)
+            
+            # Create mask: True for actual pairs, False for padding
+            pair_mask = torch.zeros(self.num_hypernet_pairs, dtype=torch.bool)
+            pair_mask[:actual_pairs] = True
+            item['preference_mask'] = pair_mask
+            
+            # Optionally include side information (can be used by preference extractor)
+            if self.cat_side:
+                item['preference_side'] = torch.tensor(enc_side, dtype=torch.float32)
 
         if self.is_train:
             item = self.__augment__(item)
@@ -321,15 +399,18 @@ class SequenceDataset(Dataset):
         return item
     
 if __name__ == '__main__':
-    dataset = ConcatHDF5(['/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5','/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5'])
+    # dataset = ConcatHDF5(['/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5','/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5'])
     dataset = SequenceDataset(
-        path='/mnt/sda/yuzhang/data/InterHand/train/hdf5/InterHand_retargeted_30fps_sliced.hdf5',
+        path='/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced.hdf5',
         input_keys='world_hand_joints',
-        output_keys='inspire_joint_pose',
-        hypernet_input_keys='betas',
-        preprocessing_x=["joint_3d_world_to_local","bone_normalize","flatten"],
+        output_keys='mano_angles',
+        preprocessing_x=["joint_3d_world_to_local"],
         preprocessing_y=[],
-        cat_side=True,
+        hypernet_input_keys=None,
+        bias_cfg={
+            'enabled': True
+        },
+        data_caching=True
     )
     for data in tqdm(dataset):
         pass

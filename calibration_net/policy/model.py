@@ -8,10 +8,9 @@ from calibration_net.policy.models import *
 import numpy as np
 from calibration_net.policy.models.hyper_lora import HyperLoRA
 from calibration_net.policy.models.iknet import IKNet
-from calibration_net.policy.models.preference_extractor import TransformerExtractor
+from calibration_net.policy.models.preference_extractor import PairedPoseExtractor
 from contextlib import nullcontext
 from omegaconf import OmegaConf
-
 
 class Model(nn.Module):
     def __init__(self, input_size, output_size, input_channel, type, hypernet_cfg, preference_extractor_cfg, iknet_cfg={}, hidden_layers=None, joints_layout=[], full_input=False, num_fuse_layer=0, train=True):
@@ -89,16 +88,55 @@ class Model(nn.Module):
             self.iknet = IKNet(**iknet_cfg)
 
         if self.hypernet_cfg['input_size'] > 0:
-            self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network, train_init=self.is_train)
+            self.hyperlora = HyperLoRA(**self.hypernet_cfg, base_model=self.network)
             self.calib_block.append(self.hyperlora.lora_modules)
-            
+
         if self.preference_extractor_cfg.get('enabled', False):
             preference_extractor_cfg = dict(self.preference_extractor_cfg)
             del preference_extractor_cfg['enabled']
-            self.preference_extractor = TransformerExtractor(
-                **preference_extractor_cfg
-            )
-            self.calib_block.append(self.preference_extractor)
+
+            # Check if we should use the new PairedPoseExtractor
+            use_paired_pose = preference_extractor_cfg.get('use_paired_pose_extractor', False)
+
+            if use_paired_pose:
+                # New paired-pose extractor using Combined_CNN_MLP_MIXER encoder
+                # Create a lightweight encoder (share architecture with main network if possible)
+                if self.model_type == 'Combined_CNN_MLP_MIXER':
+                    # Use the main network as the pose encoder
+                    pose_encoder = self.network
+                else:
+                    # Create a separate Combined_CNN_MLP_MIXER encoder
+                    pose_encoder = Combined_CNN_MLP_MIXER(
+                        input_size=21,  # 21 keypoints
+                        output_size=45,  # dummy, not used for feature extraction
+                        input_channel=3,
+                        hidden_layers=[],
+                    )
+
+                per_module_pooling = bool(preference_extractor_cfg.get('per_module_pooling', False))
+                num_conditioning_heads = 1
+                if per_module_pooling:
+                    if not hasattr(self, 'hyperlora') or self.hyperlora is None:
+                        raise ValueError(
+                            "per_module_pooling requires HyperLoRA to be enabled so the module count is known"
+                        )
+                    num_conditioning_heads = len(self.hyperlora.modules_list)
+
+                self.preference_extractor = PairedPoseExtractor(
+                    pose_encoder=pose_encoder,
+                    pair_fusion_dim=preference_extractor_cfg.get('pair_fusion_dim', 256),
+                    output_dim=preference_extractor_cfg.get('output_dim', 256),
+                    num_heads=preference_extractor_cfg.get('num_heads', 4),
+                    n_layers=preference_extractor_cfg.get('n_layers', 4),
+                    dropout=preference_extractor_cfg.get('dropout', 0.1),
+                    per_module_pooling=per_module_pooling,
+                    num_conditioning_heads=num_conditioning_heads,
+                )
+                self.calib_block.append(self.preference_extractor)
+            else:
+                raise NotImplementedError
+            
+            # self.calib_block.append(self.preference_extractor)
         return self.network
     
     def forward(self, x, y=None, hypernet_x=None, noisy_act=None, ik_y=None, side=None):
@@ -161,7 +199,7 @@ def load_model(model_dir: str, device: str = 'cpu') -> Model:
 
     model = Model(**model_cfg, train=False)
     model_weight_path = os.path.join(model_dir, 'model.pth')
-    model.load_state_dict(torch.load(model_weight_path, map_location=device), strict=False)
+    model.load_state_dict(torch.load(model_weight_path, map_location=device), strict=True)
     model.to(device)
     
     return model, normalization_stats, cfg

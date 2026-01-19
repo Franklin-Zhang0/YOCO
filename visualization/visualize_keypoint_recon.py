@@ -4,7 +4,7 @@ import h5py
 import torch
 import viser
 import numpy as np
-from calibration_net.utils import mano_recon, transform_joint3d, Side
+from calibration_net.utils import mano_recon, transform_joint3d, Side, scale_hand_fingers
 from calibration_net.policy.preprocessing import get_mano_pca, MANO_PCA
 import time
 
@@ -165,31 +165,43 @@ MANO_CONNECTIONS = [
 ]
 
 def main(dataset_path: str, model_path: str):
-    model, _, _ = load_model(model_path)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model, _, _ = load_model(model_path, device=device)
+    # model2, _, _ =load_model("/data/250010203/franklin/project/hand_teleop/Calibration_net/expdata/test_combined_cnn_mlp_leaky_global_mixer/test_combined_cnn_mlp_leaky_global_mixer_20260111_134713/best" ,device=device)
     data = h5py.File(dataset_path, 'r')
     
     
-    server = viser.ViserServer()
+    server = viser.ViserServer(port='8087')
     
     server.scene.add_grid("/grid", 1.0, 1.0)
     for traj_id in data.keys():
         if 'pose_name' in data[traj_id].keys():
             pose_name = data[traj_id]['pose_name'][()].decode('utf-8')
             print(f"Processing trajectory {traj_id} with pose {pose_name}")
-        keypoint_traj = data[traj_id]['world_hand_joints'][:]  # (T, 21, 3)
+            
+        keypoint_key = "world_hand_joints"
+        if 'world_hand_joints_biased' in data[traj_id].keys():
+            print("Using biased keypoints input")
+            keypoint_key='world_hand_joints_biased'
+            
+        keypoint_traj = data[traj_id][keypoint_key][:]  # (T, 21, 3)
         keypoint_traj = transform_joint3d(keypoint_traj)
         side = data[traj_id]['mano_side'][0].decode('utf-8')
         betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0],10))
         
-        pred_theta = model.predict(keypoint_traj, side='right')  # (T, 45)
+        pred_theta = model.predict(keypoint_traj, side='right').to('cpu')  # (T, 45)
         # pred_theta = torch.tensor(get_mano_pca(data[traj_id]['mano_angles'][:], side=side), dtype=torch.float32)  # (T, 45)
         # pred_theta = torch.tensor(data[traj_id]['pca_mano_pose'][:], dtype=torch.float32)  # (T, 45)
         
         _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'))  # (T, 21, 3)
+        
+        if hasattr(model.network, 'finger_scaling'):
+            with torch.no_grad():
+                recon_joint3d = scale_hand_fingers(recon_joint3d, model.network.finger_scaling)
+        
         recon_joint3d = transform_joint3d(recon_joint3d)
         
-        recon_joint3d = recon_joint3d.numpy()
-        
+        recon_joint3d = recon_joint3d.cpu().numpy()
         recon_loss = np.mean((recon_joint3d - keypoint_traj)**2)
         print(f"Reconstruction MSE Loss: {recon_loss:.6f}")
         
