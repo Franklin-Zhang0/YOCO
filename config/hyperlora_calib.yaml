@@ -30,7 +30,7 @@ dataset:
     clamp_delta_norm: null  # null = no clamp; or float like 0.3 to clamp max delta
     seed: 42
   
-  num_hypernet_pairs: 4  # Number of paired poses for conditioning
+  num_hypernet_pairs: 16  # Number of paired poses for conditioning
 
 val_dataset:
   path: ""  # Empty = use train/val split
@@ -49,7 +49,7 @@ model:
     input_size: 256  # Will match preference_extractor output_dim
     max_modules: -1  # -1 = inject into all Linear layers
     rank: 4
-    alpha: 4.0
+    alpha: 8.0
     hidden_layers: [256, 256]
     name_filter: ["mano_regressor", "fusion_attention"]  # Target modules for LoRA injection
     drop_out: 0.1
@@ -71,7 +71,7 @@ model:
     use_paired_pose_extractor: true  # Use new PairedPoseExtractor with RoPE
     pair_fusion_dim: 256
     output_dim: 256  # Must match hypernet_cfg.input_size
-    num_heads: 4
+    num_heads: 8
     n_layers: 4  # Number of transformer layers with RoPE
     dropout: 0.1
 
@@ -91,7 +91,16 @@ model:
 trainer:
   expname: "hyperlora_mano_bias_calib"
   batch_size: 32
-  learning_rate: 1.0e-4
+  learning_rate: 5e-5
+
+  lr_scheduler:
+    enabled: false  # To enable, set enabled: true and provide total_steps.
+    total_steps: 10000
+    warmup_steps: 500
+    peak_lr: null  # null => fallback to trainer.learning_rate
+    final_lr: 1.0e-6
+    start_lr: 0.0
+
   weight_decay: 0.0
   grad_clipping: 1.0
   calibnet_warmup_epochs: 0

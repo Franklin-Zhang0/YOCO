@@ -88,11 +88,23 @@ class LoggerConfig:
     type: list[str] = field(default_factory=lambda: ['terminal','file'])  # 'wandb', 'file', 'terminal'.
     project: str = 'Calibration_net'
 
+
+@dataclass
+class LRSchedulerConfig:
+    enabled: bool = False
+    total_steps: Optional[int] = None
+    warmup_steps: int = 0
+    peak_lr: Optional[float] = None  # None => fallback to trainer.learning_rate
+    final_lr: float = 0.0
+    start_lr: float = 0.0
+
+
 @dataclass
 class TrainerConfig:
     expname: str = field(default_factory=str)
     batch_size: int = field(default_factory=int)
     learning_rate: float = field(default_factory=float)
+    lr_scheduler: LRSchedulerConfig = field(default_factory=LRSchedulerConfig)
     weight_decay: float = field(default_factory=float)
     grad_clipping: float = field(default_factory=float)
     calibnet_warmup_epochs: int = 0

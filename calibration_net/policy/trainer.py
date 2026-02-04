@@ -11,8 +11,9 @@ from .model import Model, load_model
 from .models.fk_model import FKModel, FKTrainer
 from calibration_net.utils import walk_dict, create_dict_from_flattened
 from copy import deepcopy
-from .logger import get_logger_cls 
+from .logger import get_logger_cls
 from .loss import get_geort_loss, get_alignment_loss
+from .lr_scheduler import build_warmup_cosine_scheduler
 from contextlib import nullcontext
 from omegaconf import OmegaConf
 
@@ -140,17 +141,50 @@ class Trainer():
         else:
             self.set_trainable(main_network=True, calib=True)
 
-        # Collect only trainable parameters (robust even if calib_block misses some modules)
+        # Collect only trainable parameters
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
-
-        # Basic sanity: avoid silent no-op training
         if len(trainable_params) == 0:
             raise RuntimeError(
                 "No trainable parameters found. Check calib_finetune and model wiring."
             )
 
-        self.optimizer = torch.optim.AdamW(trainable_params, lr=self.trainer_args.learning_rate)
+        # Parse LR scheduler config (backward compatible)
+        lr_scheduler_cfg = getattr(self.trainer_args, 'lr_scheduler', None)
+        if lr_scheduler_cfg is not None:
+            total_steps = getattr(lr_scheduler_cfg, 'total_steps', None)
+            warmup_steps = getattr(lr_scheduler_cfg, 'warmup_steps', 0)
+            peak_lr = getattr(lr_scheduler_cfg, 'peak_lr', self.trainer_args.learning_rate)
+            if peak_lr is None:
+                peak_lr = self.trainer_args.learning_rate
+            final_lr = getattr(lr_scheduler_cfg, 'final_lr', 0.0)
+            start_lr = getattr(lr_scheduler_cfg, 'start_lr', 0.0)
+        else:
+            total_steps = None
+            warmup_steps = 0
+            peak_lr = self.trainer_args.learning_rate
+            final_lr = 0.0
+            start_lr = 0.0
+
+        # Create optimizer with peak_lr as base LR
+        self.optimizer = torch.optim.AdamW(trainable_params, lr=peak_lr)
         self.loss_function = nn.MSELoss()
+
+        # Create LR scheduler if enabled
+        self.lr_scheduler = None
+        if total_steps is not None and total_steps > 0:
+            self.lr_scheduler = build_warmup_cosine_scheduler(
+                self.optimizer,
+                total_steps=total_steps,
+                warmup_steps=warmup_steps,
+                peak_lr=peak_lr,
+                final_lr=final_lr,
+                start_lr=start_lr,
+            )
+            
+            print(f"LR Scheduler: warmup_steps={warmup_steps}, total_steps={total_steps}, "
+                  f"start_lr={start_lr}, peak_lr={peak_lr}, final_lr={final_lr}")
+        else:
+            print(f"LR Scheduler: disabled (using constant lr={peak_lr})")
 
         # Lightweight diagnostic
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -309,8 +343,19 @@ class Trainer():
 
                 nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
                 self.optimizer.step()
+                
+                # Step LR scheduler if enabled
+                if self.lr_scheduler is not None:
+                    self.lr_scheduler.step()
+                
+                # Log loss and metrics
                 for key, value in loss.items():
                     step_info[f'train/{key}'] = value.item()
+                
+                # Log current learning rate
+                current_lr = self.optimizer.param_groups[0]['lr']
+                step_info['train/lr'] = current_lr
+                
                 self.log_step(step_info, self.global_steps)
             else: # evaluating
                 # pred_y = self.model(x, hypernet_x=hypernet_input, side=side)
