@@ -189,7 +189,7 @@ def main(dataset_path: str, model_path: str):
         side = data[traj_id]['mano_side'][0].decode('utf-8')
         betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0],10))
         
-        pred_theta = model.predict(keypoint_traj, side='right').to('cpu')  # (T, 45)
+        pred_theta = model.predict(keypoint_traj, side='right').to('cpu')  # (T, 45) side is legacy argument
         # pred_theta = torch.tensor(get_mano_pca(data[traj_id]['mano_angles'][:], side=side), dtype=torch.float32)  # (T, 45)
         # pred_theta = torch.tensor(data[traj_id]['pca_mano_pose'][:], dtype=torch.float32)  # (T, 45)
         

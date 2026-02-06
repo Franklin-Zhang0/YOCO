@@ -199,7 +199,7 @@ def load_model(model_dir: str, device: str = 'cpu') -> Model:
 
     model = Model(**model_cfg, train=False)
     model_weight_path = os.path.join(model_dir, 'model.pth')
-    model.load_state_dict(torch.load(model_weight_path, map_location=device), strict=True)
+    model.load_state_dict(torch.load(model_weight_path, map_location=device), strict=False)
     model.to(device)
     
     return model, normalization_stats, cfg
