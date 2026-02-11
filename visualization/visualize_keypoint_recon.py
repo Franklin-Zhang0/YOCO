@@ -7,6 +7,9 @@ import numpy as np
 from calibration_net.utils import mano_recon, transform_joint3d, Side, scale_hand_fingers
 from calibration_net.policy.preprocessing import get_mano_pca, MANO_PCA
 import time
+from contextlib import nullcontext
+from dataclasses import dataclass
+from typing import Optional, Any
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -164,87 +167,312 @@ MANO_CONNECTIONS = [
     (0, 17), (17, 18), (18, 19), (19, 20)
 ]
 
-def main(dataset_path: str, model_path: str):
+
+def _make_bone_segments(joints: np.ndarray) -> np.ndarray:
+    """(21,3) -> (E,2,3) for viser line segments."""
+    segs = []
+    for a, b in MANO_CONNECTIONS:
+        segs.append(np.stack([joints[a], joints[b]], axis=0))
+    return np.stack(segs, axis=0)
+
+
+@dataclass
+class Args:
+    dataset_path: str
+    model_path: str
+    port: int = 8086
+    
+    # Playback
+    fps: float = 10.0
+    
+    # Rendering
+    show_grid: bool = True
+    point_size: float = 0.002
+    line_width: float = 1.0
+
+
+def main(args: Args) -> None:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model, _, _ = load_model(model_path, device=device)
-    # model2, _, _ =load_model("/data/250010203/franklin/project/hand_teleop/Calibration_net/expdata/test_combined_cnn_mlp_leaky_global_mixer/test_combined_cnn_mlp_leaky_global_mixer_20260111_134713/best" ,device=device)
-    data = h5py.File(dataset_path, 'r')
+    model, _, cfg = load_model(args.model_path, device=device)
+    model.eval()
+    data = h5py.File(args.dataset_path, 'r')
     
+    # Get trajectory keys
+    traj_keys = list(data.keys())
+    try:
+        traj_keys = sorted(traj_keys, key=lambda k: int(k))
+    except Exception:
+        traj_keys = sorted(traj_keys)
     
-    server = viser.ViserServer(port='8087')
+    if len(traj_keys) == 0:
+        raise ValueError(f"No trajectories found in {args.dataset_path}")
     
-    server.scene.add_grid("/grid", 1.0, 1.0)
-    for traj_id in data.keys():
+    server = viser.ViserServer(port=args.port)
+    
+    @server.on_client_connect
+    def _(client: viser.ClientHandle) -> None:
+        client.camera.position = (0.25, 0.0, 0.25)
+        client.camera.look_at = (0.0, 0.0, 0.0)
+    
+    if args.show_grid:
+        server.scene.add_grid("/grid", 1.0, 1.0)
+    
+    # UI controls
+    traj_slider = server.gui.add_slider(
+        "episode",
+        min=0,
+        max=max(0, len(traj_keys) - 1),
+        step=1,
+        initial_value=0,
+        disabled=(len(traj_keys) == 1),
+    )
+    
+    playing = server.gui.add_button("▶ Play/Pause")
+    
+    frame_slider = server.gui.add_slider(
+        "frame",
+        min=0,
+        max=1,
+        step=1,
+        initial_value=0,
+    )
+    
+    # Add text panel for conditioning info
+    conditioning_info = server.gui.add_text("Conditioning Info", initial_value="No conditioning")
+    
+    # Add markdown for info display
+    info_markdown = server.gui.add_markdown(
+        "info",
+        "",
+    )
+    
+    # Cache for current trajectory data
+    cache: dict[str, Any] = {
+        "traj_idx": None,
+        "recon_joint3d": None,
+        "keypoint_traj": None,
+        "gt_keypoint": None,
+        "T": None,
+        "is_playing": False,
+    }
+    
+    def load_trajectory(traj_idx: int) -> None:
+        """Load and process a trajectory, storing results in cache."""
+        traj_id = traj_keys[traj_idx]
+        
         if 'pose_name' in data[traj_id].keys():
             pose_name = data[traj_id]['pose_name'][()].decode('utf-8')
             print(f"Processing trajectory {traj_id} with pose {pose_name}")
-            
+        else:
+            pose_name = "N/A"
+        
         keypoint_key = "world_hand_joints"
         if 'world_hand_joints_biased' in data[traj_id].keys():
             print("Using biased keypoints input")
-            keypoint_key='world_hand_joints_biased'
-            
+            keypoint_key = 'world_hand_joints_biased'
+        
         keypoint_traj = data[traj_id][keypoint_key][:]  # (T, 21, 3)
         keypoint_traj = transform_joint3d(keypoint_traj)
         side = data[traj_id]['mano_side'][0].decode('utf-8')
-        betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0],10))
+        betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0], 10))
         
-        pred_theta = model.predict(keypoint_traj, side='right').to('cpu')  # (T, 45) side is legacy argument
-        # pred_theta = torch.tensor(get_mano_pca(data[traj_id]['mano_angles'][:], side=side), dtype=torch.float32)  # (T, 45)
-        # pred_theta = torch.tensor(data[traj_id]['pca_mano_pose'][:], dtype=torch.float32)  # (T, 45)
+        # Check for HyperLoRA and preference network inputs
+        hypernet_x = None
+
+        has_preference_extractor = hasattr(model, 'preference_extractor') and model.preference_extractor is not None
+
+        if has_preference_extractor:
+            biased_key = 'world_hand_joints_biased'
+            true_key_candidates = ['world_hand_joints', 'world_hand_joints_true']
+
+            true_key = next((k for k in true_key_candidates if k in data[traj_id].keys()), None)
+
+            if biased_key in data[traj_id].keys() and true_key is not None:
+                biased_seq = transform_joint3d(data[traj_id][biased_key][:])
+                true_seq = transform_joint3d(data[traj_id][true_key][:])
+
+                seq_len = biased_seq.shape[0]
+                num_pairs = min(cfg['dataset']['num_hypernet_pairs'], seq_len)
+
+                if seq_len > num_pairs:
+                    sampled_indices = np.linspace(0, seq_len - 1, num_pairs, dtype=int)
+                else:
+                    sampled_indices = np.arange(seq_len, dtype=int)
+
+                paired_keypoints = np.stack([
+                    biased_seq[sampled_indices],
+                    true_seq[sampled_indices],
+                ], axis=1)
+
+                preference_pairs_tensor = torch.tensor(paired_keypoints, dtype=torch.float32).to(device).unsqueeze(0)
+                preference_mask_tensor = torch.ones(preference_pairs_tensor.shape[:2], dtype=torch.bool).to(device)
+
+                with torch.no_grad():
+                    pref_mod = model.get_submodule('preference_extractor')
+                    if hasattr(pref_mod, 'train_forward'):
+                        hypernet_x, _ = pref_mod.train_forward(preference_pairs_tensor, preference_mask_tensor)
+                    else:
+                        hypernet_x = pref_mod(preference_pairs_tensor, preference_mask_tensor)
+
+                print(f"Generated preference conditioning vector with shape {tuple(hypernet_x.shape)}")
+            else:
+                print(
+                    "Warning: model has preference_extractor but dataset is missing both "
+                    f"'{biased_key}' and a true key in {true_key_candidates}; skipping preference conditioning."
+                )
+
+        if hypernet_x is not None:
+            if not isinstance(hypernet_x, torch.Tensor):
+                hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
+            hypernet_x = hypernet_x.to(device)
         
-        _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'))  # (T, 21, 3)
+        # Update conditioning info display
+        if hypernet_x is not None:
+            conditioning_info.value = f"Hypernet conditioning: {hypernet_x.shape}"
+        else:
+            conditioning_info.value = "No conditioning"
+        
+        # Make prediction with hypernet conditioning
+        context = nullcontext()
+        if hypernet_x is not None:
+            context = model.hyperlora.use(hypernet_x) if model.hyperlora is not None else nullcontext()
+        
+        with context:
+            pred_theta = model.predict(keypoint_traj, side=side).to('cpu')
+        
+        _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'))
         
         if hasattr(model.network, 'finger_scaling'):
             with torch.no_grad():
                 recon_joint3d = scale_hand_fingers(recon_joint3d, model.network.finger_scaling)
         
         recon_joint3d = transform_joint3d(recon_joint3d)
-        
         recon_joint3d = recon_joint3d.cpu().numpy()
-        recon_loss = np.mean((recon_joint3d - keypoint_traj)**2)
+        
+        if 'world_hand_joints_true' in data[traj_id].keys():
+            gt_keypoint = transform_joint3d(data[traj_id]['world_hand_joints_true'][:])
+        else:
+            gt_keypoint = transform_joint3d(data[traj_id][keypoint_key][:])
+        recon_loss = np.mean((recon_joint3d - gt_keypoint) ** 2)
         print(f"Reconstruction MSE Loss: {recon_loss:.6f}")
         
-        for frame_idx in range(keypoint_traj.shape[0]):
-            with server.atomic():
-                
-                #pred joints
-                server.scene.add_point_cloud(
-                    name=f"/joints",
-                    points=recon_joint3d[frame_idx],
-                    colors=np.array([0.0, 0.0, 1.0]), #blue
-                    point_size=0.002,
-                )
-                lines = []
-                for start, end in MANO_CONNECTIONS:
-                    lines.append(np.array([recon_joint3d[frame_idx][start],recon_joint3d[frame_idx][end]]))
-                
-                server.scene.add_line_segments(
-                    name=f"/bones",
-                    points=np.array(lines),
-                    colors=np.array([0.0, 0.0, 1.0]) ,
-                    line_width=1.0,
-                )
-                
-                # ground truth joints
-                server.scene.add_point_cloud(
-                    name=f"/joints_gt",
-                    points=keypoint_traj[frame_idx],
-                    colors=np.array([1.0, 0.0, 0.0]), #red
-                    point_size=0.002,
-                )
-                lines_gt = []
-                for start, end in MANO_CONNECTIONS:
-                    lines_gt.append(np.array([keypoint_traj[frame_idx][start],keypoint_traj[frame_idx][end]]))
-                
-                server.scene.add_line_segments(
-                    name=f"/bones_gt",
-                    points=np.array(lines_gt),
-                    colors=np.array([1.0, 0.0, 0.0]),
-                    line_width=1.0,
-                )
-            time.sleep(0.1)
+        T = gt_keypoint.shape[0]
+        frame_slider.max = max(0, T - 1)
+        frame_slider.value = 0
         
+        # Update cache
+        cache.update({
+            "traj_idx": traj_idx,
+            "recon_joint3d": recon_joint3d,
+            "keypoint_traj": keypoint_traj,
+            "gt_keypoint": gt_keypoint,
+            "T": T,
+        })
         
+        # Update info markdown
+        info_markdown.content = (
+            f"**episode**: `{traj_id}`  \n"
+            f"**frames**: `{T}`  \n"
+            f"**side**: `{side}`  \n"
+            f"**pose**: `{pose_name}`  \n"
+            f"**recon_mse**: `{recon_loss:.6f}`"
+        )
+    
+    def render_frame(traj_idx: int, frame_idx: int) -> None:
+        """Render a single frame."""
+        if cache["traj_idx"] != traj_idx:
+            load_trajectory(traj_idx)
+        
+        recon_joint3d = cache["recon_joint3d"]
+        keypoint_traj = cache["keypoint_traj"]
+        gt_keypoint = cache["gt_keypoint"]
+        
+        with server.atomic():
+            # Predicted joints (blue)
+            server.scene.add_point_cloud(
+                name="/joints",
+                points=recon_joint3d[frame_idx],
+                colors=np.array([0.0, 0.0, 1.0]),
+                point_size=float(args.point_size),
+            )
+            server.scene.add_line_segments(
+                name="/bones",
+                points=_make_bone_segments(recon_joint3d[frame_idx]),
+                colors=np.array([0.0, 0.0, 1.0]),
+                line_width=float(args.line_width),
+            )
+            
+            # Input joints (red)
+            server.scene.add_point_cloud(
+                name="/joints_input",
+                points=keypoint_traj[frame_idx],
+                colors=np.array([1.0, 0.0, 0.0]),
+                point_size=float(args.point_size),
+            )
+            server.scene.add_line_segments(
+                name="/bones_input",
+                points=_make_bone_segments(keypoint_traj[frame_idx]),
+                colors=np.array([1.0, 0.0, 0.0]),
+                line_width=float(args.line_width),
+            )
+            
+            
+            # gt joints (yellow)
+            server.scene.add_point_cloud(
+                name="/joints_gt",
+                points=gt_keypoint[frame_idx],
+                colors=np.array([0.0, 1.0, 0.0]),
+                point_size=float(args.point_size),
+            )
+            server.scene.add_line_segments(
+                name="/bones_gt",
+                points=_make_bone_segments(gt_keypoint[frame_idx]),
+                colors=np.array([0.0, 1.0, 0.0]),
+                line_width=float(args.line_width),
+            )
+    
+    @traj_slider.on_update
+    def _(_evt) -> None:
+        if getattr(_evt, "client_id", None) is None:
+            return
+        cache["is_playing"] = False
+        render_frame(int(traj_slider.value), int(frame_slider.value))
+    
+    @frame_slider.on_update
+    def _(_evt) -> None:
+        if getattr(_evt, "client_id", None) is None:
+            return
+        render_frame(int(traj_slider.value), int(frame_slider.value))
+    
+    @playing.on_click
+    def _(_evt) -> None:
+        cache["is_playing"] = not cache["is_playing"]
+    
+    # Initial render
+    render_frame(int(traj_slider.value), int(frame_slider.value))
+    
+    server.gui.add_markdown(
+        "help",
+        """
+Use **episode** and **frame** sliders, or click **Play/Pause** to toggle autoplay.
+
+Legend:
+- **blue**: predicted joints (model output)
+- **red**: input keypoints (ground truth)
+""".strip(),
+    )
+    
+    # Main loop
+    dt = 1.0 / max(1e-6, float(args.fps))
+    while True:
+        if cache["is_playing"]:
+            next_frame = int(frame_slider.value) + 1
+            if next_frame > int(frame_slider.max):
+                next_frame = 0
+            frame_slider.value = next_frame
+            render_frame(int(traj_slider.value), int(frame_slider.value))
+        time.sleep(dt)
+
+
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(tyro.cli(Args))
