@@ -29,3 +29,11 @@ trainer:
   calib_finetune: False
   save_path: "/home/franklin/expdata/teleop_models/pretrained"
 
+  lr_scheduler:
+    enabled: false  # To enable, set enabled: true and provide total_steps.
+    total_steps: 20000
+    warmup_steps: 200
+    peak_lr: null  # null => fallback to trainer.learning_rate
+    final_lr: 1.0e-6
+    start_lr: 0.0
+

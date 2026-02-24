@@ -130,6 +130,7 @@ def precompute_bias_hdf5(
     chunk_size: int = 1024,
     copy_all_keys: bool = True,
     overwrite: bool = False,
+    num_samples: int = 1,
 ) -> None:
     """Precompute MANO-angle-space bias columns for an HDF5 dataset.
 
@@ -208,36 +209,53 @@ def precompute_bias_hdf5(
 
             # apply bias in pose space
             demo_id = int(demo_key) if str(demo_key).isdigit() else hash(demo_key) % (2**31 - 1)
-            mano_angles_biased = bias_gen.apply_bias_to_hand_pose(mano_angles, demo_id=demo_id).astype(np.float32)
 
-            # MANO forward (true + biased) on the requested device
+            # MANO forward for true (only needed once)
             joints_true = _mano_forward_in_chunks(
                 bias_gen,
                 hand_pose=mano_angles,
                 side=side,
-                betas=betas,
-                global_orient=global_orient,
-                transl=transl,
-                device=torch_device,
-                chunk_size=chunk_size,
-            )
-            joints_biased = _mano_forward_in_chunks(
-                bias_gen,
-                hand_pose=mano_angles_biased,
-                side=side,
-                betas=betas,
+                betas=None, # ground truth always uses neutral betas
                 global_orient=global_orient,
                 transl=transl,
                 device=torch_device,
                 chunk_size=chunk_size,
             )
 
+            mano_angles_biased_list = []
+            joints_biased_list = []
+
+            for s_idx in range(num_samples):
+                # Ensure each sample gets a different reproducible bias
+                sample_demo_id = demo_id + s_idx * 1000000 
+                
+                mano_angles_biased = bias_gen.apply_bias_to_hand_pose(mano_angles, demo_id=sample_demo_id).astype(np.float32)
+                
+                joints_biased = _mano_forward_in_chunks(
+                    bias_gen,
+                    hand_pose=mano_angles_biased,
+                    side=side,
+                    betas=betas,
+                    global_orient=global_orient,
+                    transl=transl,
+                    device=torch_device,
+                    chunk_size=chunk_size,
+                )
+                
+                mano_angles_biased_list.append(mano_angles_biased)
+                joints_biased_list.append(joints_biased)
+
+            # Stack into new first dim: (num_samples, T, ...)
+            mano_angles_biased_all = np.stack(mano_angles_biased_list, axis=0)
+            joints_biased_all = np.stack(joints_biased_list, axis=0)
+
             # write new datasets
             g_out.create_dataset(f"{input_keys}_true", data=joints_true, dtype=np.float32)
-            g_out.create_dataset(f"{input_keys}_biased", data=joints_biased, dtype=np.float32)
-            g_out.create_dataset("mano_angles_biased", data=mano_angles_biased, dtype=np.float32)
+            g_out.create_dataset(f"{input_keys}_biased", data=joints_biased_all, dtype=np.float32)
+            g_out.create_dataset("mano_angles_biased", data=mano_angles_biased_all, dtype=np.float32)
 
             # track provenance
             g_out.attrs["bias_cfg"] = str(asdict(cfg))
             g_out.attrs["bias_device"] = str(torch_device)
             g_out.attrs["bias_chunk_size"] = int(chunk_size)
+            g_out.attrs["bias_num_samples"] = int(num_samples)

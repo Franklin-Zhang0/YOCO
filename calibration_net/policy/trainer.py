@@ -211,7 +211,8 @@ class Trainer():
         self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=0)
         
     def get_loss(self, data, result):
-        finger_mask = data.get('finger_mask', torch.ones(5, dtype=torch.bool)).to(self.device)
+        B = data['input'].shape[0]
+        finger_mask = data.get('finger_mask', torch.ones(B, 5, dtype=torch.bool)).to(self.device)
         original_input = data.get('original_data', None)
         if original_input is not None:
             original_input = original_input.float().to(self.device)
@@ -232,7 +233,7 @@ class Trainer():
             return loss_dict
 
         if loss_type == 'qpos':
-            loss = get_masked_loss(result['loss'], finger_mask).mean()
+            loss = get_masked_loss(result['loss'], finger_mask)
         elif loss_type == 'geort':
             loss = get_geort_loss(points=data['input'], side=data['side'], ik_model=self.model, fk_model=self.fk_model, robot_point_cloud=self.fk_trainer.robot_point_cloud)
         elif loss_type == 'alignment':
@@ -409,6 +410,19 @@ class Trainer():
         print(f"Validation Loss: {avg_loss}")
         return avg_loss
 
+    def set_epoch(self, epoch):
+        
+        # Inform dataset of current epoch (for multi-sample bias indexing)
+        if hasattr(self.trainset, 'dataset') and hasattr(self.trainset.dataset, 'set_epoch'):
+            self.trainset.dataset.set_epoch(epoch)
+        elif hasattr(self.trainset, 'set_epoch'):
+            self.trainset.set_epoch(epoch)
+            
+        if hasattr(self.valset, 'dataset') and hasattr(self.valset.dataset, 'set_epoch'):
+            self.valset.dataset.set_epoch(epoch)
+        elif hasattr(self.valset, 'set_epoch'):
+            self.valset.set_epoch(epoch)
+
     def train(self):
         self.global_steps = 0
         num_epoch = self.trainer_args.num_epochs
@@ -416,6 +430,7 @@ class Trainer():
         best_val_loss = float('inf')
         for i in range(num_epoch):
             print(f"Epoch {i+1}/{num_epoch}")
+            self.set_epoch(i)
             # if self.trainer_args.calibnet_warmup_epochs > 0 and i == self.trainer_args.calibnet_warmup_epochs:
             #     self.set_trainable(main_network=True, calib=True)
 

@@ -57,6 +57,7 @@ def main() -> None:
     )
     ap.add_argument("--device", default="cuda", help="Torch device for MANO forward (default: cuda if available)")
     ap.add_argument("--chunk-size", type=int, default=1024, help="Frames per GPU forward chunk")
+    ap.add_argument("--num-samples", type=int, default=1, help="Number of biased samples to generate per sequence")
     ap.add_argument("--overwrite", action="store_true", help="Overwrite output file if it exists")
     ap.add_argument("--no-copy", action="store_true", help="Do not copy original datasets (only write new bias outputs)")
 
@@ -73,6 +74,7 @@ def main() -> None:
         chunk_size=args.chunk_size,
         copy_all_keys=not args.no_copy,
         overwrite=args.overwrite,
+        num_samples=args.num_samples,
     )
 
 

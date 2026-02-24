@@ -270,11 +270,11 @@ class PairedPoseExtractor(nn.Module):
         pose_token_feats = self.token_proj(pose_token_feats)  # (B, K, 2, num_tokens, pair_fusion_dim)
         
         # Add role embeddings: 0 for biased, 1 for true
-        role_emb_biased = self.role_embeddings(torch.tensor(0, device=pose_token_feats.device))  # (pair_fusion_dim,)
-        role_emb_true = self.role_embeddings(torch.tensor(1, device=pose_token_feats.device))  # (pair_fusion_dim,)
+        # role_emb_biased = self.role_embeddings(torch.tensor(0, device=pose_token_feats.device))  # (pair_fusion_dim,)
+        # role_emb_true = self.role_embeddings(torch.tensor(1, device=pose_token_feats.device))  # (pair_fusion_dim,)
         
-        pose_token_feats[:, :, 0, :, :] = pose_token_feats[:, :, 0, :, :] + role_emb_biased
-        pose_token_feats[:, :, 1, :, :] = pose_token_feats[:, :, 1, :, :] + role_emb_true
+        # pose_token_feats[:, :, 0, :, :] = pose_token_feats[:, :, 0, :, :] + role_emb_biased
+        # pose_token_feats[:, :, 1, :, :] = pose_token_feats[:, :, 1, :, :] + role_emb_true
         
         # Concatenate biased + true tokens per pair: (B, K, 2*num_tokens, pair_fusion_dim)
         pair_tokens = pose_token_feats.reshape(B, K, 2 * num_tokens, self.pair_fusion_dim)

@@ -104,11 +104,17 @@ def main(args: Args) -> None:
     )
     
     init_demo_len = len(f[demo_keys[0]][f"{args.input_keys}_biased"])
+    if len(f[demo_keys[0]][f"{args.input_keys}_biased"].shape) == 4:
+        init_demo_len = f[demo_keys[0]][f"{args.input_keys}_biased"].shape[1]
 
     frame_slider = server.gui.add_slider("frame", min=0, max=init_demo_len, step=1, initial_value=0)
+    
+    sample_slider = server.gui.add_slider(
+        "sample", min=0, max=0, step=1, initial_value=0, visible=False
+    )
 
     # Read current demo into memory to keep interaction snappy.
-    cache = {"demo_idx": None, "biased": None, "true": None, "raw": None}
+    cache = {"demo_idx": None, "biased": None, "true": None, "raw": None, "num_samples": 1}
 
     def load_demo(demo_idx: int) -> None:
         demo_key = demo_keys[demo_idx]
@@ -145,7 +151,16 @@ def main(args: Args) -> None:
         cache["true"] = true
         cache["raw"] = raw
 
-        T = int(biased.shape[0])
+        if biased.ndim == 4:
+            cache["num_samples"] = biased.shape[0]
+            T = biased.shape[1]
+            sample_slider.max = max(0, cache["num_samples"] - 1)
+            sample_slider.visible = True
+        else:
+            cache["num_samples"] = 1
+            T = biased.shape[0]
+            sample_slider.visible = False
+
         frame_slider.max = max(0, T - 1)
         frame_slider.value = 0
 
@@ -156,11 +171,15 @@ def main(args: Args) -> None:
             f"**demo**: `{demo_key}`  \\n**frames**: `{T}`  \\n**mano_side**: `{side}`  \\n**to_local**: `{args.to_local}`",
         )
 
-    def render(demo_idx: int, frame_idx: int) -> None:
+    def render(demo_idx: int, frame_idx: int, sample_idx: int = 0) -> None:
         if cache["demo_idx"] != demo_idx:
             load_demo(demo_idx)
 
-        biased = cache["biased"][frame_idx]
+        if cache["num_samples"] > 1:
+            biased = cache["biased"][sample_idx, frame_idx]
+        else:
+            biased = cache["biased"][frame_idx]
+            
         true = cache["true"][frame_idx]
         raw = cache["raw"][frame_idx] if cache["raw"] is not None else None
 
@@ -210,14 +229,18 @@ def main(args: Args) -> None:
 
     @demo_slider.on_update
     def _(_evt) -> None:
-        render(int(demo_slider.value), int(frame_slider.value))
+        render(int(demo_slider.value), int(frame_slider.value), int(sample_slider.value))
 
     @frame_slider.on_update
     def _(_evt) -> None:
-        render(int(demo_slider.value), int(frame_slider.value))
+        render(int(demo_slider.value), int(frame_slider.value), int(sample_slider.value))
+        
+    @sample_slider.on_update
+    def _(_evt) -> None:
+        render(int(demo_slider.value), int(frame_slider.value), int(sample_slider.value))
 
     # initial draw
-    render(int(demo_slider.value), int(frame_slider.value))
+    render(int(demo_slider.value), int(frame_slider.value), int(sample_slider.value))
 
     server.gui.add_markdown(
         "help",

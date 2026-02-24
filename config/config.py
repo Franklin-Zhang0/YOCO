@@ -17,6 +17,7 @@ class DatasetConfig:
     # New: MANO-angle-space bias configuration
     bias_cfg: Optional[Dict[str, Any]] = None
     num_hypernet_pairs: int = 4
+    pair_subsample: bool = False
 
 @dataclass
 class ValDatasetConfig:

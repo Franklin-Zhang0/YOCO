@@ -6,9 +6,17 @@ import torch
 
 def get_normalize(norm_stats):
     def normalize(x):
-        x = (x - norm_stats['mean']) / (norm_stats['std'] + 1e-5)
+        x = (x - norm_stats['mean']) / (norm_stats['std'] + 1e-6)
         return x
     return normalize
+
+
+def get_denormalize(norm_stats):
+    def denormalize(x):
+        x = x * norm_stats['std'] + norm_stats['mean']
+        return x
+    return denormalize
+
 
 def bone_normalize(joints_xyz: np.ndarray):
     MCP_indices = [1, 5, 9, 13, 17]
@@ -121,6 +129,7 @@ TRANSFORM_REGISTRY = {
     'bone_normalize': lambda: bone_normalize,
     'extract_tip': lambda: tip_extractor,
     'normalize': get_normalize,
+    'denormalize': get_denormalize,
     'delta': get_delta,
     'original_and_delta': get_original_and_delta,
     'discard_wrist': get_discard_wrist,
@@ -133,8 +142,9 @@ def build_preprocessing(preprocess_types, key, norm_stats=None):
     combined_fn = OrderedDict()
     for cur_type in preprocess_types:
         assert cur_type in TRANSFORM_REGISTRY, f"Unknown preprocessing type: {cur_type}"
-        if cur_type == 'normalize':
-            if norm_stats is None: break
+        if cur_type == 'normalize' or cur_type == 'denormalize':
+            if norm_stats is None:
+                break
             fn = TRANSFORM_REGISTRY[cur_type](norm_stats[key])
         else:
             fn = TRANSFORM_REGISTRY[cur_type]()
@@ -145,6 +155,8 @@ def build_preprocessing(preprocess_types, key, norm_stats=None):
         def combined_fn_wrapper(x, normalize=True):
             for fn_type, fn in combined_fn.items():
                 if fn_type == 'normalize' and not normalize:
+                    continue
+                if fn_type == 'denormalize' and normalize:
                     continue
                 x = fn(x)
             return x

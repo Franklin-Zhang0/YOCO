@@ -14,6 +14,8 @@ class ModelInferencer():
 
         process_x = self.cfg['dataset']['preprocessing_x']
         process_y = self.cfg['dataset']['preprocessing_y']
+        process_y = [
+            p if p != 'normalize' else 'denormalize' for p in process_y]
         self.process_x_fn = build_preprocessing(process_x, 'x', norm_stats=self.norm_stats)
         self.process_y_fn = build_preprocessing(process_y, 'y', norm_stats=self.norm_stats)
         

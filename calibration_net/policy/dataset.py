@@ -21,14 +21,16 @@ class ConcatHDF5():
         self.lengths = [len(d) for d in self.datasets]
         self.cum_lengths = np.cumsum([0] + self.lengths)
         self.total_length = sum(self.lengths)
-        
+        self.seq_names = [list(d.keys()) for d in self.datasets]
+
     def __len__(self):
         return self.total_length
     
     def __getitem__(self, idx):
         file_idx = np.searchsorted(self.cum_lengths, idx, side='right') - 1
         idx_in_file = idx - self.cum_lengths[file_idx]
-        return self.datasets[file_idx][str(idx_in_file)]
+        seq_name = self.seq_names[file_idx][idx_in_file]
+        return self.datasets[file_idx][seq_name]
     
     def map(self, func, num_proc=1):
         with mp.Pool(num_proc) as pool:
@@ -105,6 +107,7 @@ class SequenceDataset(Dataset):
                  is_train=True,
                  bias_cfg: Optional[dict] = None,
                  num_hypernet_pairs: int = 4,
+                 pair_subsample: bool = False,
                  ):
         if ',' in path:
             path = path.split(',')
@@ -123,11 +126,13 @@ class SequenceDataset(Dataset):
         self.is_train = is_train
         self.preference_cfg = preference_cfg
         self.num_hypernet_pairs = num_hypernet_pairs
+        self.pair_subsample = pair_subsample
 
         self.input_keys = input_keys
         self.cat_side = cat_side
         self.output_keys = output_keys
         self.hypernet_input_keys = hypernet_input_keys
+        self.current_epoch = 0
         
         # Bias handling
         #
@@ -158,6 +163,9 @@ class SequenceDataset(Dataset):
         self.data_item_cache = {}
         if self.data_caching:
             self.prefetch_data()
+
+    def set_epoch(self, epoch: int):
+        self.current_epoch = epoch
 
     def prefetch_data(self):
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -220,7 +228,7 @@ class SequenceDataset(Dataset):
                 if num_dim is None:
                     item_shape = x.shape
                     axis_to_sum = tuple(range(len(item_shape)-1))
-                    num_dim = np.array(item_shape[1:]).prod()
+                    num_dim = np.array(item_shape[1:-1]).prod()
                 x_sum += np.sum(x, axis=axis_to_sum)
             x_mean = x_sum / self.length / num_dim
             for i in tqdm(range(len(data))):
@@ -311,6 +319,16 @@ class SequenceDataset(Dataset):
             # Use biased keypoints as input, true keypoints as ground truth reference
             x_biased = index_dict(dict(data), f'{self.input_keys}_biased')
             x_true = index_dict(dict(data), f'{self.input_keys}_true')
+            
+            # Check for stacked sampling dimension
+            if x_biased.ndim == x_true.ndim + 1:
+                num_samples = x_biased.shape[0]
+                if self.is_train:
+                    sample_idx = self.current_epoch % num_samples
+                    x_biased = x_biased[sample_idx]
+                else:
+                    x_biased = x_biased[0]
+
             x = x_biased  # Model receives biased input
         else:
             x = index_dict(dict(data), self.input_keys)
@@ -361,10 +379,12 @@ class SequenceDataset(Dataset):
             # Sample K random frames from the same demo
             seq_len = len(x)
             num_pairs = min(self.num_hypernet_pairs, seq_len)
+            if self.pair_subsample and self.is_train:
+                num_pairs = np.random.randint(1, num_pairs + 1)
             
             # Sample indices (can include current frame)
             if seq_len > num_pairs:
-                sampled_indices = random.sample(range(seq_len), num_pairs)
+                sampled_indices = np.random.choice(range(seq_len), num_pairs, replace=False)
             else:
                 sampled_indices = list(range(seq_len))
             

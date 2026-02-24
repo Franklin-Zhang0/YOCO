@@ -10,7 +10,7 @@ def iter_pickles(src):
                 for k, v in list(d.items()):
                     if isinstance(v, np.ndarray) and v.dtype == np.float64:
                         d[k] = v.astype(np.float32)
-                yield d
+                yield d, fn
 
 def main():
     ap = argparse.ArgumentParser()
@@ -21,8 +21,9 @@ def main():
     os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
     
     with h5py.File(args.save_path, 'w') as h5:
-        for i, sample in tqdm(enumerate(iter_pickles(args.source_dir)), total=len(os.listdir(os.path.expanduser(args.source_dir)))):
-            g = h5.create_group(str(i))
+        for i, (sample, fn) in tqdm(enumerate(iter_pickles(args.source_dir)), total=len(os.listdir(os.path.expanduser(args.source_dir)))):
+            g = h5.create_group(fn.split('.')[0])
+            g.attrs['filename'] = fn
             for k, v in sample.items():
                 g.create_dataset(k, data=v)
 

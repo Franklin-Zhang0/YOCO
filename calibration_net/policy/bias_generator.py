@@ -63,6 +63,20 @@ class BiasConfig:
     # Optional clamp on each 3D axis-angle delta norm (radians). None => no clamp.
     clamp_delta_norm: Optional[float] = None
 
+    # Scale parameter (global multiplier)
+    global_scale_prob: float = 0.0
+    global_scale_std: float = 0.0
+
+    # Scale parameter (per-finger multiplier)
+    per_finger_scale_prob: float = 0.0
+    per_finger_scale_std: float = 0.0
+
+    # Correlation parameters (applied to pose)
+    finger_correlation_prob: float = 0.0
+    finger_correlation_std: float = 0.0
+    joint_correlation_prob: float = 0.0
+    joint_correlation_std: float = 0.0
+
     # Random seed for reproducibility (demo_id is added to this seed).
     seed: Optional[int] = None
 
@@ -105,11 +119,44 @@ class BiasGenerator:
         else:
             joint_residual = np.zeros((15, 3), dtype=np.float32)
 
-        # Mask out joints if requested
-        joint_mask = self._joint_mask_15().astype(np.float32).reshape(15, 1)
+        # Scale parameters
+        if rng.rand() < self.config.global_scale_prob:
+            global_scale = 1.0 + rng.randn() * float(self.config.global_scale_std)
+        else:
+            global_scale = 1.0
 
-        # Apply joint mask to joint residual
+        if rng.rand() < self.config.per_finger_scale_prob:
+            finger_scale = 1.0 + rng.randn(5).astype(np.float32) * float(self.config.per_finger_scale_std)
+        else:
+            finger_scale = np.ones(5, dtype=np.float32)
+
+        joint_scale = np.ones((15, 1), dtype=np.float32) * global_scale
+        for f_i, finger in enumerate(_FINGER_ORDER):
+            sl = _FINGER_JOINT_SLICES_15[finger]
+            joint_scale[sl, :] *= finger_scale[f_i]
+
+        # Correlation parameters (generate matrices)
+        M_joint = np.eye(3, dtype=np.float32)
+        if rng.rand() < self.config.joint_correlation_prob:
+            c_j = np.clip(np.abs(rng.randn() * float(self.config.joint_correlation_std)), 0, 0.99)
+            i_idx, j_idx = np.mgrid[0:3, 0:3]
+            M_joint = (c_j ** np.abs(i_idx - j_idx)).astype(np.float32)
+            M_joint /= M_joint.sum(axis=1, keepdims=True)
+            
+        M_finger = np.eye(5, dtype=np.float32)
+        if rng.rand() < self.config.finger_correlation_prob:
+            c_f = np.clip(np.abs(rng.randn() * float(self.config.finger_correlation_std)), 0, 0.99)
+            i_idx, j_idx = np.mgrid[0:5, 0:5]
+            M_finger = (c_f ** np.abs(i_idx - j_idx)).astype(np.float32)
+            M_finger /= M_finger.sum(axis=1, keepdims=True)
+
+        # Mask out joints if requested
+        joint_mask_1d = self._joint_mask_15()
+        joint_mask = joint_mask_1d.astype(np.float32).reshape(15, 1)
+
+        # Apply joint mask
         joint_residual = joint_residual * joint_mask
+        joint_scale[~joint_mask_1d] = 1.0
 
         # Apply joint mask to finger offsets (only on masked joints of that finger)
         finger_offset_per_joint = np.zeros((15, 3), dtype=np.float32)
@@ -121,6 +168,9 @@ class BiasGenerator:
         params = {
             "finger_offset_per_joint": finger_offset_per_joint,  # (15,3)
             "joint_residual": joint_residual,  # (15,3)
+            "joint_scale": joint_scale,  # (15,1)
+            "M_joint": M_joint,
+            "M_finger": M_finger,
         }
         return params
 
@@ -150,8 +200,23 @@ class BiasGenerator:
 
         params = self.get_bias_params(demo_id)
         delta_45 = (params["finger_offset_per_joint"] + params["joint_residual"]).reshape(45)
+        joint_scale_45 = np.repeat(params["joint_scale"], 3, axis=1).reshape(45)
+        
+        M_joint = params["M_joint"]
+        M_finger = params["M_finger"]
 
-        biased = pose + delta_45[None, :]
+        N = pose.shape[0]
+        pose_reshaped = pose.reshape(N, 5, 3, 3)
+
+        # Apply intra-finger (joint) correlation
+        pose_reshaped = np.einsum('jk,nfka->nfja', M_joint, pose_reshaped)
+
+        # Apply inter-finger correlation
+        pose_reshaped = np.einsum('fg,ngja->nfja', M_finger, pose_reshaped)
+
+        pose_correlated = pose_reshaped.reshape(N, 45)
+
+        biased = (pose_correlated * joint_scale_45[None, :]) + delta_45[None, :]
 
         if self.config.clamp_delta_norm is not None:
             # clamp each 3D axis-angle delta norm (per joint)

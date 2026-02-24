@@ -183,7 +183,7 @@ class Args:
     port: int = 8086
     
     # Playback
-    fps: float = 10.0
+    fps: float = 30.0
     
     # Rendering
     show_grid: bool = True
@@ -237,6 +237,10 @@ def main(args: Args) -> None:
         initial_value=0,
     )
     
+    sample_slider = server.gui.add_slider(
+        "sample", min=0, max=0, step=1, initial_value=0, visible=False
+    )
+    
     # Add text panel for conditioning info
     conditioning_info = server.gui.add_text("Conditioning Info", initial_value="No conditioning")
     
@@ -249,14 +253,16 @@ def main(args: Args) -> None:
     # Cache for current trajectory data
     cache: dict[str, Any] = {
         "traj_idx": None,
+        "sample_idx": None,
         "recon_joint3d": None,
         "keypoint_traj": None,
         "gt_keypoint": None,
         "T": None,
         "is_playing": False,
+        "num_samples": 1,
     }
     
-    def load_trajectory(traj_idx: int) -> None:
+    def load_trajectory(traj_idx: int, sample_idx: int = 0) -> None:
         """Load and process a trajectory, storing results in cache."""
         traj_id = traj_keys[traj_idx]
         
@@ -271,7 +277,17 @@ def main(args: Args) -> None:
             print("Using biased keypoints input")
             keypoint_key = 'world_hand_joints_biased'
         
-        keypoint_traj = data[traj_id][keypoint_key][:]  # (T, 21, 3)
+        raw_keypoint_traj = data[traj_id][keypoint_key][:]
+        if raw_keypoint_traj.ndim == 4:
+            cache["num_samples"] = raw_keypoint_traj.shape[0]
+            sample_slider.max = max(0, cache["num_samples"] - 1)
+            sample_slider.visible = True
+            keypoint_traj = raw_keypoint_traj[sample_idx]
+        else:
+            cache["num_samples"] = 1
+            sample_slider.visible = False
+            keypoint_traj = raw_keypoint_traj
+
         keypoint_traj = transform_joint3d(keypoint_traj)
         side = data[traj_id]['mano_side'][0].decode('utf-8')
         betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0], 10))
@@ -288,7 +304,10 @@ def main(args: Args) -> None:
             true_key = next((k for k in true_key_candidates if k in data[traj_id].keys()), None)
 
             if biased_key in data[traj_id].keys() and true_key is not None:
-                biased_seq = transform_joint3d(data[traj_id][biased_key][:])
+                biased_seq_raw = data[traj_id][biased_key][:]
+                if biased_seq_raw.ndim == 4:
+                    biased_seq_raw = biased_seq_raw[sample_idx]
+                biased_seq = transform_joint3d(biased_seq_raw)
                 true_seq = transform_joint3d(data[traj_id][true_key][:])
 
                 seq_len = biased_seq.shape[0]
@@ -297,7 +316,9 @@ def main(args: Args) -> None:
                 if seq_len > num_pairs:
                     sampled_indices = np.linspace(0, seq_len - 1, num_pairs, dtype=int)
                 else:
-                    sampled_indices = np.arange(seq_len, dtype=int)
+                    # sampled_indices = np.arange(seq_len, dtype=int)
+                    rng = np.random.default_rng(seed=42)
+                    sampled_indices = rng.choice(seq_len, num_pairs, replace=False)
 
                 paired_keypoints = np.stack([
                     biased_seq[sampled_indices],
@@ -363,6 +384,7 @@ def main(args: Args) -> None:
         # Update cache
         cache.update({
             "traj_idx": traj_idx,
+            "sample_idx": sample_idx,
             "recon_joint3d": recon_joint3d,
             "keypoint_traj": keypoint_traj,
             "gt_keypoint": gt_keypoint,
@@ -378,10 +400,10 @@ def main(args: Args) -> None:
             f"**recon_mse**: `{recon_loss:.6f}`"
         )
     
-    def render_frame(traj_idx: int, frame_idx: int) -> None:
+    def render_frame(traj_idx: int, frame_idx: int, sample_idx: int = 0) -> None:
         """Render a single frame."""
-        if cache["traj_idx"] != traj_idx:
-            load_trajectory(traj_idx)
+        if cache["traj_idx"] != traj_idx or cache["sample_idx"] != sample_idx:
+            load_trajectory(traj_idx, sample_idx)
         
         recon_joint3d = cache["recon_joint3d"]
         keypoint_traj = cache["keypoint_traj"]
@@ -436,20 +458,27 @@ def main(args: Args) -> None:
         if getattr(_evt, "client_id", None) is None:
             return
         cache["is_playing"] = False
-        render_frame(int(traj_slider.value), int(frame_slider.value))
+        render_frame(int(traj_slider.value), int(frame_slider.value), int(sample_slider.value))
     
     @frame_slider.on_update
     def _(_evt) -> None:
         if getattr(_evt, "client_id", None) is None:
             return
-        render_frame(int(traj_slider.value), int(frame_slider.value))
+        render_frame(int(traj_slider.value), int(frame_slider.value), int(sample_slider.value))
+        
+    @sample_slider.on_update
+    def _(_evt) -> None:
+        if getattr(_evt, "client_id", None) is None:
+            return
+        cache["is_playing"] = False
+        render_frame(int(traj_slider.value), int(frame_slider.value), int(sample_slider.value))
     
     @playing.on_click
     def _(_evt) -> None:
         cache["is_playing"] = not cache["is_playing"]
     
     # Initial render
-    render_frame(int(traj_slider.value), int(frame_slider.value))
+    render_frame(int(traj_slider.value), int(frame_slider.value), int(sample_slider.value))
     
     server.gui.add_markdown(
         "help",
@@ -470,7 +499,7 @@ Legend:
             if next_frame > int(frame_slider.max):
                 next_frame = 0
             frame_slider.value = next_frame
-            render_frame(int(traj_slider.value), int(frame_slider.value))
+            render_frame(int(traj_slider.value), int(frame_slider.value), int(sample_slider.value))
         time.sleep(dt)
 
 
