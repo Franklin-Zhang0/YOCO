@@ -378,21 +378,27 @@ class SequenceDataset(Dataset):
             # New mode: build paired-pose input for preference extractor
             # Sample K random frames from the same demo
             seq_len = len(x)
-            num_pairs = min(self.num_hypernet_pairs, seq_len)
             if self.pair_subsample and self.is_train:
-                num_pairs = np.random.randint(1, num_pairs + 1)
+                num_pairs = np.random.normal(self.num_hypernet_pairs/2, self.num_hypernet_pairs/2)
+                num_pairs = int(num_pairs)
+            else:
+                num_pairs = self.num_hypernet_pairs
+
+            num_pairs = np.clip(num_pairs, 1, self.num_hypernet_pairs)
             
             # Sample indices (can include current frame)
             if seq_len > num_pairs:
                 sampled_indices = np.random.choice(range(seq_len), num_pairs, replace=False)
             else:
-                sampled_indices = list(range(seq_len))
+                sampled_indices = np.arange(seq_len)
             
             # Pad to num_hypernet_pairs if needed
             actual_pairs = len(sampled_indices)
             if actual_pairs < self.num_hypernet_pairs:
-                # Repeat last sample to pad
-                sampled_indices += [sampled_indices[-1]] * (self.num_hypernet_pairs - actual_pairs)
+                # Repeat last sample to pad 
+                # sampled_indices += [sampled_indices[-1]] * (self.num_hypernet_pairs - actual_pairs)
+                pad_width = self.num_hypernet_pairs - actual_pairs
+                sampled_indices = np.pad(sampled_indices, (0, pad_width), mode='edge')
             
             # Get paired samples: (K, 2, 21, 3) where dim=1 is [biased, true]
             biased_samples = x_biased[sampled_indices]  # (K, 21, 3)
@@ -408,6 +414,13 @@ class SequenceDataset(Dataset):
             pair_mask = torch.zeros(self.num_hypernet_pairs, dtype=torch.bool)
             pair_mask[:actual_pairs] = True
             item['preference_mask'] = pair_mask
+
+            # shuffle to prevent long tail problem
+            if self.pair_subsample and self.is_train:
+                random_order = np.arange(len(pair_mask))
+                np.random.shuffle(random_order)
+                item['preference_mask'] = item['preference_mask'][random_order]
+                item['preference_pairs'] = item['preference_pairs'][random_order]
             
             # Optionally include side information (can be used by preference extractor)
             if self.cat_side:
