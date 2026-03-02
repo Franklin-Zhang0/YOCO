@@ -262,6 +262,8 @@ class HyperLoRA(nn.Module):
         # Hook management
         self._hook_handles = []
         self._cached_lora_weights = None
+        # Saved original weights for merge/unmerge
+        self._original_weights = None
         
         self.build_lora()
 
@@ -460,8 +462,19 @@ class HyperLoRA(nn.Module):
         return total_reg / max(count, 1)
     
     @torch.no_grad()
+    def unmerge_weight(self):
+        """Restore base model weights to their pre-merge state."""
+        if self._original_weights is None:
+            return
+        for (layers, _), orig in zip(self.modules_list, self._original_weights):
+            layers.weight.data.copy_(orig)
+
+    @torch.no_grad()
     def merge_weight(self, hyper_lora_input: Tensor):
         """Merge LoRA weights into base model (for inference).
+
+        Saves original weights on first call and restores them before each
+        subsequent call, so repeated calls do not accumulate LoRA deltas.
 
         Supports either:
           - shared conditioning: (1, input_dim)
@@ -474,12 +487,26 @@ class HyperLoRA(nn.Module):
             Base model with merged weights
         """
         assert hyper_lora_input.shape[0] == 1, "only support batch size 1 for merging weight"
+
+        # Save original weights on the first call
+        if self._original_weights is None:
+            self._original_weights = [
+                layers.weight.data.clone() for layers, _ in self.modules_list
+            ]
+        else:
+            # Restore original weights before applying new LoRA deltas
+            self.unmerge_weight()
+
         lora_weights = self.prepare_lora_weights(hyper_lora_input)
-        for layers, lora_weight in lora_weights:
+        for idx, (layers, lora_weight) in enumerate(lora_weights):
             in_dim, out_dim = layers.in_features, layers.out_features
             lora_A = lora_weight[:, :in_dim*self.rank].reshape(1, in_dim, self.rank)
             lora_B = lora_weight[:, in_dim*self.rank:].reshape(1, self.rank, out_dim)
             delta_w = (lora_A @ lora_B) / float(self.rank) * self.alpha
+            # Apply per-module gate (must match training hook behavior)
+            if self.use_gates:
+                gate_value = torch.sigmoid(self.gates[idx])
+                delta_w = gate_value * delta_w
             delta_w = delta_w.squeeze(0)
             layers.weight.data += delta_w.T
         return self.base_model

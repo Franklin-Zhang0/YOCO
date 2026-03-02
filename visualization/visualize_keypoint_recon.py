@@ -193,7 +193,7 @@ class Args:
 
 def main(args: Args) -> None:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model, _, cfg = load_model(args.model_path, device=device)
+    model, norm_stats, cfg = load_model(args.model_path, device=device)
     model.eval()
     data = h5py.File(args.dataset_path, 'r')
     
@@ -238,7 +238,7 @@ def main(args: Args) -> None:
     )
     
     sample_slider = server.gui.add_slider(
-        "sample", min=0, max=0, step=1, initial_value=0, visible=False
+        "sample", min=0, max=1, step=1, initial_value=0, visible=False
     )
     
     # Add text panel for conditioning info
@@ -280,7 +280,7 @@ def main(args: Args) -> None:
         raw_keypoint_traj = data[traj_id][keypoint_key][:]
         if raw_keypoint_traj.ndim == 4:
             cache["num_samples"] = raw_keypoint_traj.shape[0]
-            sample_slider.max = max(0, cache["num_samples"] - 1)
+            sample_slider.max = max(1, cache["num_samples"] - 1)
             sample_slider.visible = True
             keypoint_traj = raw_keypoint_traj[sample_idx]
         else:
@@ -288,78 +288,53 @@ def main(args: Args) -> None:
             sample_slider.visible = False
             keypoint_traj = raw_keypoint_traj
 
-        keypoint_traj = transform_joint3d(keypoint_traj)
         side = data[traj_id]['mano_side'][0].decode('utf-8')
         betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0], 10))
         
-        # Check for HyperLoRA and preference network inputs
-        hypernet_x = None
-
+        # Get norm_stats from our earlier load_model call (needs changing line 196 as well)
         has_preference_extractor = hasattr(model, 'preference_extractor') and model.preference_extractor is not None
-
+        paired_poses = None
         if has_preference_extractor:
             biased_key = 'world_hand_joints_biased'
             true_key_candidates = ['world_hand_joints', 'world_hand_joints_true']
-
             true_key = next((k for k in true_key_candidates if k in data[traj_id].keys()), None)
-
+            
             if biased_key in data[traj_id].keys() and true_key is not None:
                 biased_seq_raw = data[traj_id][biased_key][:]
                 if biased_seq_raw.ndim == 4:
                     biased_seq_raw = biased_seq_raw[sample_idx]
-                biased_seq = transform_joint3d(biased_seq_raw)
-                true_seq = transform_joint3d(data[traj_id][true_key][:])
+                paired_poses = {
+                    biased_key: biased_seq_raw,
+                    true_key: data[traj_id][true_key][:]
+                }
 
-                seq_len = biased_seq.shape[0]
-                num_pairs = min(cfg['dataset']['num_hypernet_pairs'], seq_len)
-
-                if seq_len > num_pairs:
-                    sampled_indices = np.linspace(0, seq_len - 1, num_pairs, dtype=int)
-                else:
-                    # sampled_indices = np.arange(seq_len, dtype=int)
-                    rng = np.random.default_rng(seed=42)
-                    sampled_indices = rng.choice(seq_len, num_pairs, replace=False)
-
-                paired_keypoints = np.stack([
-                    biased_seq[sampled_indices],
-                    true_seq[sampled_indices],
-                ], axis=1)
-
-                preference_pairs_tensor = torch.tensor(paired_keypoints, dtype=torch.float32).to(device).unsqueeze(0)
-                preference_mask_tensor = torch.ones(preference_pairs_tensor.shape[:2], dtype=torch.bool).to(device)
-
-                with torch.no_grad():
-                    pref_mod = model.get_submodule('preference_extractor')
-                    if hasattr(pref_mod, 'train_forward'):
-                        hypernet_x, _ = pref_mod.train_forward(preference_pairs_tensor, preference_mask_tensor)
-                    else:
-                        hypernet_x = pref_mod(preference_pairs_tensor, preference_mask_tensor)
-
-                print(f"Generated preference conditioning vector with shape {tuple(hypernet_x.shape)}")
-            else:
-                print(
-                    "Warning: model has preference_extractor but dataset is missing both "
-                    f"'{biased_key}' and a true key in {true_key_candidates}; skipping preference conditioning."
-                )
-
-        if hypernet_x is not None:
-            if not isinstance(hypernet_x, torch.Tensor):
-                hypernet_x = torch.tensor(hypernet_x, dtype=torch.float32)
-            hypernet_x = hypernet_x.to(device)
-        
+        # Use RefineModelInferencer to make predictions
+        if cache.get("inferencer") is None:
+            from calibration_net.policy.refine_inferencer import RefineModelInferencer
+            cache["inferencer"] = RefineModelInferencer(
+                model_dir=args.model_path,
+                side=side,
+                device=device,
+                paired_poses=paired_poses,
+                fixed_noise=True,
+                loaded_model=(model, norm_stats, cfg)
+            )
+        else:
+            cache["inferencer"].enc_side = Side.__dict__[side.upper()].value
+            cache["inferencer"].enc_side_tensor = torch.tensor([cache["inferencer"].enc_side], device=device)
+            cache["inferencer"].update_condition(paired_poses=paired_poses)
+            
         # Update conditioning info display
-        if hypernet_x is not None:
-            conditioning_info.value = f"Hypernet conditioning: {hypernet_x.shape}"
+        if hasattr(cache["inferencer"].model, "hyperlora"):
+            conditioning_info.value = "Hyperlora condition active"
         else:
             conditioning_info.value = "No conditioning"
-        
-        # Make prediction with hypernet conditioning
-        context = nullcontext()
-        if hypernet_x is not None:
-            context = model.hyperlora.use(hypernet_x) if model.hyperlora is not None else nullcontext()
-        
-        with context:
-            pred_theta = model.predict(keypoint_traj, side=side).to('cpu')
+            
+        pred_theta = cache["inferencer"].inference(keypoint_traj, batched=(keypoint_traj.ndim == 3))
+        pred_theta = torch.tensor(pred_theta)
+        gt_theta = data[traj_id]['mano_angles'][:]
+        theta_mse = torch.mean((pred_theta - gt_theta)**2).cpu().numpy()
+        print(f"Theta MSE Loss: {theta_mse:.6f}")
         
         _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'))
         
@@ -369,6 +344,9 @@ def main(args: Args) -> None:
         
         recon_joint3d = transform_joint3d(recon_joint3d)
         recon_joint3d = recon_joint3d.cpu().numpy()
+
+        keypoint_traj = transform_joint3d(keypoint_traj)
+
         
         if 'world_hand_joints_true' in data[traj_id].keys():
             gt_keypoint = transform_joint3d(data[traj_id]['world_hand_joints_true'][:])
@@ -378,7 +356,7 @@ def main(args: Args) -> None:
         print(f"Reconstruction MSE Loss: {recon_loss:.6f}")
         
         T = gt_keypoint.shape[0]
-        frame_slider.max = max(0, T - 1)
+        frame_slider.max = max(1, T - 1)
         frame_slider.value = 0
         
         # Update cache
