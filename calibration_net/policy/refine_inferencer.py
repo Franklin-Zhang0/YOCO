@@ -43,7 +43,7 @@ class RefineModelInferencer():
                 true_seq = self.process_x_fn(paired_poses[true_key])
                 
                 seq_len = biased_seq.shape[0]
-                num_pairs = min(self.cfg['dataset'].get('num_hypernet_pairs', 16), seq_len) //2
+                num_pairs = min(self.cfg['dataset'].get('num_hypernet_pairs', 16), seq_len)
                 
                 if seq_len >= num_pairs:
                     rng = np.random.default_rng(seed=42)
@@ -75,9 +75,11 @@ class RefineModelInferencer():
                 print(f"Warning: model has paired preference_extractor but dataset is missing keys; skipping preference conditioning.")
         else:
             Warning("Preference extractor is not enabled in the model but paired_poses are provided.")
-        
-
-        self.model.hyperlora.merge_weight(hyper_input)
+            
+        if hasattr(self.model, 'hyperlora'):
+            self.model.hyperlora.merge_weight(hyper_input)
+        else:
+            Warning("Model does not have hyperlora module but paired_poses are provided.")
         
     def inference(self, x: np.ndarray, batched: bool=False):
         self.model.eval()
@@ -85,8 +87,9 @@ class RefineModelInferencer():
             self.noise = torch.randn(1, self.cfg['model']['output_size'], device=self.device)
         if batched: 
             B, T = x.shape[:2]
-            self.noise = self.noise.repeat(B, 1)
+            noise = self.noise.repeat(B, 1)
         else:
+            noise = self.noise
             x = x[None, ...]
 
         x = self.process_x_fn(x)

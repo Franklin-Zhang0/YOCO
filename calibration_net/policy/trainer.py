@@ -12,7 +12,7 @@ from .models.fk_model import FKModel, FKTrainer
 from calibration_net.utils import walk_dict, create_dict_from_flattened
 from copy import deepcopy
 from .logger import get_logger_cls
-from .loss import get_geort_loss, get_alignment_loss
+from .loss import get_geort_loss, get_alignment_loss, get_refine_composite_loss
 from .lr_scheduler import build_warmup_cosine_scheduler
 from contextlib import nullcontext
 from omegaconf import OmegaConf
@@ -252,6 +252,15 @@ class Trainer():
         elif loss_type == 'mse':
             loss = {'loss': result['loss'].mean()}
             return loss
+        elif loss_type == 'refine_composite':
+            loss = get_refine_composite_loss(
+                pred_theta=result['pred_y'],
+                gt_theta=data['output'].to(self.device),
+                mse_loss=result['loss'].mean(),
+                side=data['side'].to(self.device),
+                loss_weights=self.loss_weights
+            )
+            return loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -268,6 +277,38 @@ class Trainer():
                     loss['loss'] += hyperlora_reg * self.args.model.hypernet_cfg.reg_weight
 
         return loss
+
+    def _compute_param_norms(self) -> dict:
+        """Compute L2 norms of trainable parameters.
+
+        Returns:
+            dict: Contains 'train/param_norm' (total) and 'train/param_norm/{module_name}' for key modules.
+        """
+        param_norms = {}
+
+        # Total parameter norm across all trainable parameters
+        param_norm = 0.0
+        for p in self.model.parameters():
+            if p.requires_grad:
+                param_norm += (float(p.detach().pow(2).sum().cpu()) / p.numel()) ** 0.5
+        # param_norm = param_norm ** 0.5
+        param_norm /= len(list(self.model.parameters()))
+        param_norms['param_norm'] = param_norm
+
+        # Per-module parameter norms
+        module_names = ['network', 'hyperlora']
+        for mod_name in module_names:
+            if hasattr(self.model, mod_name):
+                mod = getattr(self.model, mod_name)
+                mod_norm = 0.0
+                for p in mod.parameters():
+                    if p.requires_grad:
+                        mod_norm += (float(p.detach().pow(2).sum().cpu()) / p.numel()) ** 0.5
+                # mod_norm = mod_norm ** 0.5
+                mod_norm /= len(list(mod.parameters()))
+                param_norms[f'param_norm/{mod_name}'] = mod_norm
+
+        return param_norms
 
     def train_step(self, data, do_backward=True):
         x, y, side = data['input'], data['output'], data['side']
@@ -326,6 +367,18 @@ class Trainer():
                 self.optimizer.zero_grad()
                 loss['loss'].backward()
 
+                # Gradient norm logging (every 100 steps)
+                if self.global_steps % 100 == 0:
+                    # Total gradient norm across all trainable parameters
+                    total_grad_norm = 0.0
+                    for p in self.model.parameters():
+                        if p.requires_grad and p.grad is not None:
+                            total_grad_norm += p.grad.detach().pow(2).sum().item()
+                    total_grad_norm = total_grad_norm ** 0.5
+                    step_info['train/grad_norm'] = total_grad_norm
+                    # Parameter norm logging
+                    step_info.update(self._compute_param_norms())
+
                 # Gradient diagnostics (lightweight; helps catch zero-grad issues)
                 if self.global_steps % 200 == 0:
                     grads = {}
@@ -342,7 +395,7 @@ class Trainer():
                         if key in grads:
                             print(f"grad|{key}|mean={grads[key]:.3e}")
 
-                nn.utils.clip_grad_value_(self.model.parameters(), self.trainer_args.grad_clipping)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.trainer_args.grad_clipping)
                 self.optimizer.step()
                 
                 # Step LR scheduler if enabled
@@ -360,11 +413,11 @@ class Trainer():
                 self.log_step(step_info, self.global_steps)
             else: # evaluating
                 # pred_y = self.model(x, hypernet_x=hypernet_input, side=side)
-                pred_y = self.model(x, side=side)
-                loss = self.loss_function(pred_y, y)
-                mae = torch.mean(torch.abs(pred_y - y))
-                step_info['val/mae'] = mae.item()
-                step_info['val/loss'] = loss.item()
+                result = self.model(x, y, side=side)
+                mae = torch.mean(torch.abs(y - result['pred_y']))
+                loss = self.get_loss(data, result)
+                for key, value in loss.items():
+                    step_info[f'val/{key}'] = value.item()
 
         return step_info
     
@@ -389,26 +442,24 @@ class Trainer():
         
         for key in self.loss_weights:
             self.loss_weights[key] += self.trainer_args.loss_weights_decay.get(key, 0.0)
-            self.loss_weights[key] = min(max(self.loss_weights[key], 0.0), 1.0)
+            self.loss_weights[key] = max(self.loss_weights[key], 0.0)
     
         return info
 
     def validate(self):
         print("Start Validation")
         self.model.eval()
-        total_loss = 0.0
-        total_mae = 0.0
+        total_metrics = {}
         with torch.no_grad():
             for data in tqdm(self.valloader):
                 step_info = self.train_step(data, do_backward=False)
-                total_loss += step_info['val/loss']
-                total_mae += step_info['val/mae']
-        avg_loss = total_loss / len(self.valloader)
-        avg_mae = total_mae / len(self.valloader)
-        self.log_step({'val/loss': avg_loss, 'val/mae': avg_mae}, self.global_steps)
-        print(f"Validation MAE: {avg_mae}")
-        print(f"Validation Loss: {avg_loss}")
-        return avg_loss
+                for key, value in step_info.items():
+                    total_metrics[key] = total_metrics.get(key, 0.0) + value
+        for key, value in total_metrics.items():
+            total_metrics[key] = value / len(self.valloader)
+        self.log_step(total_metrics, self.global_steps)
+        print(total_metrics)
+        return total_metrics['val/loss']
 
     def set_epoch(self, epoch):
         

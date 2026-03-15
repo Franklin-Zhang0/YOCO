@@ -400,6 +400,10 @@ def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, tran
         
     if betas is None:
         betas = torch.zeros(mano_theta_pred.shape[:-1] + (10,)).to(mano_theta_pred.device)
+    elif betas.dim() == 1:
+        # Expand single betas to match batch size
+        batch_size = mano_theta_pred.shape[0]
+        betas = betas.unsqueeze(0).expand(batch_size, -1)
         
     pose_coeffs = torch.cat([mano_orient, mano_theta_pred], dim=-1)
     

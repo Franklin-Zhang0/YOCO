@@ -206,3 +206,180 @@ def chamfer_distance(input_points, target_points):
     return chamfer_dist.mean()
 
 
+def compute_relative_distances(joints, tip_indices=TIP_INDICIES):
+    """Compute pairwise distances between fingertips within one hand.
+    
+    Args:
+        joints: (B, 21, 3) joint positions
+        tip_indices: list of fingertip joint indices
+        
+    Returns:
+        distances: (B, C(5,2)) = (B, 10) pairwise distances
+    """
+    tips = joints[:, tip_indices, :]  # (B, 5, 3)
+    
+    # Compute all pairwise distances between 5 fingertips using cdist
+    dist_matrix = torch.cdist(tips, tips)  # (B, 5, 5)
+    # Extract upper triangle (excluding diagonal)
+    idx = torch.triu_indices(5, 5, offset=1, device=joints.device)
+    distances = dist_matrix[:, idx[0], idx[1]]  # (B, 10)
+    return distances
+
+
+def compute_relative_vectors(joints, tip_indices=TIP_INDICIES, base_index=0):
+    """Compute normalized relative vectors:
+    1. Base (wrist) to each fingertip: 5 vectors
+    2. Each fingertip to each other fingertip: C(5,2) = 10 vectors
+    Total: 15 normalized vectors
+    
+    Args:
+        joints: (B, 21, 3) joint positions
+        tip_indices: list of fingertip joint indices
+        base_index: wrist joint index
+        
+    Returns:
+        vectors: (B, 15, 3) normalized direction vectors
+    """
+    tips = joints[:, tip_indices, :]  # (B, 5, 3)
+    base = joints[:, base_index:base_index+1, :]  # (B, 1, 3)
+    
+    vectors_list = []
+    
+    # 1. Base (wrist) to each fingertip: 5 vectors
+    for i in range(len(tip_indices)):
+        vec = tips[:, i, :] - base[:, 0, :]  # (B, 3)
+        vec = vec / (torch.norm(vec, dim=-1, keepdim=True) + 1e-6)  # Normalize
+        vectors_list.append(vec)
+    
+    # 2. Each fingertip to each other fingertip: C(5,2) = 10 vectors
+    n_tips = len(tip_indices)
+    for i in range(n_tips):
+        for j in range(i + 1, n_tips):
+            vec = tips[:, i, :] - tips[:, j, :]  # (B, 3)
+            vec = vec / (torch.norm(vec, dim=-1, keepdim=True) + 1e-6)  # Normalize
+            vectors_list.append(vec)
+    
+    vectors = torch.stack(vectors_list, dim=1)  # (B, 15, 3)
+    return vectors
+
+
+def relative_distance_loss(pred_joints, gt_joints, tip_indices=TIP_INDICIES):
+    """MSE between predicted and GT relative fingertip distances.
+    
+    Args:
+        pred_joints: (B, 21, 3) predicted joint positions from MANO FK
+        gt_joints: (B, 21, 3) GT joint positions from MANO FK on GT theta
+        
+    Returns:
+        loss: scalar MSE loss
+    """
+    TIP_SIGMA_M = 0.02
+    pred_distances = compute_relative_distances(pred_joints, tip_indices)
+    gt_distances = compute_relative_distances(gt_joints, tip_indices) - 0.005
+    gt_distances = torch.clamp(gt_distances, min=0.0)
+    
+    square_error = (pred_distances - gt_distances)**2
+    
+    # scale = 1 / (torch.abs(gt_distances) + 1e-6)
+    scale = torch.exp(-(gt_distances / TIP_SIGMA_M).abs())
+    
+    loss = (square_error * scale).mean(dim=0).sum()
+    return loss
+
+
+def relative_vector_loss(pred_joints, gt_joints, tip_indices=TIP_INDICIES, base_index=0):
+    """MSE between predicted and GT relative vectors (normalized).
+    
+    Args:
+        pred_joints: (B, 21, 3) predicted joint positions
+        gt_joints: (B, 21, 3) GT joint positions
+        
+    Returns:
+        loss: scalar MSE loss
+    """
+    pred_vectors = compute_relative_vectors(pred_joints, tip_indices, base_index)
+    gt_vectors = compute_relative_vectors(gt_joints, tip_indices, base_index)
+    
+    # MSE loss on normalized direction vectors
+    loss = F.mse_loss(pred_vectors, gt_vectors)
+    return loss
+
+
+def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights):
+    """Compute refine_composite loss: MSE + relative distance + relative vector losses.
+    
+    Args:
+        pred_theta: (B, 45) predicted MANO pose parameters (with gradients)
+        gt_theta: (B, 45) GT MANO pose parameters
+        mse_loss: scalar, pre-computed MSE loss on MANO parameters
+        side: (B,) hand side tensor (1=left, -1=right)
+        loss_weights: dict with keys 'mse', 'rel_distance', 'rel_vector', 'global_keypoint' and their weights
+        
+    Returns:
+        loss: dict with keys 'loss', 'mse', 'rel_distance', 'rel_vector', 'global_keypoint'
+    """
+    from calibration_net.utils import mano_recon
+    
+    loss = {}
+    loss['mse'] = mse_loss
+    
+    B = pred_theta.shape[0]
+    
+    # Split batch by side and compute MANO joints
+    left_mask = (side == 1)
+    right_mask = (side == -1)
+    
+    pred_joints = torch.zeros(B, 21, 3, device=pred_theta.device, dtype=pred_theta.dtype)
+    gt_joints = torch.zeros(B, 21, 3, device=gt_theta.device, dtype=gt_theta.dtype)
+    
+    # Process left hand (gradients flow through predicted joints)
+    if left_mask.sum() > 0:
+        left_idx = torch.where(left_mask)[0]
+        left_pred_theta = pred_theta[left_idx]
+        left_gt_theta = gt_theta[left_idx]
+        
+        # Get predicted joints with gradients
+        _, pred_left_joints = mano_recon(left_pred_theta, side='left')
+        # Center at wrist
+        pred_left_joints = pred_left_joints - pred_left_joints[:, 0:1, :]
+        pred_joints[left_idx] = pred_left_joints
+        
+        # Get GT joints without gradients
+        with torch.no_grad():
+            _, gt_left_joints = mano_recon(left_gt_theta, side='left')
+            gt_left_joints = gt_left_joints - gt_left_joints[:, 0:1, :]
+        gt_joints[left_idx] = gt_left_joints
+    
+    # Process right hand (gradients flow through predicted joints)
+    if right_mask.sum() > 0:
+        right_idx = torch.where(right_mask)[0]
+        right_pred_theta = pred_theta[right_idx]
+        right_gt_theta = gt_theta[right_idx]
+        
+        # Get predicted joints with gradients
+        _, pred_right_joints = mano_recon(right_pred_theta, side='right')
+        # Center at wrist
+        pred_right_joints = pred_right_joints - pred_right_joints[:, 0:1, :]
+        pred_joints[right_idx] = pred_right_joints
+        
+        # Get GT joints without gradients
+        with torch.no_grad():
+            _, gt_right_joints = mano_recon(right_gt_theta, side='right')
+            gt_right_joints = gt_right_joints - gt_right_joints[:, 0:1, :]
+        gt_joints[right_idx] = gt_right_joints
+    
+    # Compute relative losses
+    loss['rel_distance'] = relative_distance_loss(pred_joints, gt_joints)
+    loss['rel_vector'] = relative_vector_loss(pred_joints, gt_joints)
+    loss['global_keypoint'] = F.mse_loss(pred_joints, gt_joints)
+    
+    # Combine all losses using loss_weights
+    total_loss = 0.0
+    for key in loss_weights:
+        if key in loss:
+            total_loss += loss[key] * loss_weights[key]
+    loss['loss'] = total_loss
+    
+    return loss
+
+
