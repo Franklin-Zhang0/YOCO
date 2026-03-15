@@ -324,7 +324,8 @@ class SequenceDataset(Dataset):
             if x_biased.ndim == x_true.ndim + 1:
                 num_samples = x_biased.shape[0]
                 if self.is_train:
-                    sample_idx = self.current_epoch % num_samples
+                    sample_idx = (self.current_epoch+idx) % num_samples
+                    # sample_idx = 0
                     x_biased = x_biased[sample_idx]
                 else:
                     x_biased = x_biased[0]
@@ -344,8 +345,9 @@ class SequenceDataset(Dataset):
             side = side.decode('utf-8')
         assert type(side) == str
         enc_side = Side.__dict__[side.upper()].value
+        betas = index_dict(dict(data), 'betas')
 
-        item = {'input': inputs, 'output': outputs, 'side': enc_side}
+        item = {'input': inputs, 'output': outputs, 'side': enc_side, 'betas':betas}
         
         # Store original (true) data for drift error computation
         if use_bias:
