@@ -106,11 +106,13 @@ def main(args: Args) -> None:
     init_demo_len = len(f[demo_keys[0]][f"{args.input_keys}_biased"])
     if len(f[demo_keys[0]][f"{args.input_keys}_biased"].shape) == 4:
         init_demo_len = f[demo_keys[0]][f"{args.input_keys}_biased"].shape[1]
+        
+    safe_init_len = max(1, init_demo_len)
 
-    frame_slider = server.gui.add_slider("frame", min=0, max=init_demo_len, step=1, initial_value=0)
+    frame_slider = server.gui.add_slider("frame", min=0, max=safe_init_len - 1, step=1, initial_value=0)
     
     sample_slider = server.gui.add_slider(
-        "sample", min=0, max=0, step=1, initial_value=0, visible=False
+        "sample", min=0, max=1, step=1, initial_value=0, visible=False
     )
 
     # Read current demo into memory to keep interaction snappy.
@@ -154,14 +156,14 @@ def main(args: Args) -> None:
         if biased.ndim == 4:
             cache["num_samples"] = biased.shape[0]
             T = biased.shape[1]
-            sample_slider.max = max(0, cache["num_samples"] - 1)
+            sample_slider.max = max(1, cache["num_samples"] - 1)
             sample_slider.visible = True
         else:
             cache["num_samples"] = 1
             T = biased.shape[0]
             sample_slider.visible = False
 
-        frame_slider.max = max(0, T - 1)
+        frame_slider.max = max(1, T - 1)
         frame_slider.value = 0
 
         # Display meta if present.

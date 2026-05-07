@@ -4,7 +4,7 @@ import h5py
 import torch
 import viser
 import numpy as np
-from calibration_net.utils import mano_recon, transform_joint3d, Side, scale_hand_fingers
+from calibration_net.utils import mano_recon, transform_joint3d, scale_hand_fingers
 from calibration_net.policy.preprocessing import get_mano_pca, MANO_PCA
 import time
 from contextlib import nullcontext
@@ -13,6 +13,10 @@ from typing import Optional, Any
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from calibration_net.policy.refine_inferencer import (
+    RefineModelInferencer,
+    resolve_torch_device,
+)
 
 def compute_mano_pose_geometric(target_joints, rest_joints):
     """
@@ -180,7 +184,8 @@ def _make_bone_segments(joints: np.ndarray) -> np.ndarray:
 class Args:
     dataset_path: str
     model_path: str
-    port: int = 8086
+    port: int = 8087
+    device: Optional[str] = None
     
     # Playback
     fps: float = 30.0
@@ -192,7 +197,7 @@ class Args:
 
 
 def main(args: Args) -> None:
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = resolve_torch_device(args.device)
     model, norm_stats, cfg = load_model(args.model_path, device=device)
     model.eval()
     data = h5py.File(args.dataset_path, 'r')
@@ -289,9 +294,7 @@ def main(args: Args) -> None:
             keypoint_traj = raw_keypoint_traj
 
         side = data[traj_id]['mano_side'][0].decode('utf-8')
-        betas = torch.tensor(data[traj_id]['betas'][:]).broadcast_to((keypoint_traj.shape[0], 10))
-        
-        # Get norm_stats from our earlier load_model call (needs changing line 196 as well)
+
         has_preference_extractor = hasattr(model, 'preference_extractor') and model.preference_extractor is not None
         paired_poses = None
         if has_preference_extractor:
@@ -310,7 +313,6 @@ def main(args: Args) -> None:
 
         # Use RefineModelInferencer to make predictions
         if cache.get("inferencer") is None:
-            from calibration_net.policy.refine_inferencer import RefineModelInferencer
             cache["inferencer"] = RefineModelInferencer(
                 model_dir=args.model_path,
                 side=side,
@@ -320,9 +322,17 @@ def main(args: Args) -> None:
                 loaded_model=(model, norm_stats, cfg)
             )
         else:
-            cache["inferencer"].enc_side = Side.__dict__[side.upper()].value
-            cache["inferencer"].enc_side_tensor = torch.tensor([cache["inferencer"].enc_side], device=device)
+            cache["inferencer"].set_side(side)
             cache["inferencer"].update_condition(paired_poses=paired_poses)
+
+        runtime_device = cache["inferencer"].device
+        betas = torch.as_tensor(
+            data[traj_id]['betas'][:],
+            dtype=torch.float32,
+            device=runtime_device,
+        )
+        if betas.ndim == 1:
+            betas = betas.unsqueeze(0).expand(keypoint_traj.shape[0], -1)
             
         # Update conditioning info display
         if hasattr(cache["inferencer"].model, "hyperlora"):
@@ -331,12 +341,25 @@ def main(args: Args) -> None:
             conditioning_info.value = "No conditioning"
             
         pred_theta = cache["inferencer"].inference(keypoint_traj, batched=(keypoint_traj.ndim == 3))
-        pred_theta = torch.tensor(pred_theta)
-        gt_theta = data[traj_id]['mano_angles'][:]
-        theta_mse = torch.mean((pred_theta - gt_theta)**2).cpu().numpy()
-        print(f"Theta MSE Loss: {theta_mse:.6f}")
-        
-        _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'))
+        pred_theta = torch.as_tensor(
+            pred_theta,
+            dtype=torch.float32,
+            device=runtime_device,
+        )
+        gt_theta = torch.as_tensor(
+            data[traj_id]['mano_angles'][:],
+            dtype=torch.float32,
+            device=runtime_device,
+        )
+        # biased_thetas = data[traj_id]['mano_angles_biased'][:]
+        if pred_theta.shape[-1] == 45:
+            theta_mse = torch.mean((pred_theta - gt_theta)**2).cpu().numpy()
+            print(f"Theta MSE Loss: {theta_mse:.6f}")
+            # pred_theta = torch.tensor(biased_thetas)[0].reshape(-1,45)
+            # pred_theta = torch.tensor(gt_theta)
+            _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'), betas=betas, apply_left_shapedirs_fix=True)
+        else:
+            recon_joint3d = pred_theta
         
         if hasattr(model.network, 'finger_scaling'):
             with torch.no_grad():
@@ -348,12 +371,22 @@ def main(args: Args) -> None:
         keypoint_traj = transform_joint3d(keypoint_traj)
 
         
-        if 'world_hand_joints_true' in data[traj_id].keys():
-            gt_keypoint = transform_joint3d(data[traj_id]['world_hand_joints_true'][:])
-        else:
-            gt_keypoint = transform_joint3d(data[traj_id][keypoint_key][:])
+        # if 'world_hand_joints' in data[traj_id].keys():
+        # gt_keypoint = transform_joint3d(data[traj_id]['world_hand_joints'][:])
+        _, recon_gt_kepoint = mano_recon(
+            gt_theta,
+            side=data[traj_id]['mano_side'][0].decode('utf-8'),
+            betas=betas,
+            apply_left_shapedirs_fix=True,
+        )
+        recon_gt_kepoint = torch.tensor(data[traj_id]['world_hand_joints'][:]) if 'world_hand_joints' in data[traj_id].keys() else recon_gt_kepoint
+        gt_keypoint = transform_joint3d(recon_gt_kepoint).cpu().numpy()
+        # else:
+        #     gt_keypoint = transform_joint3d(data[traj_id][keypoint_key][:])
         recon_loss = np.mean((recon_joint3d - gt_keypoint) ** 2)
         print(f"Reconstruction MSE Loss: {recon_loss:.6f}")
+        recon_mae = np.mean(np.abs(recon_joint3d - gt_keypoint))
+        print(f"Reconstruction MAE Loss: {recon_mae:.6f}")
         
         T = gt_keypoint.shape[0]
         frame_slider.max = max(1, T - 1)
