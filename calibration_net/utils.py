@@ -379,27 +379,92 @@ def scale_hand_fingers(keypoints, finger_scales):
 
 mano = {}
 mano_root = os.environ.get('MANO_PATH')
-def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, transl: torch.Tensor = None, side='right', betas: torch.Tensor = None) -> [torch.Tensor, torch.Tensor]:
-    from  manopth import manolayer
-    theta_dim = mano_theta_pred.shape[-1]
+
+
+def _get_mano_layer(
+    theta_dim: int,
+    side: str,
+    device: torch.device,
+    apply_left_shapedirs_fix: bool,
+):
+    from manopth import manolayer
+
     global mano
-    if side not in mano:
-        mano[side] = manolayer.ManoLayer(
+    cache_key = (side, int(theta_dim), bool(apply_left_shapedirs_fix))
+    if cache_key not in mano:
+        layer = manolayer.ManoLayer(
             mano_root=mano_root,
             use_pca=theta_dim!=45,
             ncomps=theta_dim,
             side=side,
             flat_hand_mean=False,
-        ).to(mano_theta_pred.device)
+        ).to(device)
+
+        if apply_left_shapedirs_fix and side == 'left':
+            right_key = ('right', int(theta_dim), bool(apply_left_shapedirs_fix))
+            if right_key not in mano:
+                mano[right_key] = manolayer.ManoLayer(
+                    mano_root=mano_root,
+                    use_pca=theta_dim!=45,
+                    ncomps=theta_dim,
+                    side='right',
+                    flat_hand_mean=False,
+                ).to(device)
+
+            right_layer = mano[right_key].to(device)
+            mano[right_key] = right_layer
+            diff = torch.sum(
+                torch.abs(
+                    layer.th_shapedirs[:, 0, :]
+                    - right_layer.th_shapedirs[:, 0, :]
+                )
+            )
+            if diff.item() < 1.0:
+                layer.th_shapedirs[:, 0, :] *= -1
+
+        mano[cache_key] = layer
+    else:
+        mano[cache_key] = mano[cache_key].to(device)
+
+    return mano[cache_key]
+
+
+def mano_recon(
+    mano_theta_pred: torch.Tensor,
+    mano_orient: torch.Tensor = None,
+    transl: torch.Tensor = None,
+    side='right',
+    betas: torch.Tensor = None,
+    apply_left_shapedirs_fix: bool = False,
+) -> [torch.Tensor, torch.Tensor]:
+    """Run MANO forward and return vertices/joints in meters.
+
+    `apply_left_shapedirs_fix` applies the standard MANO left-hand shapedirs fix
+    used by SMPL-X/InterHand code when the left and right shape directions are
+    detected to be identical. It is opt-in to preserve existing behavior.
+    """
+    theta_dim = mano_theta_pred.shape[-1]
+    mano_layer = _get_mano_layer(
+        theta_dim=theta_dim,
+        side=side,
+        device=mano_theta_pred.device,
+        apply_left_shapedirs_fix=apply_left_shapedirs_fix,
+    )
     theta_shape = mano_theta_pred.shape
     if transl is None:
-        transl = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(mano_theta_pred.device)
+        transl = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(
+            mano_theta_pred.device
+        )
     
     if mano_orient is None:
-        mano_orient = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(mano_theta_pred.device)
+        mano_orient = torch.zeros(mano_theta_pred.shape[:-1] + (3,)).to(
+            mano_theta_pred.device
+        )
         
     if betas is None:
-        betas = torch.zeros(mano_theta_pred.shape[:-1] + (10,)).to(mano_theta_pred.device)
+        betas = torch.zeros(mano_theta_pred.shape[:-1] + (10,)).to(
+            mano_theta_pred.device
+        )
     elif betas.dim() == 1:
         # Expand single betas to match batch size
         batch_size = mano_theta_pred.shape[0]
@@ -410,7 +475,7 @@ def mano_recon(mano_theta_pred:torch.Tensor, mano_orient:torch.Tensor=None, tran
     pose_coeffs = pose_coeffs.view(-1, pose_coeffs.shape[-1])
     transl = transl.view(-1, 3)
     betas = betas.view(-1, 10)
-    pred_vertices, pred_joints = mano[side](
+    pred_vertices, pred_joints = mano_layer(
         th_pose_coeffs=pose_coeffs,
         th_trans=transl,
         th_betas=betas
