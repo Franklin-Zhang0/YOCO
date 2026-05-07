@@ -9,9 +9,12 @@ This module generates *synthetic* keypoint bias by:
 Within a single sequence/demo, the bias "style" is fixed (sampled once per demo_id).
 Across demos, bias styles differ.
 
-Bias parameterization (default):
-  - per-finger shared axis-angle offset (5 x 3), broadcast to the 3 joints per finger
-  - plus a small per-joint residual axis-angle offset (15 x 3)
+The default bias model aims to resemble common glove capture miscalibration:
+  - stable per-finger zero-offset templates
+  - small per-joint residual offsets
+  - session-wide, per-finger, and per-joint gain errors
+  - mild adjacent-finger crosstalk
+  - proximal-to-distal within-finger coupling
 
 Notes
 -----
@@ -41,6 +44,27 @@ _FINGER_JOINT_SLICES_15 = {
     "ring": slice(9, 12),
     "pinky": slice(12, 15),
 }
+_FINGER_JOINT_ATTENUATION = np.asarray(
+    [
+        [1.0, 0.85, 0.60],
+        [1.0, 0.70, 0.40],
+        [1.0, 0.70, 0.40],
+        [1.0, 0.70, 0.40],
+        [1.0, 0.70, 0.40],
+    ],
+    dtype=np.float32,
+)
+_ADJACENT_FINGER_BASE = np.asarray([0.18, 0.30, 0.36, 0.28], dtype=np.float32)
+_PROXIMAL_TO_DISTAL_BASE = np.asarray(
+    [
+        [0.00, 0.00, 0.00],
+        [0.32, 0.00, 0.00],
+        [0.14, 0.24, 0.00],
+    ],
+    dtype=np.float32,
+)
+_MIN_SCALE = 0.5
+_MAX_SCALE = 1.5
 
 
 @dataclass
@@ -49,7 +73,8 @@ class BiasConfig:
 
     enabled: bool = True
 
-    # Per-finger shared axis-angle offset (applied to the 3 joints of each finger)
+    # Per-finger shared axis-angle offset template. Each finger offset is attenuated
+    # across its joints so proximal joints are affected more than distal joints.
     per_finger_offset_prob: float = 0.9
     per_finger_offset_std: float = 0.15  # radians (axis-angle magnitude scale)
 
@@ -71,7 +96,13 @@ class BiasConfig:
     per_finger_scale_prob: float = 0.0
     per_finger_scale_std: float = 0.0
 
-    # Correlation parameters (applied to pose)
+    # Scale parameter (per-joint multiplier)
+    per_joint_scale_prob: float = 0.0
+    per_joint_scale_std: float = 0.0
+
+    # Correlation parameters are interpreted as structured leakage terms:
+    # - finger_correlation_*: same-joint-level crosstalk between adjacent fingers
+    # - joint_correlation_*: proximal-to-distal coupling within a finger
     finger_correlation_prob: float = 0.0
     finger_correlation_std: float = 0.0
     joint_correlation_prob: float = 0.0
@@ -104,73 +135,147 @@ class BiasGenerator:
                 mask[int(j)] = True
         return mask
 
+    def _sample_scalar_scale(
+        self,
+        rng: np.random.RandomState,
+        *,
+        prob: float,
+        std: float,
+    ) -> float:
+        if rng.rand() >= prob:
+            return 1.0
+        scale = 1.0 + float(rng.randn()) * float(std)
+        return float(np.clip(scale, _MIN_SCALE, _MAX_SCALE))
+
+    def _sample_array_scale(
+        self,
+        rng: np.random.RandomState,
+        *,
+        shape: tuple[int, ...],
+        prob: float,
+        std: float,
+        attenuation: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        if rng.rand() >= prob:
+            return np.ones(shape, dtype=np.float32)
+
+        noise = rng.randn(*shape).astype(np.float32) * float(std)
+        if attenuation is not None:
+            noise = noise * attenuation.astype(np.float32)
+
+        scale = 1.0 + noise
+        return np.clip(scale, _MIN_SCALE, _MAX_SCALE).astype(np.float32)
+
+    def _expand_finger_offsets(
+        self,
+        finger_offset: np.ndarray,
+    ) -> np.ndarray:
+        finger_offset_per_joint = np.zeros((15, 3), dtype=np.float32)
+        for f_i, finger in enumerate(_FINGER_ORDER):
+            sl = _FINGER_JOINT_SLICES_15[finger]
+            weights = _FINGER_JOINT_ATTENUATION[f_i][:, None]
+            finger_offset_per_joint[sl] = finger_offset[f_i][None, :] * weights
+        return finger_offset_per_joint
+
+    def _sample_adjacent_finger_crosstalk(
+        self,
+        rng: np.random.RandomState,
+    ) -> np.ndarray:
+        crosstalk = np.zeros((5, 5), dtype=np.float32)
+        if rng.rand() >= self.config.finger_correlation_prob:
+            return crosstalk
+
+        raw = (
+            np.abs(rng.randn(len(_ADJACENT_FINGER_BASE))).astype(np.float32)
+            * float(self.config.finger_correlation_std)
+        )
+        edge_strengths = np.clip(raw * _ADJACENT_FINGER_BASE, 0.0, 0.35)
+        for idx, strength in enumerate(edge_strengths):
+            crosstalk[idx, idx + 1] = strength
+            crosstalk[idx + 1, idx] = strength
+        return crosstalk
+
+    def _sample_proximal_coupling(
+        self,
+        rng: np.random.RandomState,
+    ) -> np.ndarray:
+        coupling = np.zeros((3, 3), dtype=np.float32)
+        if rng.rand() >= self.config.joint_correlation_prob:
+            return coupling
+
+        raw = np.abs(rng.randn(3)).astype(np.float32) * float(
+            self.config.joint_correlation_std
+        )
+        raw = np.clip(raw, 0.0, 0.35)
+        coupling[1, 0] = raw[0] * _PROXIMAL_TO_DISTAL_BASE[1, 0]
+        coupling[2, 0] = raw[1] * _PROXIMAL_TO_DISTAL_BASE[2, 0]
+        coupling[2, 1] = raw[2] * _PROXIMAL_TO_DISTAL_BASE[2, 1]
+        return coupling
+
     def _sample_bias_params(self, demo_id: int) -> Dict[str, np.ndarray]:
         rng = self._rng_for_demo(demo_id)
+        joint_mask_1d = self._joint_mask_15()
+        joint_mask = joint_mask_1d.astype(np.float32).reshape(15, 1)
+        joint_attenuation = _FINGER_JOINT_ATTENUATION.reshape(15, 1)
 
         # (5,3) per-finger offsets (thumb..pinky)
         if rng.rand() < self.config.per_finger_offset_prob:
-            finger_offset = rng.randn(5, 3).astype(np.float32) * float(self.config.per_finger_offset_std)
+            finger_offset = (
+                rng.randn(5, 3).astype(np.float32)
+                * float(self.config.per_finger_offset_std)
+            )
         else:
             finger_offset = np.zeros((5, 3), dtype=np.float32)
+        finger_offset_per_joint = self._expand_finger_offsets(finger_offset) * joint_mask
 
         # (15,3) per-joint residual
         if rng.rand() < self.config.per_joint_residual_prob:
-            joint_residual = rng.randn(15, 3).astype(np.float32) * float(self.config.per_joint_residual_std)
+            joint_residual = (
+                rng.randn(15, 3).astype(np.float32)
+                * float(self.config.per_joint_residual_std)
+                * joint_attenuation
+            )
         else:
             joint_residual = np.zeros((15, 3), dtype=np.float32)
+        joint_residual = joint_residual * joint_mask
 
         # Scale parameters
-        if rng.rand() < self.config.global_scale_prob:
-            global_scale = 1.0 + rng.randn() * float(self.config.global_scale_std)
-        else:
-            global_scale = 1.0
-
-        if rng.rand() < self.config.per_finger_scale_prob:
-            finger_scale = 1.0 + rng.randn(5).astype(np.float32) * float(self.config.per_finger_scale_std)
-        else:
-            finger_scale = np.ones(5, dtype=np.float32)
+        global_scale = self._sample_scalar_scale(
+            rng,
+            prob=self.config.global_scale_prob,
+            std=self.config.global_scale_std,
+        )
+        finger_scale = self._sample_array_scale(
+            rng,
+            shape=(5,),
+            prob=self.config.per_finger_scale_prob,
+            std=self.config.per_finger_scale_std,
+        )
+        per_joint_scale = self._sample_array_scale(
+            rng,
+            shape=(15, 1),
+            prob=self.config.per_joint_scale_prob,
+            std=self.config.per_joint_scale_std,
+            attenuation=joint_attenuation,
+        )
 
         joint_scale = np.ones((15, 1), dtype=np.float32) * global_scale
         for f_i, finger in enumerate(_FINGER_ORDER):
             sl = _FINGER_JOINT_SLICES_15[finger]
             joint_scale[sl, :] *= finger_scale[f_i]
-
-        # Correlation parameters (generate matrices)
-        M_joint = np.eye(3, dtype=np.float32)
-        if rng.rand() < self.config.joint_correlation_prob:
-            c_j = np.clip(np.abs(rng.randn() * float(self.config.joint_correlation_std)), 0, 0.99)
-            i_idx, j_idx = np.mgrid[0:3, 0:3]
-            M_joint = (c_j ** np.abs(i_idx - j_idx)).astype(np.float32)
-            M_joint /= M_joint.sum(axis=1, keepdims=True)
-            
-        M_finger = np.eye(5, dtype=np.float32)
-        if rng.rand() < self.config.finger_correlation_prob:
-            c_f = np.clip(np.abs(rng.randn() * float(self.config.finger_correlation_std)), 0, 0.99)
-            i_idx, j_idx = np.mgrid[0:5, 0:5]
-            M_finger = (c_f ** np.abs(i_idx - j_idx)).astype(np.float32)
-            M_finger /= M_finger.sum(axis=1, keepdims=True)
-
-        # Mask out joints if requested
-        joint_mask_1d = self._joint_mask_15()
-        joint_mask = joint_mask_1d.astype(np.float32).reshape(15, 1)
-
-        # Apply joint mask
-        joint_residual = joint_residual * joint_mask
+        joint_scale *= per_joint_scale
         joint_scale[~joint_mask_1d] = 1.0
 
-        # Apply joint mask to finger offsets (only on masked joints of that finger)
-        finger_offset_per_joint = np.zeros((15, 3), dtype=np.float32)
-        for f_i, finger in enumerate(_FINGER_ORDER):
-            sl = _FINGER_JOINT_SLICES_15[finger]
-            finger_offset_per_joint[sl] = finger_offset[f_i][None, :]
-        finger_offset_per_joint = finger_offset_per_joint * joint_mask
+        finger_crosstalk = self._sample_adjacent_finger_crosstalk(rng)
+        joint_coupling = self._sample_proximal_coupling(rng)
 
         params = {
             "finger_offset_per_joint": finger_offset_per_joint,  # (15,3)
             "joint_residual": joint_residual,  # (15,3)
             "joint_scale": joint_scale,  # (15,1)
-            "M_joint": M_joint,
-            "M_finger": M_finger,
+            "joint_mask": joint_mask,
+            "finger_crosstalk": finger_crosstalk,  # (5,5)
+            "joint_coupling": joint_coupling,  # (3,3)
         }
         return params
 
@@ -199,24 +304,31 @@ class BiasGenerator:
         assert pose.shape[-1] == 45, f"Expected hand_pose last dim 45, got {pose.shape}"
 
         params = self.get_bias_params(demo_id)
-        delta_45 = (params["finger_offset_per_joint"] + params["joint_residual"]).reshape(45)
-        joint_scale_45 = np.repeat(params["joint_scale"], 3, axis=1).reshape(45)
-        
-        M_joint = params["M_joint"]
-        M_finger = params["M_finger"]
-
         N = pose.shape[0]
         pose_reshaped = pose.reshape(N, 5, 3, 3)
+        scaled_pose = pose_reshaped * params["joint_scale"].reshape(1, 5, 3, 1)
 
-        # Apply intra-finger (joint) correlation
-        pose_reshaped = np.einsum('jk,nfka->nfja', M_joint, pose_reshaped)
+        # Adjacent fingers can bleed into each other at the same joint level.
+        crosstalk = np.einsum(
+            "fg,ngja->nfja",
+            params["finger_crosstalk"],
+            scaled_pose,
+        )
+        crosstalk *= _FINGER_JOINT_ATTENUATION.reshape(1, 5, 3, 1)
+        crosstalk *= params["joint_mask"].reshape(1, 5, 3, 1)
 
-        # Apply inter-finger correlation
-        pose_reshaped = np.einsum('fg,ngja->nfja', M_finger, pose_reshaped)
+        # Glove tendon / calibration leakage tends to flow proximal to distal only.
+        coupling = np.einsum(
+            "jk,nfka->nfja",
+            params["joint_coupling"],
+            scaled_pose,
+        )
+        coupling *= params["joint_mask"].reshape(1, 5, 3, 1)
 
-        pose_correlated = pose_reshaped.reshape(N, 45)
-
-        biased = (pose_correlated * joint_scale_45[None, :]) + delta_45[None, :]
+        structured_offset = (
+            params["finger_offset_per_joint"] + params["joint_residual"]
+        ).reshape(1, 5, 3, 3)
+        biased = (scaled_pose + crosstalk + coupling + structured_offset).reshape(N, 45)
 
         if self.config.clamp_delta_norm is not None:
             # clamp each 3D axis-angle delta norm (per joint)
