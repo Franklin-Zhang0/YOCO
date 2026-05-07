@@ -6,3 +6,4 @@ from .cnn_mlp import CNN_MLP
 from .combined_cnn_mlp import Combined_CNN_MLP
 from .combined_cnn_mlp_mixer import Combined_CNN_MLP_MIXER
 from .mano_head import ManoHead
+from .robot_joint_regressor import Robot_Joint_Regressor

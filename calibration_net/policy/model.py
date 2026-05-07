@@ -61,6 +61,21 @@ class Model(nn.Module):
                 input_channel=self.input_channel,
                 hidden_layers=self.hidden_layers
             )
+        elif self.model_type == 'Combined_CNN_MLP_MIXER_KEYPOINT':
+            self.network = Combined_CNN_MLP_MIXER(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                hidden_layers=self.hidden_layers
+            )
+        elif self.model_type == 'Robot_Joint_Regressor':
+            self.network = Robot_Joint_Regressor(
+                input_size=self.input_size,
+                output_size=self.output_size,
+                input_channel=self.input_channel,
+                joints_layout=self.joints_layout,
+                hidden_layers=self.hidden_layers
+            )
 
         elif self.model_type == 'CombinedMLP':
             self.network = CombinedModel(
