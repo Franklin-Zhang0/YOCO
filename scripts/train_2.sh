@@ -1,4 +1,4 @@
-expname=test_combined_cnn_mlp_leaky_global_mixer
+expname=combined_cnn_mlp_leaky_global_mixer_scheduler_composite
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 echo "Script directory: $SCRIPT_DIR"
 
@@ -9,16 +9,25 @@ python -m calibration_net.policy.train \
     dataset.cat_side=True \
     dataset.output_keys=mano_angles \
     dataset.preprocessing_x=[joint_3d_world_to_local] \
-    dataset.path=/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced.hdf5,/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_signed_aug_shape,/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_aug_shape.hdf5 \
-    val_dataset.path=/hand_keypoint_data/InterHand/val/hdf5/InterHand_retargeted_30fps_omni.hdf5\
+    dataset.path=/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced.hdf5,/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_signed_aug_shape,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_aug_shape.hdf5 \
+    val_dataset.path=/data/250010203/franklin/data/hand_keypoint_data/InterHand/val/hdf5/InterHand_retargeted_30fps_omni.hdf5\
     trainer.num_epochs=100 \
     trainer.batch_size=4096 \
     trainer.learning_rate=0.0001 \
+    trainer.lr_scheduler.enabled=True \
+    trainer.lr_scheduler.warmup_steps=1000 \
+    trainer.lr_scheduler.peak_lr=3e-5 \
+    trainer.lr_scheduler.final_lr=1.0e-6 \
+    trainer.lr_scheduler.total_steps=50000 \
     trainer.save_path=$SCRIPT_DIR/../expdata/$expname \
     trainer.calibnet_warmup_epochs=0 \
     trainer.device=cuda \
-    trainer.logger.type=[terminal] \
-    trainer.loss_type=mse \
+    trainer.logger.type=[terminal,file,wandb] \
+    trainer.loss_type=refine_composite \
+    trainer.loss_weights.mse=1.0 \
+    trainer.loss_weights.rel_distance=100.0 \
+    trainer.loss_weights.rel_vector=0.1 \
+    trainer.loss_weights.global_keypoint=0.5 \
     model.iknet_cfg.enabled=False \
     model.type=Combined_CNN_MLP_MIXER \
     # model.hypernet_cfg.name_filter=['layers','invk_layers'] \

@@ -22,15 +22,35 @@ dataset:
   # MANO-angle-space bias configuration
   bias_cfg:
     enabled: true
-    per_finger_offset_prob: 0.9
-    per_finger_offset_std: 0.15  # radians
-    per_joint_residual_prob: 0.7
-    per_joint_residual_std: 0.05  # radians
+    per_finger_offset_prob: 0.1
+    per_finger_offset_std: 0.05  # stable per-finger zero-offset template (radians)
+    per_joint_residual_prob: 0.1
+    per_joint_residual_std: 0.02  # small per-joint residual offset (radians)
+    global_scale_prob: 0.3
+    global_scale_std: 0.2  # session-wide gain error
+
+    # Gain parameters
+    per_finger_scale_prob: 0.2
+    per_finger_scale_std: 0.2
+    per_joint_scale_prob: 0.2
+    per_joint_scale_std: 0.08
+
+    # Structured leakage parameters
+    finger_correlation_prob: 0.4
+    finger_correlation_std: 0.3  # adjacent-finger crosstalk
+    joint_correlation_prob: 0.3
+    joint_correlation_std: 0.2  # proximal-to-distal coupling within a finger
+
     biased_joint_indices: null  # null = all joints; or list like [3,4,5,6,7,8] for specific joints
     clamp_delta_norm: null  # null = no clamp; or float like 0.3 to clamp max delta
     seed: 42
   
   num_hypernet_pairs: 16  # Number of paired poses for conditioning
+  frozen_mano_canonicalizer:
+    enabled: false
+    extractor_path: ""
+    chunk_size: 16384
+    max_batch_frames: 262144
 
 val_dataset:
   path: ""  # Empty = use train/val split
@@ -72,7 +92,7 @@ model:
     pair_fusion_dim: 256
     output_dim: 256  # Must match hypernet_cfg.input_size
     num_heads: 8
-    n_layers: 4  # Number of transformer layers with RoPE
+    n_layers: 6  # Number of transformer layers with RoPE
     dropout: 0.1
 
     # NEW: Shared-transformer, per-module attention pooling.
@@ -95,8 +115,8 @@ trainer:
 
   lr_scheduler:
     enabled: false  # To enable, set enabled: true and provide total_steps.
-    total_steps: 10000
-    warmup_steps: 500
+    total_steps: 20000
+    warmup_steps: 1000
     peak_lr: null  # null => fallback to trainer.learning_rate
     final_lr: 1.0e-6
     start_lr: 0.0
@@ -118,8 +138,6 @@ trainer:
     alignment: 0.02
   save_path: "expdata/"
   load_path: null  # Set to checkpoint path to resume training
-  fk_model_path: "expdata/fk/model/omni.pth"
-  fk_ds_path: "expdata/fk/dataset/omni.npz"
   save_interval: 5
   calib_finetune: true  # Train only HyperLoRA + preference extractor
   
