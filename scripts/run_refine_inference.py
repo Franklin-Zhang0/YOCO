@@ -17,7 +17,10 @@ import torch
 import viser
 import time
 
-from calibration_net.policy.refine_inferencer import RefineModelInferencer
+from calibration_net.policy.refine_inferencer import (
+    RefineModelInferencer,
+    resolve_torch_device,
+)
 from calibration_net.utils import mano_recon, transform_joint3d, scale_hand_fingers
 
 
@@ -103,11 +106,7 @@ def main():
     args = parse_args()
     
     # Determine device
-    if args.device is None:
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    else:
-        device = args.device
-    
+    device = resolve_torch_device(args.device)
     print(f"Using device: {device}")
     
     # Load paired poses from HDF5
@@ -141,6 +140,9 @@ def main():
             fixed_noise=True,
         )
         print("  Inferencer created successfully")
+        status = inferencer.canonicalizer_status()
+        if status is not None:
+            print(f"  {status}")
     except Exception as e:
         print(f"  Error creating inferencer: {e}")
         raise
@@ -154,8 +156,19 @@ def main():
     
     # Reconstruct predicted joints from mano_angles using mano_recon
     print("\nReconstructing joints from predicted mano_angles...")
-    pred_theta = torch.tensor(mano_angles_pred, dtype=torch.float32)
-    betas_tensor = torch.tensor(calib_data['betas'], dtype=torch.float32).unsqueeze(0).expand(pred_theta.shape[0], -1)
+    runtime_device = inferencer.device
+    pred_theta = torch.as_tensor(
+        mano_angles_pred,
+        dtype=torch.float32,
+        device=runtime_device,
+    )
+    betas_tensor = torch.as_tensor(
+        calib_data['betas'],
+        dtype=torch.float32,
+        device=runtime_device,
+    )
+    if betas_tensor.ndim == 1:
+        betas_tensor = betas_tensor.unsqueeze(0).expand(pred_theta.shape[0], -1)
     side = calib_data['mano_side'][0]
     
     _, recon_joint3d = mano_recon(pred_theta, side=side, betas=betas_tensor)

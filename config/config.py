@@ -18,6 +18,15 @@ class DatasetConfig:
     bias_cfg: Optional[Dict[str, Any]] = None
     num_hypernet_pairs: int = 4
     pair_subsample: bool = False
+    reference_poses_path: str = field(default_factory=str)
+    frozen_mano_canonicalizer: Dict[str, Any] = field(
+        default_factory=lambda: {
+            'enabled': False,
+            'extractor_path': '',
+            'chunk_size': 16384,
+            'max_batch_frames': 262144,
+        }
+    )
 
 @dataclass
 class ValDatasetConfig:
