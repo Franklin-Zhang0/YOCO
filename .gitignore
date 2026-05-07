@@ -4,3 +4,18 @@ expdata/
 wandb/
 data/
 data_generation/
+*.pkl
+*.hdf5
+*.h5
+*.npz
+*.log
+.vscode/
+.kilocode/
+.codex/
+.codex
+AGENTS.md
+ckpt.md
+scripts/train_direct_finetune.sh
+
+# Timestamped local capture/calibration dumps, e.g. 20260306_151100/.
+20??????_??????/
