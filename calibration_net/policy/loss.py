@@ -5,6 +5,8 @@ import numpy as np
 
 TIP_INDICIES = [4, 8, 12, 16, 20]
 FINGER_KEYPOINT_INDICIES = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]]
+DEFAULT_PINCH_PAIR_INDICIES = [(4, 8), (4, 12), (4, 16), (4, 20)]
+DEFAULT_PINCH_THRESHOLD_M = 0.005
 
 def get_pose_weight_scale():
     weight_scale = torch.zeros(21, 21)
@@ -305,18 +307,48 @@ def relative_vector_loss(pred_joints, gt_joints, tip_indices=TIP_INDICIES, base_
     return loss
 
 
+def pinch_l1_loss(
+    pred_joints,
+    gt_joints,
+    pinch_pairs=DEFAULT_PINCH_PAIR_INDICIES,
+    threshold_m=DEFAULT_PINCH_THRESHOLD_M,
+):
+    """Mean predicted fingertip separation on GT pinch frames.
+
+    Mirrors eval/evaluate_calibration.py's pinch_error_l1_m: a pair is counted
+    when the GT fingertip distance is below threshold_m, then the loss is the
+    L1 distance between that predicted fingertip pair.
+    """
+    pinch_values = []
+    for left_idx, right_idx in pinch_pairs:
+        gt_delta = gt_joints[:, left_idx] - gt_joints[:, right_idx]
+        mask = torch.norm(gt_delta, dim=-1) < threshold_m
+        if not mask.any():
+            continue
+
+        pred_delta = pred_joints[:, left_idx] - pred_joints[:, right_idx]
+        pred_l1 = pred_delta[mask].abs().sum(dim=-1)
+        pinch_values.append(pred_l1)
+
+    if not pinch_values:
+        return pred_joints.sum() * 0.0
+
+    return torch.cat(pinch_values).mean()
+
+
 def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights):
-    """Compute refine_composite loss: MSE + relative distance + relative vector losses.
+    """Compute refine_composite loss: MSE + geometric MANO-joint losses.
     
     Args:
         pred_theta: (B, 45) predicted MANO pose parameters (with gradients)
         gt_theta: (B, 45) GT MANO pose parameters
         mse_loss: scalar, pre-computed MSE loss on MANO parameters
         side: (B,) hand side tensor (1=left, -1=right)
-        loss_weights: dict with keys 'mse', 'rel_distance', 'rel_vector', 'global_keypoint' and their weights
+        loss_weights: dict with keys like 'mse', 'rel_distance', 'rel_vector',
+            'global_keypoint', and 'pinch' and their weights
         
     Returns:
-        loss: dict with keys 'loss', 'mse', 'rel_distance', 'rel_vector', 'global_keypoint'
+        loss: dict with keys 'loss' and the unweighted component losses
     """
     from calibration_net.utils import mano_recon
     
@@ -372,6 +404,7 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
     loss['rel_distance'] = relative_distance_loss(pred_joints, gt_joints)
     loss['rel_vector'] = relative_vector_loss(pred_joints, gt_joints)
     loss['global_keypoint'] = F.mse_loss(pred_joints, gt_joints)
+    loss['pinch'] = pinch_l1_loss(pred_joints, gt_joints)
     
     # Combine all losses using loss_weights
     total_loss = 0.0
@@ -381,5 +414,3 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
     loss['loss'] = total_loss
     
     return loss
-
-

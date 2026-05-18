@@ -82,7 +82,7 @@ class FrozenManoCanonicalizer:
         )
 
     @torch.no_grad()
-    def _canonicalize_flat_np(self, flat_joints: np.ndarray, side: str) -> np.ndarray:
+    def _predict_theta_flat_np(self, flat_joints: np.ndarray, side: str) -> np.ndarray:
         side = decode_mano_side(side)
         flat_joints = np.asarray(flat_joints)
         if flat_joints.ndim != 3 or flat_joints.shape[-2:] != (21, 3):
@@ -93,9 +93,9 @@ class FrozenManoCanonicalizer:
 
         flat_joints = flat_joints.astype(np.float32, copy=False)
         if flat_joints.shape[0] == 0:
-            return flat_joints.copy()
+            return np.empty((0, 45), dtype=np.float32)
 
-        canonical_flat = []
+        theta_chunks = []
         enc_side = Side.__dict__[side.upper()].value
         for start in range(0, flat_joints.shape[0], self.chunk_size):
             stop = min(flat_joints.shape[0], start + self.chunk_size)
@@ -113,6 +113,28 @@ class FrozenManoCanonicalizer:
                 pred_theta = pred_theta['pred_y']
             pred_theta = pred_theta.detach().cpu().numpy()
             pred_theta = self.process_y_fn(pred_theta)
+            theta_chunks.append(pred_theta.astype(np.float32, copy=False))
+
+        return np.concatenate(theta_chunks, axis=0)
+
+    @torch.no_grad()
+    def _canonicalize_flat_np(self, flat_joints: np.ndarray, side: str) -> np.ndarray:
+        side = decode_mano_side(side)
+        flat_joints = np.asarray(flat_joints)
+        if flat_joints.ndim != 3 or flat_joints.shape[-2:] != (21, 3):
+            raise ValueError(
+                'Frozen MANO canonicalizer expects flat input shape (N, 21, 3), '
+                f'got {flat_joints.shape}'
+            )
+
+        flat_joints = flat_joints.astype(np.float32, copy=False)
+        if flat_joints.shape[0] == 0:
+            return flat_joints.copy()
+
+        canonical_flat = []
+        for start in range(0, flat_joints.shape[0], self.chunk_size):
+            stop = min(flat_joints.shape[0], start + self.chunk_size)
+            pred_theta = self._predict_theta_flat_np(flat_joints[start:stop], side)
             pred_theta = torch.as_tensor(pred_theta, device=self.device, dtype=torch.float32)
 
             zero_betas = torch.zeros((pred_theta.shape[0], 10), device=self.device, dtype=pred_theta.dtype)
@@ -127,6 +149,21 @@ class FrozenManoCanonicalizer:
             canonical_flat.append(recon_joint3d.detach().cpu().numpy())
 
         return np.concatenate(canonical_flat, axis=0)
+
+    @torch.no_grad()
+    def predict_theta(self, joints: np.ndarray | torch.Tensor, side: str) -> np.ndarray:
+        side = decode_mano_side(side)
+        joints_np = joints.detach().cpu().numpy() if isinstance(joints, torch.Tensor) else np.asarray(joints)
+        if joints_np.shape[-2:] != (21, 3):
+            raise ValueError(
+                'Frozen MANO canonicalizer expects input shape (..., 21, 3), '
+                f'got {joints_np.shape}'
+            )
+
+        leading_shape = joints_np.shape[:-2]
+        flat_joints = joints_np.reshape(-1, 21, 3).astype(np.float32, copy=False)
+        theta = self._predict_theta_flat_np(flat_joints, side)
+        return theta.reshape(*leading_shape, 45).astype(np.float32, copy=False)
 
     @torch.no_grad()
     def canonicalize_many(self, joints_list: list[np.ndarray], side: str) -> list[np.ndarray]:
