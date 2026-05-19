@@ -22,24 +22,24 @@ dataset:
   # MANO-angle-space bias configuration
   bias_cfg:
     enabled: true
-    per_finger_offset_prob: 0.1
-    per_finger_offset_std: 0.05  # stable per-finger zero-offset template (radians)
-    per_joint_residual_prob: 0.1
-    per_joint_residual_std: 0.02  # small per-joint residual offset (radians)
-    global_scale_prob: 0.3
-    global_scale_std: 0.2  # session-wide gain error
+    per_finger_offset_prob: 0.5
+    per_finger_offset_std: 0.3  # stable per-finger zero-offset template (radians)
+    per_joint_residual_prob: 0.4
+    per_joint_residual_std: 0.3  # small per-joint residual offset (radians)
+    global_scale_prob: 0.6
+    global_scale_std: 0.5  # session-wide gain error
 
     # Gain parameters
-    per_finger_scale_prob: 0.2
-    per_finger_scale_std: 0.2
-    per_joint_scale_prob: 0.2
-    per_joint_scale_std: 0.08
+    per_finger_scale_prob: 0.3
+    per_finger_scale_std: 0.4
+    per_joint_scale_prob: 0.3
+    per_joint_scale_std: 0.4
 
     # Structured leakage parameters
-    finger_correlation_prob: 0.4
-    finger_correlation_std: 0.3  # adjacent-finger crosstalk
-    joint_correlation_prob: 0.3
-    joint_correlation_std: 0.2  # proximal-to-distal coupling within a finger
+    finger_correlation_prob: 0.3
+    finger_correlation_std: 0.4  # adjacent-finger crosstalk
+    joint_correlation_prob: 0.4
+    joint_correlation_std: 0.4 # proximal-to-distal coupling within a finger
 
     biased_joint_indices: null  # null = all joints; or list like [3,4,5,6,7,8] for specific joints
     clamp_delta_norm: null  # null = no clamp; or float like 0.3 to clamp max delta
@@ -85,6 +85,13 @@ model:
     max_norm: null  # Optional: max Frobenius norm for delta weights (null = disabled)
     reg_weight: 0.01  # Weight for regularization loss (penalize large deltas)
     reg_type: "frobenius"  # 'frobenius' (recommended) | 'b_only' | 'nuclear'
+    head_type: "dit_flow"  # 'mlp' | 'dit_flow'
+    dit_hidden_dim: 128
+    dit_num_tokens: 4
+    dit_depth: 2
+    dit_num_heads: 4
+    dit_steps: 2
+    dit_mlp_ratio: 2.0
   
   preference_extractor_cfg:
     enabled: true

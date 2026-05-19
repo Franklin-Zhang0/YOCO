@@ -52,6 +52,13 @@ class HypernetCfg:
     max_norm: Optional[float] = None  # Max Frobenius norm for delta weights
     reg_weight: float = 0.0  # Weight for regularization loss
     reg_type: str = 'frobenius'  # 'frobenius' | 'b_only' | 'nuclear'
+    head_type: str = 'mlp'  # 'mlp' | 'dit_flow'
+    dit_hidden_dim: int = 128
+    dit_num_tokens: int = 4
+    dit_depth: int = 2
+    dit_num_heads: int = 4
+    dit_steps: int = 2
+    dit_mlp_ratio: float = 2.0
 
 @dataclass
 class IKNetCfg:

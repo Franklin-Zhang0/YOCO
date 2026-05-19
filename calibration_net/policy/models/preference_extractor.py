@@ -269,12 +269,10 @@ class PairedPoseExtractor(nn.Module):
         # Project tokens to transformer dimension
         pose_token_feats = self.token_proj(pose_token_feats)  # (B, K, 2, num_tokens, pair_fusion_dim)
         
-        # Add role embeddings: 0 for biased, 1 for true
-        # role_emb_biased = self.role_embeddings(torch.tensor(0, device=pose_token_feats.device))  # (pair_fusion_dim,)
-        # role_emb_true = self.role_embeddings(torch.tensor(1, device=pose_token_feats.device))  # (pair_fusion_dim,)
-        
-        # pose_token_feats[:, :, 0, :, :] = pose_token_feats[:, :, 0, :, :] + role_emb_biased
-        # pose_token_feats[:, :, 1, :, :] = pose_token_feats[:, :, 1, :, :] + role_emb_true
+        # Add role embeddings: 0 = biased, 1 = true.
+        role_ids = torch.arange(2, device=pose_token_feats.device)
+        role_emb = self.role_embeddings(role_ids).view(1, 1, 2, 1, -1)
+        pose_token_feats = pose_token_feats + role_emb
         
         # Concatenate biased + true tokens per pair: (B, K, 2*num_tokens, pair_fusion_dim)
         pair_tokens = pose_token_feats.reshape(B, K, 2 * num_tokens, self.pair_fusion_dim)
@@ -290,15 +288,9 @@ class PairedPoseExtractor(nn.Module):
         # pair_mask: (B, K) True = valid, False = padding
         # We need to mask out all tokens from padded pairs
         # token_mask: (B, 1 + K*2*num_tokens) False = attend, True = ignore
-        token_mask = torch.zeros(B, 1 + K * 2 * num_tokens, dtype=torch.bool, device=pair_mask.device)
-        
-        # CLS token is never masked (index 0)
-        # For each pair k, tokens are at indices [1 + k*2*num_tokens : 1 + (k+1)*2*num_tokens]
-        for k in range(K):
-            start_idx = 1 + k * 2 * num_tokens
-            end_idx = 1 + (k + 1) * 2 * num_tokens
-            # If pair k is padding (pair_mask[:, k] == False), mask its tokens
-            token_mask[:, start_idx:end_idx] = ~pair_mask[:, k].unsqueeze(1)
+        cls_mask = torch.zeros(B, 1, dtype=torch.bool, device=pair_mask.device)
+        pair_token_mask = (~pair_mask).unsqueeze(-1).expand(B, K, 2 * num_tokens)
+        token_mask = torch.cat([cls_mask, pair_token_mask.reshape(B, K * 2 * num_tokens)], dim=1)
         
         # Apply transformer layers with RoPE
         for layer in self.transformer_layers:
