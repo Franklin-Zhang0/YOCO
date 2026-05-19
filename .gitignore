@@ -9,6 +9,7 @@ data_generation/
 *.h5
 *.npz
 *.log
+*.pid
 .vscode/
 .kilocode/
 .codex/
