@@ -194,6 +194,7 @@ class Args:
     show_grid: bool = True
     point_size: float = 0.002
     line_width: float = 1.0
+    apply_shape_dir_fix: bool = True
 
 
 def main(args: Args) -> None:
@@ -357,7 +358,12 @@ def main(args: Args) -> None:
             print(f"Theta MSE Loss: {theta_mse:.6f}")
             # pred_theta = torch.tensor(biased_thetas)[0].reshape(-1,45)
             # pred_theta = torch.tensor(gt_theta)
-            _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'), betas=betas, apply_left_shapedirs_fix=True)
+            _, recon_joint3d = mano_recon(
+                pred_theta,
+                side=data[traj_id]['mano_side'][0].decode('utf-8'),
+                betas=betas,
+                apply_left_shapedirs_fix=args.apply_shape_dir_fix,
+            )
         else:
             recon_joint3d = pred_theta
         
@@ -377,7 +383,7 @@ def main(args: Args) -> None:
             gt_theta,
             side=data[traj_id]['mano_side'][0].decode('utf-8'),
             betas=betas,
-            apply_left_shapedirs_fix=True,
+            apply_left_shapedirs_fix=args.apply_shape_dir_fix,
         )
         recon_gt_kepoint = torch.tensor(data[traj_id]['world_hand_joints'][:]) if 'world_hand_joints' in data[traj_id].keys() else recon_gt_kepoint
         gt_keypoint = transform_joint3d(recon_gt_kepoint).cpu().numpy()
