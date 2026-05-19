@@ -336,7 +336,57 @@ def pinch_l1_loss(
     return torch.cat(pinch_values).mean()
 
 
-def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights):
+def batch_similarity_align(source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Differentiable similarity alignment from source joints to target joints."""
+    if source.shape != target.shape:
+        raise ValueError(
+            f"source and target must have the same shape, got {source.shape} "
+            f"and {target.shape}."
+        )
+
+    source_mean = source.mean(dim=1, keepdim=True)
+    target_mean = target.mean(dim=1, keepdim=True)
+    source_centered = source - source_mean
+    target_centered = target - target_mean
+
+    covariance = source_centered.transpose(1, 2) @ target_centered
+    u, singular_values, vh = torch.linalg.svd(covariance, full_matrices=False)
+    correction = torch.ones(
+        source.shape[0],
+        3,
+        device=source.device,
+        dtype=source.dtype,
+    )
+    correction[:, -1] = torch.sign(torch.det(u @ vh)).clamp(min=0) * 2 - 1
+    correction_matrix = torch.diag_embed(correction)
+    rotation = u @ correction_matrix @ vh
+
+    source_var = (source_centered ** 2).sum(dim=(1, 2)).clamp_min(1e-8)
+    scale = (singular_values * correction).sum(dim=1) / source_var
+
+    return scale[:, None, None] * (source_centered @ rotation) + target_mean
+
+
+def pa_keypoint_loss(pred_joints, gt_joints):
+    """MSE after Procrustes-style similarity alignment."""
+    aligned_pred = batch_similarity_align(pred_joints, gt_joints)
+    return F.mse_loss(aligned_pred, gt_joints)
+
+
+def pa_mpjpe_loss(pred_joints, gt_joints):
+    """Mean joint L2 after Procrustes-style similarity alignment."""
+    aligned_pred = batch_similarity_align(pred_joints, gt_joints)
+    return torch.linalg.norm(aligned_pred - gt_joints, dim=-1).mean()
+
+
+def get_refine_composite_loss(
+    pred_theta,
+    gt_theta,
+    mse_loss,
+    side,
+    loss_weights,
+    betas=None,
+):
     """Compute refine_composite loss: MSE + geometric MANO-joint losses.
     
     Args:
@@ -356,6 +406,8 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
     loss['mse'] = mse_loss
     
     B = pred_theta.shape[0]
+    if betas is not None:
+        betas = betas.to(device=pred_theta.device, dtype=pred_theta.dtype)
     
     # Split batch by side and compute MANO joints
     left_mask = (side == 1)
@@ -371,14 +423,23 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
         left_gt_theta = gt_theta[left_idx]
         
         # Get predicted joints with gradients
-        _, pred_left_joints = mano_recon(left_pred_theta, side='left')
+        left_betas = betas[left_idx] if betas is not None else None
+        _, pred_left_joints = mano_recon(
+            left_pred_theta,
+            side='left',
+            betas=left_betas,
+        )
         # Center at wrist
         pred_left_joints = pred_left_joints - pred_left_joints[:, 0:1, :]
         pred_joints[left_idx] = pred_left_joints
         
         # Get GT joints without gradients
         with torch.no_grad():
-            _, gt_left_joints = mano_recon(left_gt_theta, side='left')
+            _, gt_left_joints = mano_recon(
+                left_gt_theta,
+                side='left',
+                betas=left_betas,
+            )
             gt_left_joints = gt_left_joints - gt_left_joints[:, 0:1, :]
         gt_joints[left_idx] = gt_left_joints
     
@@ -389,14 +450,23 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
         right_gt_theta = gt_theta[right_idx]
         
         # Get predicted joints with gradients
-        _, pred_right_joints = mano_recon(right_pred_theta, side='right')
+        right_betas = betas[right_idx] if betas is not None else None
+        _, pred_right_joints = mano_recon(
+            right_pred_theta,
+            side='right',
+            betas=right_betas,
+        )
         # Center at wrist
         pred_right_joints = pred_right_joints - pred_right_joints[:, 0:1, :]
         pred_joints[right_idx] = pred_right_joints
         
         # Get GT joints without gradients
         with torch.no_grad():
-            _, gt_right_joints = mano_recon(right_gt_theta, side='right')
+            _, gt_right_joints = mano_recon(
+                right_gt_theta,
+                side='right',
+                betas=right_betas,
+            )
             gt_right_joints = gt_right_joints - gt_right_joints[:, 0:1, :]
         gt_joints[right_idx] = gt_right_joints
     
@@ -404,6 +474,8 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
     loss['rel_distance'] = relative_distance_loss(pred_joints, gt_joints)
     loss['rel_vector'] = relative_vector_loss(pred_joints, gt_joints)
     loss['global_keypoint'] = F.mse_loss(pred_joints, gt_joints)
+    loss['pa_keypoint'] = pa_keypoint_loss(pred_joints, gt_joints)
+    loss['pa_mpjpe'] = pa_mpjpe_loss(pred_joints, gt_joints)
     loss['pinch'] = pinch_l1_loss(pred_joints, gt_joints)
     
     # Combine all losses using loss_weights
