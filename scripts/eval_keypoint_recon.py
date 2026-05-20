@@ -166,6 +166,7 @@ MANO_CONNECTIONS = [
     (0, 13), (13, 14), (14, 15), (15, 16),
     (0, 17), (17, 18), (18, 19), (19, 20)
 ]
+TIP_JOINT_INDICES = [4, 8, 12, 16, 20]
 
 
 def _make_bone_segments(joints: np.ndarray) -> np.ndarray:
@@ -176,11 +177,37 @@ def _make_bone_segments(joints: np.ndarray) -> np.ndarray:
     return np.stack(segs, axis=0)
 
 
+def _batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Align source joints to target joints per frame with similarity Procrustes."""
+    aligned = np.empty_like(source, dtype=np.float64)
+    for i, (src, tgt) in enumerate(zip(source, target)):
+        src_mean = src.mean(axis=0, keepdims=True)
+        tgt_mean = tgt.mean(axis=0, keepdims=True)
+        src_centered = src - src_mean
+        tgt_centered = tgt - tgt_mean
+        src_var = np.sum(src_centered ** 2)
+
+        if src_var < 1e-12:
+            aligned[i] = np.broadcast_to(tgt_mean, src.shape)
+            continue
+
+        u, _, vh = np.linalg.svd(src_centered.T @ tgt_centered)
+        rot = u @ vh
+        if np.linalg.det(rot) < 0:
+            vh[-1] *= -1
+            rot = u @ vh
+
+        scale = np.trace(rot.T @ src_centered.T @ tgt_centered) / src_var
+        aligned[i] = scale * (src_centered @ rot) + tgt_mean
+    return aligned
+
+
 @dataclass
 class Args:
     dataset_path: str
     model_path: str
     port: int = 8087
+    input_key: Optional[str] = None
     
     # Playback
     fps: float = 30.0
@@ -272,10 +299,19 @@ def main(args: Args) -> None:
         else:
             pose_name = "N/A"
         
-        keypoint_key = "world_hand_joints"
-        if 'world_hand_joints_biased' in data[traj_id].keys():
-            print("Using biased keypoints input")
-            keypoint_key = 'world_hand_joints_biased'
+        if args.input_key is not None:
+            if args.input_key not in data[traj_id].keys():
+                raise KeyError(
+                    f"Input key {args.input_key!r} not found in trajectory {traj_id}. "
+                    f"Available keys: {list(data[traj_id].keys())}"
+                )
+            keypoint_key = args.input_key
+            print(f"Using requested keypoints input: {keypoint_key}")
+        else:
+            keypoint_key = "world_hand_joints"
+            if 'world_hand_joints_biased' in data[traj_id].keys():
+                print("Using biased keypoints input")
+                keypoint_key = 'world_hand_joints_biased'
         
         raw_keypoint_traj = data[traj_id][keypoint_key][:]
         if raw_keypoint_traj.ndim == 4:
@@ -362,7 +398,19 @@ def main(args: Args) -> None:
         print(f"Reconstruction MSE Loss: {recon_loss:.6f}")
         recon_mae = np.mean(np.abs(recon_joint3d - gt_keypoint))
         print(f"Reconstruction MAE Loss: {recon_mae:.6f}")
-        return recon_mae, recon_loss
+        mpjpe = np.mean(np.linalg.norm(recon_joint3d - gt_keypoint, axis=-1))
+        print(f"MPJPE: {mpjpe:.6f} m ({mpjpe * 1000:.3f} mm)")
+        pa_recon_joint3d = _batch_similarity_align(recon_joint3d, gt_keypoint)
+        pa_mpjpe = np.mean(np.linalg.norm(pa_recon_joint3d - gt_keypoint, axis=-1))
+        print(f"PA-MPJPE: {pa_mpjpe:.6f} m ({pa_mpjpe * 1000:.3f} mm)")
+        tip_mpjpe = np.mean(
+            np.linalg.norm(
+                recon_joint3d[:, TIP_JOINT_INDICES] - gt_keypoint[:, TIP_JOINT_INDICES],
+                axis=-1,
+            )
+        )
+        print(f"Tip MPJPE: {tip_mpjpe:.6f} m ({tip_mpjpe * 1000:.3f} mm)")
+        return recon_mae, recon_loss, mpjpe, pa_mpjpe, tip_mpjpe
     
     load_trajectory(0, 0)
         

@@ -336,6 +336,35 @@ def pinch_l1_loss(
     return torch.cat(pinch_values).mean()
 
 
+def pinch_l1_loss(
+    pred_joints,
+    gt_joints,
+    pinch_pairs=DEFAULT_PINCH_PAIR_INDICIES,
+    threshold_m=DEFAULT_PINCH_THRESHOLD_M,
+):
+    """Mean predicted fingertip separation on GT pinch frames.
+
+    Mirrors eval/evaluate_calibration.py's pinch_error_l1_m: a pair is counted
+    when the GT fingertip distance is below threshold_m, then the loss is the
+    L1 distance between that predicted fingertip pair.
+    """
+    pinch_values = []
+    for left_idx, right_idx in pinch_pairs:
+        gt_delta = gt_joints[:, left_idx] - gt_joints[:, right_idx]
+        mask = torch.norm(gt_delta, dim=-1) < threshold_m
+        if not mask.any():
+            continue
+
+        pred_delta = pred_joints[:, left_idx] - pred_joints[:, right_idx]
+        pred_l1 = pred_delta[mask].abs().sum(dim=-1)
+        pinch_values.append(pred_l1)
+
+    if not pinch_values:
+        return pred_joints.sum() * 0.0
+
+    return torch.cat(pinch_values).mean()
+
+
 def batch_similarity_align(source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """Differentiable similarity alignment from source joints to target joints."""
     if source.shape != target.shape:
@@ -394,6 +423,8 @@ def get_refine_composite_loss(
         gt_theta: (B, 45) GT MANO pose parameters
         mse_loss: scalar, pre-computed MSE loss on MANO parameters
         side: (B,) hand side tensor (1=left, -1=right)
+        loss_weights: dict with keys like 'mse', 'rel_distance', 'rel_vector',
+            'global_keypoint', and 'pinch' and their weights
         loss_weights: dict with keys like 'mse', 'rel_distance', 'rel_vector',
             'global_keypoint', and 'pinch' and their weights
         
