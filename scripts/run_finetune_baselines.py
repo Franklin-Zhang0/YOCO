@@ -1,0 +1,618 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+from pathlib import Path
+from time import perf_counter
+from typing import Any
+
+import h5py
+import numpy as np
+import torch
+import torch.nn.functional as F
+from tqdm.auto import tqdm
+
+from calibration_net.policy.baseline_finetune import (
+    BaselineConfig,
+    adapt_model,
+    configure_baseline_model,
+    predict,
+    trainable_parameter_count,
+)
+from calibration_net.policy.loss import (
+    TIP_INDICIES,
+    compute_relative_distances,
+    relative_distance_loss,
+)
+from calibration_net.policy.model import load_model
+from calibration_net.policy.preprocessing import build_preprocessing
+from calibration_net.utils import mano_recon, scale_hand_fingers, transform_joint3d
+
+
+TIP_JOINT_INDICES = [4, 8, 12, 16, 20]
+
+
+def batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Align source joints to target joints per frame with similarity Procrustes."""
+    aligned = np.empty_like(source, dtype=np.float64)
+    for i, (src, tgt) in enumerate(zip(source, target)):
+        src_mean = src.mean(axis=0, keepdims=True)
+        tgt_mean = tgt.mean(axis=0, keepdims=True)
+        src_centered = src - src_mean
+        tgt_centered = tgt - tgt_mean
+        src_var = np.sum(src_centered ** 2)
+
+        if src_var < 1e-12:
+            aligned[i] = np.broadcast_to(tgt_mean, src.shape)
+            continue
+
+        u, _, vh = np.linalg.svd(src_centered.T @ tgt_centered)
+        rot = u @ vh
+        if np.linalg.det(rot) < 0:
+            vh[-1] *= -1
+            rot = u @ vh
+
+        scale = np.trace(rot.T @ src_centered.T @ tgt_centered) / src_var
+        aligned[i] = scale * (src_centered @ rot) + tgt_mean
+    return aligned
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Per-session LoRA/full/head/linear finetune baselines for "
+            "joint->MANO calibration."
+        )
+    )
+    parser.add_argument("--model-dir", required=True, help="Pretrained checkpoint dir")
+    parser.add_argument("--data-path", required=True, help="Calibration/eval HDF5")
+    parser.add_argument("--output-dir", required=True, help="Directory for metrics")
+    parser.add_argument(
+        "--method",
+        required=True,
+        choices=["lora", "full_ft", "residual_linear", "last_layer"],
+    )
+    parser.add_argument(
+        "--num-calib-actions",
+        type=int,
+        nargs="+",
+        default=[4],
+        help=(
+            "Calibration pair/frame counts to sweep. Example: "
+            "--num-calib-actions 4 8 16"
+        ),
+    )
+    parser.add_argument("--steps", type=int, default=200)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--device", default=None)
+    parser.add_argument(
+        "--input-key",
+        default="world_hand_joints_biased",
+        help="Observed/biased joint key. Falls back to world_hand_joints.",
+    )
+    parser.add_argument("--target-key", default="mano_angles")
+    parser.add_argument(
+        "--clean-input-key",
+        default="world_hand_joints",
+        help="Clean/non-biased joints used to build pseudo GT with the original model.",
+    )
+    parser.add_argument(
+        "--target-source",
+        choices=["clean_model", "dataset"],
+        default="dataset",
+        help=(
+            "clean_model: use original model(clean joints) as GT MANO pose. "
+            "dataset: use --target-key from HDF5."
+        ),
+    )
+    parser.add_argument(
+        "--true-joints-key",
+        default="",
+        help="Optional true joint key. Auto-detects world_hand_joints_true/world_hand_joints.",
+    )
+    parser.add_argument(
+        "--split-key",
+        default="",
+        help="Optional per-frame action/pose label key. If set, K means K unique labels.",
+    )
+    parser.add_argument("--max-sessions", type=int, default=0)
+    parser.add_argument(
+        "--sample-idx",
+        type=int,
+        default=-1,
+        help=(
+            "Biased sample index for keys shaped (S,T,...). "
+            "Use -1 to evaluate all biased samples as separate sessions."
+        ),
+    )
+    parser.add_argument("--lora-rank", type=int, default=4)
+    parser.add_argument("--lora-alpha", type=float, default=8.0)
+    parser.add_argument("--lora-dropout", type=float, default=0.0)
+    parser.add_argument(
+        "--target-modules",
+        nargs="*",
+        default=["mano_regressor", "fusion_attention"],
+        help="Name filters for static LoRA target Linear modules.",
+    )
+    parser.add_argument("--grad-clip", type=float, default=1.0)
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable tqdm progress bars.",
+    )
+    parser.add_argument(
+        "--no-reconstruction",
+        action="store_true",
+        help="Skip MANO reconstruction metrics.",
+    )
+    return parser.parse_args()
+
+
+def decode_side(value: Any) -> str:
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return "right"
+        value = value.reshape(-1)[0]
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value).lower()
+
+
+def read_array(group: h5py.Group, key: str, sample_idx: int = 0) -> np.ndarray:
+    array = np.asarray(group[key])
+    if array.ndim >= 4 and key.endswith("_biased"):
+        if sample_idx < 0:
+            raise ValueError("sample_idx must be >= 0 when reading a biased sample")
+        sample_idx = min(sample_idx, array.shape[0] - 1)
+        array = array[sample_idx]
+    return array.astype(np.float32, copy=False) if np.issubdtype(array.dtype, np.number) else array
+
+
+def biased_sample_indices(group: h5py.Group, input_key: str, sample_idx: int) -> list[int]:
+    if input_key not in group:
+        return [0]
+    shape = group[input_key].shape
+    if len(shape) >= 4 and input_key.endswith("_biased"):
+        if sample_idx < 0:
+            return list(range(shape[0]))
+        return [min(sample_idx, shape[0] - 1)]
+    return [0]
+
+
+def resolve_input_key(group: h5py.Group, requested_key: str) -> str:
+    if requested_key in group:
+        return requested_key
+    if "world_hand_joints" in group:
+        return "world_hand_joints"
+    raise KeyError(
+        f"Input key '{requested_key}' not found and no 'world_hand_joints' fallback in "
+        f"group keys={list(group.keys())}"
+    )
+
+
+def resolve_true_joints_key(group: h5py.Group, requested_key: str) -> str | None:
+    if requested_key and requested_key in group:
+        return requested_key
+    for key in ("world_hand_joints_true", "world_hand_joints"):
+        if key in group:
+            return key
+    return None
+
+
+def split_indices(
+    group: h5py.Group,
+    length: int,
+    num_calib: int,
+    seed: int,
+    split_key: str = "",
+) -> tuple[np.ndarray, np.ndarray, str]:
+    rng = np.random.default_rng(seed)
+    all_indices = np.arange(length)
+    if split_key and split_key in group:
+        labels = np.asarray(group[split_key])
+        labels = labels.reshape(-1)
+        if len(labels) != length:
+            raise ValueError(
+                f"split_key '{split_key}' has length {len(labels)}, expected {length}"
+            )
+        unique_labels = np.array(sorted(set(labels.tolist())))
+        if len(unique_labels) <= num_calib:
+            calib_labels = unique_labels
+        else:
+            calib_labels = rng.choice(unique_labels, size=num_calib, replace=False)
+        calib_mask = np.isin(labels, calib_labels)
+        eval_mask = ~calib_mask
+        if not eval_mask.any():
+            eval_mask = np.ones_like(calib_mask, dtype=bool)
+        return all_indices[calib_mask], all_indices[eval_mask], "label"
+
+    if length <= num_calib:
+        return all_indices, all_indices, "frame_all"
+    calib_indices = rng.choice(all_indices, size=num_calib, replace=False)
+    eval_mask = np.ones(length, dtype=bool)
+    eval_mask[calib_indices] = False
+    return np.sort(calib_indices), all_indices[eval_mask], "frame"
+
+
+def to_tensor(array: np.ndarray, device: torch.device) -> torch.Tensor:
+    return torch.as_tensor(array, dtype=torch.float32, device=device)
+
+
+def process_arrays(
+    x_raw: np.ndarray,
+    y_raw: np.ndarray,
+    process_x,
+    process_y_train,
+) -> tuple[np.ndarray, np.ndarray]:
+    x = process_x(x_raw)
+    y = process_y_train(y_raw)
+    return np.asarray(x, dtype=np.float32), np.asarray(y, dtype=np.float32)
+
+
+@torch.no_grad()
+def theta_metrics(pred_theta: torch.Tensor, gt_theta: torch.Tensor) -> dict[str, float]:
+    return {
+        "theta_mse": float(F.mse_loss(pred_theta, gt_theta).cpu()),
+        "theta_mae": float(torch.mean(torch.abs(pred_theta - gt_theta)).cpu()),
+    }
+
+
+def reconstruction_metrics(
+    pred_theta: torch.Tensor,
+    gt_theta: torch.Tensor,
+    true_joints: np.ndarray | None,
+    side: str,
+    model: torch.nn.Module | None = None,
+) -> dict[str, float]:
+    with torch.no_grad():
+        try:
+            _, pred_joints = mano_recon(pred_theta, side=side)
+            network = getattr(model, "network", None)
+            if network is None and hasattr(model, "base_model"):
+                network = getattr(model.base_model, "network", None)
+            if network is not None and hasattr(network, "finger_scaling"):
+                pred_joints = scale_hand_fingers(pred_joints, network.finger_scaling)
+
+            if true_joints is None:
+                _, gt_joints = mano_recon(gt_theta, side=side)
+                target_joints = gt_joints
+            else:
+                target_joints = torch.as_tensor(
+                    true_joints,
+                    dtype=torch.float32,
+                    device=pred_theta.device,
+                )
+
+            pred_local = transform_joint3d(pred_joints)
+            target_local = transform_joint3d(target_joints)
+            pred_local = torch.as_tensor(
+                pred_local, dtype=torch.float32, device=pred_theta.device
+            )
+            target_local = torch.as_tensor(
+                target_local, dtype=torch.float32, device=pred_theta.device
+            )
+
+            pred_dists = compute_relative_distances(pred_local)
+            gt_dists = compute_relative_distances(target_local)
+            pred_np = pred_local.detach().cpu().numpy()
+            target_np = target_local.detach().cpu().numpy()
+            pa_pred_np = batch_similarity_align(pred_np, target_np)
+
+            recon_mse = float(np.mean((pred_np - target_np) ** 2))
+            recon_mae = float(np.mean(np.abs(pred_np - target_np)))
+            mpjpe = float(np.mean(np.linalg.norm(pred_np - target_np, axis=-1)))
+            pa_mpjpe = float(np.mean(np.linalg.norm(pa_pred_np - target_np, axis=-1)))
+            tip_mpjpe = float(
+                np.mean(
+                    np.linalg.norm(
+                        pred_np[:, TIP_JOINT_INDICES] - target_np[:, TIP_JOINT_INDICES],
+                        axis=-1,
+                    )
+                )
+            )
+
+            return {
+                "mse": recon_mse,
+                "mae": recon_mae,
+                "mpjpe": mpjpe,
+                "pa_mpjpe": pa_mpjpe,
+                "tip_mpjpe": tip_mpjpe,
+                "mpjpe_mm": mpjpe * 1000.0,
+                "pa_mpjpe_mm": pa_mpjpe * 1000.0,
+                "tip_mpjpe_mm": tip_mpjpe * 1000.0,
+                "joint_mse": recon_mse,
+                "joint_mae": recon_mae,
+                "tip_mse": float(
+                    F.mse_loss(pred_local[:, TIP_INDICIES], target_local[:, TIP_INDICIES]).cpu()
+                ),
+                "relative_distance_loss": float(
+                    relative_distance_loss(pred_local, target_local).cpu()
+                ),
+                "mean_abs_tip_distance_error": float(
+                    torch.mean(torch.abs(pred_dists - gt_dists)).cpu()
+                ),
+            }
+        except Exception as exc:
+            return {"reconstruction_error": str(exc)}
+
+
+def summarize(rows: list[dict[str, Any]]) -> dict[str, float]:
+    summary: dict[str, float] = {}
+    numeric_keys = sorted(
+        {
+            key
+            for row in rows
+            for key, value in row.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+    )
+    for key in numeric_keys:
+        values = [float(row[key]) for row in rows if isinstance(row.get(key), (int, float))]
+        if values:
+            summary[f"{key}_mean"] = float(np.mean(values))
+            summary[f"{key}_std"] = float(np.std(values))
+    return summary
+
+
+def write_outputs(output_dir: Path, rows: list[dict[str, Any]], summary: dict[str, Any]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_dir / "metrics.json", "w", encoding="utf-8") as f:
+        json.dump({"sessions": rows, "summary": summary}, f, indent=2, sort_keys=True)
+
+    if rows:
+        keys = sorted({key for row in rows for key in row.keys()})
+        with open(output_dir / "metrics.csv", "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def run_session(
+    group: h5py.Group,
+    session_name: str,
+    args: argparse.Namespace,
+    cfg: dict[str, Any],
+    norm_stats: dict[str, Any],
+    device: torch.device,
+    num_calib_actions: int,
+    sample_idx: int,
+) -> dict[str, Any]:
+    model, _, _ = load_model(args.model_dir, device=str(device))
+    model.to(device)
+    model.eval()
+
+    input_key = resolve_input_key(group, args.input_key)
+    if args.target_source == "dataset" and args.target_key not in group:
+        raise KeyError(f"Target key '{args.target_key}' not found in session {session_name}")
+    if args.target_source == "clean_model" and args.clean_input_key not in group:
+        raise KeyError(
+            f"Clean input key '{args.clean_input_key}' not found in session {session_name}"
+        )
+
+    x_raw = read_array(group, input_key, sample_idx=sample_idx)
+    process_x = build_preprocessing(cfg["dataset"]["preprocessing_x"], "x", norm_stats)
+    process_y_train = build_preprocessing(cfg["dataset"]["preprocessing_y"], "y", norm_stats)
+    process_y_eval = build_preprocessing(
+        [
+            process if process != "normalize" else "denormalize"
+            for process in cfg["dataset"]["preprocessing_y"]
+        ],
+        "y",
+        norm_stats,
+    )
+    x_proc = np.asarray(process_x(x_raw), dtype=np.float32)
+
+    if args.target_source == "clean_model":
+        clean_raw = read_array(group, args.clean_input_key, sample_idx=sample_idx)
+        if len(x_raw) != len(clean_raw):
+            raise ValueError(
+                f"Session {session_name} input/clean length mismatch: "
+                f"{len(x_raw)} vs {len(clean_raw)}"
+            )
+        clean_proc = np.asarray(process_x(clean_raw), dtype=np.float32)
+        with torch.no_grad():
+            clean_tensor = to_tensor(clean_proc, device)
+            y_proc_tensor = predict(model, clean_tensor)
+        y_proc = y_proc_tensor.detach().cpu().numpy().astype(np.float32)
+        y_raw = np.asarray(process_y_eval(y_proc), dtype=np.float32)
+    else:
+        y_raw = read_array(group, args.target_key, sample_idx=sample_idx)
+        y_proc = np.asarray(process_y_train(y_raw), dtype=np.float32)
+
+    if len(x_proc) != len(y_proc):
+        raise ValueError(
+            f"Session {session_name} input/target length mismatch: "
+            f"{len(x_proc)} vs {len(y_proc)}"
+        )
+
+    calib_idx, eval_idx, split_mode = split_indices(
+        group,
+        len(x_proc),
+        num_calib_actions,
+        args.seed,
+        split_key=args.split_key,
+    )
+
+    baseline = BaselineConfig(
+        method=args.method,
+        num_calib_actions=num_calib_actions,
+        steps=args.steps,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        seed=args.seed,
+        target_modules=args.target_modules,
+        lora_rank=args.lora_rank,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+    )
+
+    torch.manual_seed(args.seed)
+    adapted_model = configure_baseline_model(
+        model,
+        method=baseline.method,
+        input_shape=tuple(x_proc.shape[1:]),
+        output_size=y_proc.shape[-1],
+        target_modules=baseline.target_modules,
+        lora_rank=baseline.lora_rank,
+        lora_alpha=baseline.lora_alpha,
+        lora_dropout=baseline.lora_dropout,
+    ).to(device)
+
+    x_calib = to_tensor(x_proc[calib_idx], device)
+    y_calib = to_tensor(y_proc[calib_idx], device)
+    losses, adaptation_time = adapt_model(
+        adapted_model,
+        x_calib,
+        y_calib,
+        steps=baseline.steps,
+        lr=baseline.lr,
+        weight_decay=baseline.weight_decay,
+        grad_clip=args.grad_clip,
+        show_progress=not args.no_progress,
+        progress_desc=f"{args.method} k={num_calib_actions} {session_name}",
+    )
+
+    x_eval = to_tensor(x_proc[eval_idx], device)
+    inference_start = perf_counter()
+    pred_proc = predict(adapted_model, x_eval)
+    inference_time = perf_counter() - inference_start
+
+    pred_np = pred_proc.detach().cpu().numpy()
+    pred_theta_np = process_y_eval(pred_np)
+    gt_theta_np = y_raw[eval_idx]
+    pred_theta = to_tensor(np.asarray(pred_theta_np, dtype=np.float32), device)
+    gt_theta = to_tensor(np.asarray(gt_theta_np, dtype=np.float32), device)
+
+    metrics: dict[str, Any] = {
+        "session": session_name,
+        "group": session_name.split("/")[0],
+        "sample_idx": int(sample_idx),
+        "method": args.method,
+        "target_source": args.target_source,
+        "split_mode": split_mode,
+        "num_calib_requested": num_calib_actions,
+        "num_calib_samples": int(len(calib_idx)),
+        "num_eval_samples": int(len(eval_idx)),
+        "steps": int(args.steps),
+        "lr": float(args.lr),
+        "weight_decay": float(args.weight_decay),
+        "trainable_params": int(trainable_parameter_count(adapted_model)),
+        "adaptation_time_sec": float(adaptation_time),
+        "inference_time_sec": float(inference_time),
+        "final_adapt_loss": float(losses[-1]) if losses else None,
+        "initial_adapt_loss": float(losses[0]) if losses else None,
+    }
+    metrics.update(theta_metrics(pred_theta, gt_theta))
+
+    if not args.no_reconstruction:
+        true_joints = None
+        if args.target_source == "dataset":
+            true_key = resolve_true_joints_key(group, args.true_joints_key)
+            if true_key is not None:
+                true_joints = read_array(group, true_key, sample_idx=sample_idx)[eval_idx]
+        side = "right"
+        if "mano_side" in group:
+            side = decode_side(np.asarray(group["mano_side"]))
+        metrics.update(
+            reconstruction_metrics(
+                pred_theta,
+                gt_theta,
+                true_joints,
+                side,
+                model=adapted_model,
+            )
+        )
+
+    if hasattr(adapted_model, "remove_hooks"):
+        adapted_model.remove_hooks()
+    return metrics
+
+
+def main() -> None:
+    args = parse_args()
+    device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+
+    _, norm_stats, cfg = load_model(args.model_dir, device="cpu")
+    input_key_for_samples = args.input_key
+
+    with h5py.File(os.path.expanduser(args.data_path), "r") as f:
+        session_names = list(f.keys())
+        try:
+            session_names = sorted(session_names, key=lambda item: int(item))
+        except Exception:
+            session_names = sorted(session_names)
+        if args.max_sessions > 0:
+            session_names = session_names[: args.max_sessions]
+
+        for num_calib_actions in args.num_calib_actions:
+            output_dir = Path(args.output_dir) / args.method / f"k{num_calib_actions}"
+            rows: list[dict[str, Any]] = []
+            total_units = 0
+            for session_name in session_names:
+                group = f[session_name]
+                resolved_input_key = (
+                    input_key_for_samples
+                    if input_key_for_samples in group
+                    else "world_hand_joints"
+                )
+                total_units += len(
+                    biased_sample_indices(group, resolved_input_key, args.sample_idx)
+                )
+
+            unit_idx = 0
+            session_iter = tqdm(
+                session_names,
+                desc=f"{args.method} k={num_calib_actions} sessions",
+                disable=args.no_progress,
+            )
+            for session_name in session_iter:
+                group = f[session_name]
+                resolved_input_key = (
+                    input_key_for_samples
+                    if input_key_for_samples in group
+                    else "world_hand_joints"
+                )
+                sample_indices = biased_sample_indices(
+                    group, resolved_input_key, args.sample_idx
+                )
+                sample_iter = tqdm(
+                    sample_indices,
+                    desc=f"{session_name} biased samples",
+                    leave=False,
+                    disable=args.no_progress or len(sample_indices) <= 1,
+                )
+                for sample_idx in sample_iter:
+                    unit_idx += 1
+                    label = f"{session_name}/sample_{sample_idx}"
+                    if not args.no_progress:
+                        session_iter.set_postfix(unit=f"{unit_idx}/{total_units}")
+                    print(
+                        f"[{unit_idx}/{total_units}] {args.method} "
+                        f"k={num_calib_actions} session={label}"
+                    )
+                    row = run_session(
+                        group,
+                        label,
+                        args,
+                        cfg,
+                        norm_stats,
+                        device,
+                        num_calib_actions=num_calib_actions,
+                        sample_idx=sample_idx,
+                    )
+                    rows.append(row)
+                    write_outputs(output_dir, rows, summarize(rows))
+
+            summary = summarize(rows)
+            write_outputs(output_dir, rows, summary)
+            print(f"Summary for {args.method} k={num_calib_actions}")
+            print(json.dumps(summary, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

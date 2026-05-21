@@ -53,11 +53,17 @@ class RefineModelInferencer():
         self.cat_side = self.cfg['dataset'].get('cat_side', False)
 
         process_x = self.cfg['dataset']['preprocessing_x']
-        process_y = self.cfg['dataset']['preprocessing_y']
-        process_y = [
-            process if process != 'normalize' else 'denormalize'
-            for process in process_y
-        ]
+        process_y = []
+        for process in self.cfg['dataset']['preprocessing_y']:
+            if process == 'normalize':
+                process_y.append('denormalize')
+            elif process in {'joint_3d_world_to_local', 'flatten'}:
+                # These transforms define the supervised target space. Model
+                # outputs are already in that space, so reapplying them during
+                # inference would corrupt direct keypoint predictions.
+                continue
+            else:
+                process_y.append(process)
         self.process_x_fn = build_preprocessing(process_x, 'x', norm_stats=self.norm_stats)
         self.process_y_fn = build_preprocessing(process_y, 'y', norm_stats=self.norm_stats)
 

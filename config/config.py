@@ -52,6 +52,13 @@ class HypernetCfg:
     max_norm: Optional[float] = None  # Max Frobenius norm for delta weights
     reg_weight: float = 0.0  # Weight for regularization loss
     reg_type: str = 'frobenius'  # 'frobenius' | 'b_only' | 'nuclear'
+    head_type: str = 'mlp'  # 'mlp' | 'dit_flow'
+    dit_hidden_dim: int = 128
+    dit_num_tokens: int = 4
+    dit_depth: int = 2
+    dit_num_heads: int = 4
+    dit_steps: int = 2
+    dit_mlp_ratio: float = 2.0
 
 @dataclass
 class IKNetCfg:
@@ -131,6 +138,20 @@ class TrainerConfig:
     save_interval: int = 5  # Save model every n epochs
     calib_finetune: bool = False
     logger: LoggerConfig = field(default_factory=LoggerConfig)
+
+
+@dataclass
+class BaselineConfig:
+    method: str = 'lora'  # 'lora', 'full_ft', 'residual_linear', 'last_layer'
+    num_calib_actions: int = 4
+    steps: int = 200
+    lr: float = 1e-4
+    weight_decay: float = 0.0
+    seed: int = 42
+    target_modules: list[str] = field(default_factory=lambda: ['mano_regressor', 'fusion_attention'])
+    lora_rank: int = 4
+    lora_alpha: float = 8.0
+    lora_dropout: float = 0.0
     
 @dataclass
 class Config:
@@ -138,3 +159,4 @@ class Config:
     val_dataset: ValDatasetConfig = field(default_factory=ValDatasetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     trainer: TrainerConfig = field(default_factory=TrainerConfig)
+    baseline: BaselineConfig = field(default_factory=BaselineConfig)

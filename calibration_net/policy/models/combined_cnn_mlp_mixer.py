@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -59,6 +58,16 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         conv_channel = 64
         encoder_out_dim = conv_channel * 5 # 320
         self.finger_scaling = nn.Parameter(torch.ones(5))
+        self.register_buffer(
+            "finger_indices",
+            torch.tensor(Mediapipe2Mano, dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "tip_indices",
+            torch.tensor(TIP_INDICES, dtype=torch.long),
+            persistent=False,
+        )
 
         self.mano_head = ManoHead()
         
@@ -130,7 +139,10 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         # 1. Individual Finger Encoding
         finger_feats_list = []
         for i in range(5):
-            finger_input = torch.cat([x[:, :, :1], x[:, :, np.array(Mediapipe2Mano[i])]], dim=2)
+            finger_input = torch.cat([
+                x[:, :, :1],
+                x.index_select(2, self.finger_indices[i]),
+            ], dim=2)
             finger_feat = self.finger_encoder[i](finger_input) # (B, 320)
             finger_feats_list.append(finger_feat)
         
@@ -138,12 +150,13 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         finger_feats_stack = torch.stack(finger_feats_list, dim=1)
         
         # 2. Fingertip Feature Extraction
-        tips = x[:, :, TIP_INDICES] # (B, C, 5)
+        tips = x.index_select(2, self.tip_indices) # (B, C, 5)
         tip_feat = self.tip_encoder(tips) # (B, 320)
         tip_feat = tip_feat.unsqueeze(1)  # (B, 1, 320)
         
         # 3. Fusion (Self-Attention)
         fusion_input = torch.cat([finger_feats_stack, tip_feat], dim=1)  # (B, 6, 320)
+        fusion_input = self.fusion_norm(fusion_input)
         fusion_out = self.fusion_attention(fusion_input) # (B, 6, 320)
         
         # Return full token features (not pooled)
@@ -159,7 +172,10 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         # 1. Individual Finger Encoding
         finger_feats_list = []
         for i in range(5):
-            finger_input = torch.cat([x[:, :, :1], x[:, :, np.array(Mediapipe2Mano[i])]], dim=2)
+            finger_input = torch.cat([
+                x[:, :, :1],
+                x.index_select(2, self.finger_indices[i]),
+            ], dim=2)
             finger_feat = self.finger_encoder[i](finger_input) # (B, 320)
             finger_feats_list.append(finger_feat)
         
@@ -169,7 +185,7 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         # 2. Fingertip Feature Extraction
         # Extract the 5 fingertips based on TIP_INDICES
         # x is (B, C, N), we slice N
-        tips = x[:, :, TIP_INDICES] # (B, C, 5)
+        tips = x.index_select(2, self.tip_indices) # (B, C, 5)
         tip_feat = self.tip_encoder(tips) # (B, 320)
         tip_feat = tip_feat.unsqueeze(1)  # (B, 1, 320)
         
@@ -177,6 +193,7 @@ class Combined_CNN_MLP_MIXER(nn.Module):
         # Concatenate: [Finger1, Finger2, Finger3, Finger4, Finger5, TipsContext]
         # Shape: (B, 6, 320)
         fusion_input = torch.cat([finger_feats_stack, tip_feat], dim=1)
+        fusion_input = self.fusion_norm(fusion_input)
         
         # Apply Transformer Encoder
         # We usually apply residual connection or norm, but TransformerEncoderLayer handles that internally.

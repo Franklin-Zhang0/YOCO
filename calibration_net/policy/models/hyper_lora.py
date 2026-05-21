@@ -23,10 +23,6 @@ def lora_hook(module, input, output, lora_weight, rank, alpha=1.0, drop_out=0.0,
         gate: Optional learnable gate parameter (scalar)
         max_norm: Optional max Frobenius norm for delta weights
     """
-    rand = torch.rand(1).item()
-    if rand < drop_out:
-        return output
-    
     in_dim, out_dim = module.in_features, module.out_features
     batch_size = lora_weight.shape[0]
     lora_A = lora_weight[:, :in_dim*rank].reshape(batch_size, in_dim, rank)
@@ -46,6 +42,18 @@ def lora_hook(module, input, output, lora_weight, rank, alpha=1.0, drop_out=0.0,
         lora_output = lora_output.squeeze(1)  # (B, out_dim)
     else:
         lora_output = input[0] @ delta_w 
+
+    if drop_out > 0.0 and module.training:
+        keep_prob = 1.0 - float(drop_out)
+        if keep_prob <= 0.0:
+            return output
+        mask_shape = (lora_output.shape[0],) + (1,) * (lora_output.dim() - 1)
+        keep_mask = torch.empty(
+            mask_shape,
+            dtype=lora_output.dtype,
+            device=lora_output.device,
+        ).bernoulli_(keep_prob)
+        lora_output = lora_output * keep_mask / keep_prob
     
     # Optional: learnable gate (starts near 0)
     if gate is not None:
@@ -67,6 +75,172 @@ class HyperLoRAHookContext(AbstractContextManager):
     def __exit__(self, exc_type, exc, tb):
         self.outer.unregister_hooks()
         return False  # don’t suppress exceptions
+
+
+class FlowTimeEmbedding(nn.Module):
+    def __init__(self, dim: int, n_fourier: int = 32):
+        super().__init__()
+        self.register_buffer("freq", torch.randn(n_fourier) * 2.0)
+        self.proj = nn.Sequential(
+            nn.Linear(2 * n_fourier, dim),
+            nn.SiLU(),
+            nn.Linear(dim, dim),
+        )
+
+    def forward(self, t: Tensor) -> Tensor:
+        angles = t * self.freq[None, :] * (2.0 * math.pi)
+        features = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
+        return self.proj(features)
+
+
+def modulate(x: Tensor, shift: Tensor, scale: Tensor) -> Tensor:
+    return x * (1.0 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+
+
+class AdaLNDiTBlock(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_heads: int,
+        mlp_ratio: float = 2.0,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        if hidden_dim % num_heads != 0:
+            raise ValueError(
+                f"hidden_dim={hidden_dim} must be divisible by num_heads={num_heads}"
+            )
+
+        mlp_dim = int(hidden_dim * mlp_ratio)
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.attn = nn.MultiheadAttention(
+            hidden_dim,
+            num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_dim, mlp_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(mlp_dim, hidden_dim),
+        )
+        self.ada_ln = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim * 6),
+        )
+        nn.init.zeros_(self.ada_ln[-1].weight)
+        nn.init.zeros_(self.ada_ln[-1].bias)
+
+    def forward(self, x: Tensor, cond: Tensor) -> Tensor:
+        shift_attn, scale_attn, gate_attn, shift_mlp, scale_mlp, gate_mlp = (
+            self.ada_ln(cond).chunk(6, dim=-1)
+        )
+
+        attn_input = modulate(self.norm1(x), shift_attn, scale_attn)
+        attn_output, _ = self.attn(
+            attn_input,
+            attn_input,
+            attn_input,
+            need_weights=False,
+        )
+        x = x + gate_attn.unsqueeze(1) * attn_output
+
+        mlp_input = modulate(self.norm2(x), shift_mlp, scale_mlp)
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(mlp_input)
+        return x
+
+
+class TinyDiTFlowHead(nn.Module):
+    """Tiny latent DiT flow head for HyperLoRA weight generation.
+
+    The head integrates a small token latent with an Euler flow conditioned on
+    the calibration embedding, then projects the final tokens to LoRA A/B
+    weights. The final projection is initialized with random A rows and zero B
+    rows so the adapter starts near the standard LoRA identity point while still
+    allowing gradients into B immediately.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        a_dim: int,
+        a_fan_in: int,
+        hidden_dim: int = 128,
+        num_tokens: int = 4,
+        depth: int = 2,
+        num_heads: int = 4,
+        n_steps: int = 2,
+        mlp_ratio: float = 2.0,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.output_dim = output_dim
+        self.a_dim = a_dim
+        self.hidden_dim = hidden_dim
+        self.num_tokens = num_tokens
+        self.n_steps = max(1, int(n_steps))
+
+        self.cond_proj = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.GELU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.init_proj = nn.Linear(hidden_dim, num_tokens * hidden_dim)
+        self.time_embed = FlowTimeEmbedding(hidden_dim)
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_tokens, hidden_dim))
+        self.start_tokens = nn.Parameter(torch.zeros(1, num_tokens, hidden_dim))
+        self.blocks = nn.ModuleList(
+            [
+                AdaLNDiTBlock(
+                    hidden_dim=hidden_dim,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    dropout=dropout,
+                )
+                for _ in range(depth)
+            ]
+        )
+        self.velocity_norm = nn.LayerNorm(hidden_dim)
+        self.velocity_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.output_norm = nn.LayerNorm(hidden_dim)
+        self.output_proj = nn.Linear(num_tokens * hidden_dim, output_dim)
+
+        nn.init.normal_(self.pos_embed, std=0.02)
+        nn.init.normal_(self.velocity_proj.weight, std=0.02)
+        nn.init.zeros_(self.velocity_proj.bias)
+        self._init_lora_output(a_fan_in)
+
+    def _init_lora_output(self, a_fan_in: int):
+        bound_a = 1.0 / np.sqrt(a_fan_in)
+        with torch.no_grad():
+            self.output_proj.weight[: self.a_dim].uniform_(-bound_a, bound_a)
+            self.output_proj.bias[: self.a_dim].uniform_(-bound_a, bound_a)
+            self.output_proj.weight[self.a_dim :].zero_()
+            self.output_proj.bias[self.a_dim :].zero_()
+
+    def _velocity(self, z: Tensor, cond: Tensor, t: Tensor) -> Tensor:
+        h = z + self.pos_embed
+        time_cond = cond + self.time_embed(t)
+        for block in self.blocks:
+            h = block(h, time_cond)
+        return self.velocity_proj(self.velocity_norm(h))
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch_size = x.shape[0]
+        cond = self.cond_proj(x)
+        z = self.start_tokens.expand(batch_size, -1, -1)
+        z = z + self.init_proj(cond).view(batch_size, self.num_tokens, self.hidden_dim)
+
+        dt = 1.0 / self.n_steps
+        for step in range(self.n_steps):
+            t = x.new_full((batch_size, 1), (step + 0.5) * dt)
+            z = z + dt * self._velocity(z, cond, t)
+
+        z = self.output_norm(z).reshape(batch_size, self.num_tokens * self.hidden_dim)
+        return self.output_proj(z)
 
 def w1_to_uniform(x: torch.Tensor, a: float = 0.0, b: float = 1.0):
     """1D Wasserstein-1 distance between empirical samples x and Uniform(a,b)."""
@@ -125,46 +299,76 @@ class HyperBlock(nn.Module):
         use_tanh=False,
         scale_A=1.0,
         scale_B=1.0,
+        head_type='mlp',
+        dit_hidden_dim=128,
+        dit_num_tokens=4,
+        dit_depth=2,
+        dit_num_heads=4,
+        dit_steps=2,
+        dit_mlp_ratio=2.0,
     ):
         super(HyperBlock, self).__init__()
         self.input_dim = input_dim
-        if hidden_layers == [] or hidden_layers is None:
-            hidden_layers = [256, 256]
-        self.linear1 = nn.Linear(input_dim, hidden_layers[0])
         self.in_feat = in_feat
         self.out_feat = out_feat
         self.rank = rank
-        self.gelu = nn.GELU()
-        self.layers = nn.ModuleList()
-        hidden_dim = hidden_layers[0]
-        for dim in hidden_layers:
-            self.layers.append(nn.Linear(hidden_dim, dim))
-            self.layers.append(nn.GELU())
-            self.layers.append(nn.LayerNorm(dim))
-            hidden_dim = dim
-
-        self.fc = nn.Linear(hidden_dim, in_feat * rank + rank * out_feat)
-        
-        # Bounded parameterization
+        self.output_dim = in_feat * rank + rank * out_feat
+        self.head_type = head_type
         self.use_tanh = use_tanh
         self.scale_A = scale_A
         self.scale_B = scale_B
-        
-        # Initialize based on method
-        if init_method == 'wasserstein' and train_init:
-            init_hypernet(self, sample_num=256, n_steps=30)
-        elif init_method == 'xavier':
-            # Xavier initialization for A part
-            fan_in_A = in_feat
-            bound_A = 1.0 / np.sqrt(fan_in_A)
-            with torch.no_grad():
-                # Initialize A part
-                self.fc.weight[:, :in_feat * rank].uniform_(-bound_A, bound_A)
-                self.fc.bias[:in_feat * rank].uniform_(-bound_A, bound_A)
 
-        # B always zero-initialized (standard LoRA)
-        nn.init.zeros_(self.fc.weight[:, in_feat * rank:])
-        nn.init.zeros_(self.fc.bias[in_feat * rank:])
+        if hidden_layers == [] or hidden_layers is None:
+            hidden_layers = [256, 256]
+
+        if self.head_type in ('mlp', 'resmlp'):
+            self.linear1 = nn.Linear(input_dim, hidden_layers[0])
+            self.gelu = nn.GELU()
+            self.layers = nn.ModuleList()
+            hidden_dim = hidden_layers[0]
+            for dim in hidden_layers:
+                self.layers.append(nn.Linear(hidden_dim, dim))
+                self.layers.append(nn.GELU())
+                self.layers.append(nn.LayerNorm(dim))
+                hidden_dim = dim
+
+            self.fc = nn.Linear(hidden_dim, self.output_dim)
+
+            if init_method == 'wasserstein' and train_init:
+                init_hypernet(self, sample_num=256, n_steps=30)
+            self._init_mlp_output(init_method=init_method)
+        elif self.head_type in ('dit_flow', 'tiny_dit_flow', 'dit'):
+            self.flow_head = TinyDiTFlowHead(
+                input_dim=input_dim,
+                output_dim=self.output_dim,
+                a_dim=in_feat * rank,
+                a_fan_in=in_feat,
+                hidden_dim=dit_hidden_dim,
+                num_tokens=dit_num_tokens,
+                depth=dit_depth,
+                num_heads=dit_num_heads,
+                n_steps=dit_steps,
+                mlp_ratio=dit_mlp_ratio,
+                dropout=0.0,
+            )
+        else:
+            raise ValueError(
+                f"Unknown HyperBlock head_type={head_type!r}. "
+                "Expected 'mlp' or 'dit_flow'."
+            )
+
+    def _init_mlp_output(self, init_method='xavier'):
+        if init_method == 'xavier':
+            bound_A = 1.0 / np.sqrt(self.in_feat)
+            with torch.no_grad():
+                self.fc.weight[: self.in_feat * self.rank].uniform_(-bound_A, bound_A)
+                self.fc.bias[: self.in_feat * self.rank].uniform_(-bound_A, bound_A)
+
+        # B always zero-initialized (standard LoRA). Slice rows, not columns:
+        # fc.weight has shape (output_dim, hidden_dim).
+        with torch.no_grad():
+            self.fc.weight[self.in_feat * self.rank :].zero_()
+            self.fc.bias[self.in_feat * self.rank :].zero_()
 
     def forward(self, x):
         """Generate LoRA weights from conditioning vector.
@@ -175,11 +379,14 @@ class HyperBlock(nn.Module):
         Returns:
             LoRA weights (B, in_feat*rank + rank*out_feat)
         """
-        x = self.linear1(x)
-        x = self.gelu(x)
-        for layer in self.layers:
-            x = layer(x)
-        raw_weights = self.fc(x)
+        if self.head_type in ('mlp', 'resmlp'):
+            x = self.linear1(x)
+            x = self.gelu(x)
+            for layer in self.layers:
+                x = layer(x)
+            raw_weights = self.fc(x)
+        else:
+            raw_weights = self.flow_head(x)
         
         if self.use_tanh:
             # Split and bound separately
@@ -216,6 +423,7 @@ class HyperLoRA(nn.Module):
         max_norm: Optional max Frobenius norm for delta weights
         reg_weight: Weight for regularization loss
         reg_type: 'frobenius' | 'b_only' | 'nuclear'
+        head_type: HyperLoRA generator head, 'mlp' or 'dit_flow'
     """
     
     def __init__(
@@ -238,6 +446,13 @@ class HyperLoRA(nn.Module):
         max_norm=None,
         reg_weight=0.0,
         reg_type='frobenius',
+        head_type='mlp',
+        dit_hidden_dim=128,
+        dit_num_tokens=4,
+        dit_depth=2,
+        dit_num_heads=4,
+        dit_steps=2,
+        dit_mlp_ratio=2.0,
     ):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
@@ -258,6 +473,13 @@ class HyperLoRA(nn.Module):
         self.max_norm = max_norm
         self.reg_weight = reg_weight
         self.reg_type = reg_type
+        self.head_type = head_type
+        self.dit_hidden_dim = dit_hidden_dim
+        self.dit_num_tokens = dit_num_tokens
+        self.dit_depth = dit_depth
+        self.dit_num_heads = dit_num_heads
+        self.dit_steps = dit_steps
+        self.dit_mlp_ratio = dit_mlp_ratio
         
         # Hook management
         self._hook_handles = []
@@ -293,6 +515,13 @@ class HyperLoRA(nn.Module):
                     use_tanh=self.use_tanh,
                     scale_A=self.scale_A,
                     scale_B=self.scale_B,
+                    head_type=self.head_type,
+                    dit_hidden_dim=self.dit_hidden_dim,
+                    dit_num_tokens=self.dit_num_tokens,
+                    dit_depth=self.dit_depth,
+                    dit_num_heads=self.dit_num_heads,
+                    dit_steps=self.dit_steps,
+                    dit_mlp_ratio=self.dit_mlp_ratio,
                 )
                 self.modules_list.append((layers, module))
                 

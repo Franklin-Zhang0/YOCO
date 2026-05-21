@@ -61,7 +61,7 @@ class Trainer():
         if self.trainer_args.load_path:
             print(f"Loading model from {self.trainer_args.load_path}")
             model, normalization_stats, loaded_cfg = load_model(self.trainer_args.load_path)
-            self.dataset.normalization_stats = normalization_stats
+            self._apply_normalization_stats(normalization_stats)
             if loaded_cfg['model']['output_size'] != self.args.model.output_size:
                 # self.switch_last_layer()
                 # loaded_cfg['model']['output_size'] = self.args.model.output_size
@@ -203,12 +203,48 @@ class Trainer():
             val_dataset_args = deepcopy(self.args.dataset)
             val_dataset_args.path = self.args.val_dataset.path
             self.valset = SequenceDataset(**val_dataset_args, is_train=False)
-            self.valset.normalization_stats = self.trainset.normalization_stats  # use the same stats for validation set
+            # Use train normalization for validation and rebuild cached processed
+            # examples so validation matches the saved inference stats.
+            self._set_dataset_normalization_stats(
+                self.valset,
+                self.trainset.normalization_stats,
+                refetch=True,
+            )
         # self.trainset = torch.utils.data.Subset(self.dataset, range(256))  
         # self.valset = torch.utils.data.Subset(self.dataset, range(128))
         
         self.trainloader = DataLoader(self.trainset, batch_size=self.trainer_args.batch_size, shuffle=True, num_workers=0)
         self.valloader = DataLoader(self.valset, batch_size=self.trainer_args.batch_size, shuffle=False, num_workers=0)
+
+    def _unwrap_dataset(self, dataset):
+        while isinstance(dataset, torch.utils.data.Subset):
+            dataset = dataset.dataset
+        return dataset
+
+    def _set_dataset_normalization_stats(
+        self,
+        dataset,
+        normalization_stats,
+        refetch: bool,
+    ):
+        dataset = self._unwrap_dataset(dataset)
+        if hasattr(dataset, 'set_normalization_stats'):
+            dataset.set_normalization_stats(normalization_stats, refetch=refetch)
+        else:
+            dataset.normalization_stats = normalization_stats
+
+    def _apply_normalization_stats(self, normalization_stats):
+        seen = set()
+        for dataset in (self.dataset, self.trainset, self.valset):
+            dataset = self._unwrap_dataset(dataset)
+            if id(dataset) in seen:
+                continue
+            seen.add(id(dataset))
+            self._set_dataset_normalization_stats(
+                dataset,
+                normalization_stats,
+                refetch=True,
+            )
         
     def get_loss(self, data, result):
         B = data['input'].shape[0]
@@ -251,16 +287,15 @@ class Trainer():
             loss['loss'] = total_loss
         elif loss_type == 'mse':
             loss = {'loss': result['loss'].mean()}
-            return loss
         elif loss_type == 'refine_composite':
             loss = get_refine_composite_loss(
                 pred_theta=result['pred_y'],
                 gt_theta=data['output'].to(self.device),
                 mse_loss=result['loss'].mean(),
                 side=data['side'].to(self.device),
-                loss_weights=self.loss_weights
+                loss_weights=self.loss_weights,
+                betas=data.get('betas', None),
             )
-            return loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -391,6 +426,7 @@ class Trainer():
                         'preference_extractor.pool_attn.in_proj_weight',
                         'hyperlora.gates.0',
                         'hyperlora.lora_modules.0.fc.weight',
+                        'hyperlora.lora_modules.0.flow_head.output_proj.weight',
                     ]:
                         if key in grads:
                             print(f"grad|{key}|mean={grads[key]:.3e}")
