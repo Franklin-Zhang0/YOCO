@@ -194,6 +194,153 @@ class HyperBlock(nn.Module):
             return raw_weights
 
 
+class FlowTimeEmbed(nn.Module):
+    def __init__(self, hidden_dim: int, n_fourier: int = 32):
+        super().__init__()
+        self.register_buffer("freq", torch.exp(torch.linspace(0, math.log(10000), n_fourier)))
+        self.proj = nn.Sequential(
+            nn.Linear(n_fourier * 2, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+
+    def forward(self, t: Tensor) -> Tensor:
+        if t.ndim == 0:
+            t = t[None]
+        phases = t[:, None] / self.freq[None].to(t.device)
+        return self.proj(torch.cat([torch.sin(phases), torch.cos(phases)], dim=-1))
+
+
+def _modulate(x: Tensor, shift: Tensor, scale: Tensor) -> Tensor:
+    return x * (1 + scale[:, None, :]) + shift[:, None, :]
+
+
+class DiTFlowBlock(nn.Module):
+    def __init__(self, hidden_dim: int, num_heads: int, mlp_ratio: float):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.attn = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        mlp_hidden = int(hidden_dim * mlp_ratio)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_dim, mlp_hidden),
+            nn.GELU(),
+            nn.Dropout(0.0),
+            nn.Linear(mlp_hidden, hidden_dim),
+        )
+        self.ada_ln = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim * 6),
+        )
+
+    def forward(self, x: Tensor, cond: Tensor) -> Tensor:
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.ada_ln(cond).chunk(6, dim=-1)
+        attn_in = _modulate(self.norm1(x), shift_msa, scale_msa)
+        attn_out = self.attn(attn_in, attn_in, attn_in, need_weights=False)[0]
+        x = x + gate_msa[:, None, :] * attn_out
+        mlp_in = _modulate(self.norm2(x), shift_mlp, scale_mlp)
+        x = x + gate_mlp[:, None, :] * self.mlp(mlp_in)
+        return x
+
+
+class DiTFlowHead(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        hidden_dim: int = 128,
+        num_tokens: int = 4,
+        depth: int = 2,
+        num_heads: int = 4,
+        mlp_ratio: float = 2.0,
+        steps: int = 2,
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_tokens = num_tokens
+        self.steps = max(int(steps), 1)
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_tokens, hidden_dim))
+        self.start_tokens = nn.Parameter(torch.zeros(1, num_tokens, hidden_dim))
+        self.cond_proj = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.init_proj = nn.Linear(hidden_dim, num_tokens * hidden_dim)
+        self.time_embed = FlowTimeEmbed(hidden_dim)
+        self.blocks = nn.ModuleList(
+            [DiTFlowBlock(hidden_dim, num_heads, mlp_ratio) for _ in range(depth)]
+        )
+        self.velocity_norm = nn.LayerNorm(hidden_dim)
+        self.velocity_proj = nn.Linear(hidden_dim, hidden_dim)
+        self.output_norm = nn.LayerNorm(hidden_dim)
+        self.output_proj = nn.Linear(num_tokens * hidden_dim, output_dim)
+
+    def _velocity(self, x: Tensor, cond: Tensor, t: Tensor) -> Tensor:
+        block_cond = cond + self.time_embed(t)
+        for block in self.blocks:
+            x = block(x, block_cond)
+        return self.velocity_proj(self.velocity_norm(x))
+
+    def forward(self, cond: Tensor) -> Tensor:
+        cond = self.cond_proj(cond)
+        x = self.start_tokens.expand(cond.shape[0], -1, -1) + self.pos_embed
+        x = x + self.init_proj(cond).view(cond.shape[0], self.num_tokens, self.hidden_dim)
+        dt = 1.0 / float(self.steps)
+        for step in range(self.steps):
+            t = torch.full((cond.shape[0],), step * dt, dtype=cond.dtype, device=cond.device)
+            x = x + self._velocity(x, cond, t) * dt
+        x = self.output_norm(x).reshape(cond.shape[0], self.num_tokens * self.hidden_dim)
+        return self.output_proj(x)
+
+
+class DiTFlowHyperBlock(nn.Module):
+    def __init__(
+        self,
+        input_dim,
+        in_feat,
+        out_feat,
+        rank,
+        hidden_dim=128,
+        num_tokens=4,
+        depth=2,
+        num_heads=4,
+        mlp_ratio=2.0,
+        steps=2,
+        use_tanh=False,
+        scale_A=1.0,
+        scale_B=1.0,
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.in_feat = in_feat
+        self.out_feat = out_feat
+        self.rank = rank
+        self.use_tanh = use_tanh
+        self.scale_A = scale_A
+        self.scale_B = scale_B
+        self.flow_head = DiTFlowHead(
+            input_dim=input_dim,
+            output_dim=in_feat * rank + rank * out_feat,
+            hidden_dim=hidden_dim,
+            num_tokens=num_tokens,
+            depth=depth,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            steps=steps,
+        )
+
+    def forward(self, x):
+        raw_weights = self.flow_head(x)
+        if not self.use_tanh:
+            return raw_weights
+        lora_A_raw = raw_weights[:, :self.in_feat * self.rank]
+        lora_B_raw = raw_weights[:, self.in_feat * self.rank:]
+        lora_A = torch.tanh(lora_A_raw) * self.scale_A
+        lora_B = torch.tanh(lora_B_raw) * self.scale_B
+        return torch.cat([lora_A, lora_B], dim=-1)
+
+
 class HyperLoRA(nn.Module):
     """HyperLoRA: Hypernetwork-generated LoRA for dynamic adaptation.
     
@@ -238,6 +385,13 @@ class HyperLoRA(nn.Module):
         max_norm=None,
         reg_weight=0.0,
         reg_type='frobenius',
+        head_type='mlp',
+        dit_hidden_dim=128,
+        dit_num_tokens=4,
+        dit_depth=2,
+        dit_num_heads=4,
+        dit_mlp_ratio=2.0,
+        dit_steps=2,
     ):
         super(HyperLoRA, self).__init__()
         self.input_dim = input_size
@@ -258,6 +412,13 @@ class HyperLoRA(nn.Module):
         self.max_norm = max_norm
         self.reg_weight = reg_weight
         self.reg_type = reg_type
+        self.head_type = head_type
+        self.dit_hidden_dim = dit_hidden_dim
+        self.dit_num_tokens = dit_num_tokens
+        self.dit_depth = dit_depth
+        self.dit_num_heads = dit_num_heads
+        self.dit_mlp_ratio = dit_mlp_ratio
+        self.dit_steps = dit_steps
         
         # Hook management
         self._hook_handles = []
@@ -282,18 +443,35 @@ class HyperLoRA(nn.Module):
             if self.max_modules > 0 and len(self.modules_list) >= self.max_modules:
                 break
             if isinstance(layers, nn.Linear):
-                module = HyperBlock(
-                    input_dim=self.input_dim,
-                    in_feat=layers.in_features,
-                    out_feat=layers.out_features,
-                    rank=self.rank,
-                    hidden_layers=self.hidden_layers,
-                    train_init=self.train_init,
-                    init_method=self.init_method,
-                    use_tanh=self.use_tanh,
-                    scale_A=self.scale_A,
-                    scale_B=self.scale_B,
-                )
+                if self.head_type == 'dit_flow':
+                    module = DiTFlowHyperBlock(
+                        input_dim=self.input_dim,
+                        in_feat=layers.in_features,
+                        out_feat=layers.out_features,
+                        rank=self.rank,
+                        hidden_dim=self.dit_hidden_dim,
+                        num_tokens=self.dit_num_tokens,
+                        depth=self.dit_depth,
+                        num_heads=self.dit_num_heads,
+                        mlp_ratio=self.dit_mlp_ratio,
+                        steps=self.dit_steps,
+                        use_tanh=self.use_tanh,
+                        scale_A=self.scale_A,
+                        scale_B=self.scale_B,
+                    )
+                else:
+                    module = HyperBlock(
+                        input_dim=self.input_dim,
+                        in_feat=layers.in_features,
+                        out_feat=layers.out_features,
+                        rank=self.rank,
+                        hidden_layers=self.hidden_layers,
+                        train_init=self.train_init,
+                        init_method=self.init_method,
+                        use_tanh=self.use_tanh,
+                        scale_A=self.scale_A,
+                        scale_B=self.scale_B,
+                    )
                 self.modules_list.append((layers, module))
                 
                 # Add gate if enabled

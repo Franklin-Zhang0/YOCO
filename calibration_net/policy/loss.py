@@ -339,14 +339,22 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
         left_gt_theta = gt_theta[left_idx]
         
         # Get predicted joints with gradients
-        _, pred_left_joints = mano_recon(left_pred_theta, side='left')
+        _, pred_left_joints = mano_recon(
+            left_pred_theta,
+            side='left',
+            apply_left_shapedirs_fix=True,
+        )
         # Center at wrist
         pred_left_joints = pred_left_joints - pred_left_joints[:, 0:1, :]
         pred_joints[left_idx] = pred_left_joints
         
         # Get GT joints without gradients
         with torch.no_grad():
-            _, gt_left_joints = mano_recon(left_gt_theta, side='left')
+            _, gt_left_joints = mano_recon(
+                left_gt_theta,
+                side='left',
+                apply_left_shapedirs_fix=True,
+            )
             gt_left_joints = gt_left_joints - gt_left_joints[:, 0:1, :]
         gt_joints[left_idx] = gt_left_joints
     
@@ -357,14 +365,22 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
         right_gt_theta = gt_theta[right_idx]
         
         # Get predicted joints with gradients
-        _, pred_right_joints = mano_recon(right_pred_theta, side='right')
+        _, pred_right_joints = mano_recon(
+            right_pred_theta,
+            side='right',
+            apply_left_shapedirs_fix=True,
+        )
         # Center at wrist
         pred_right_joints = pred_right_joints - pred_right_joints[:, 0:1, :]
         pred_joints[right_idx] = pred_right_joints
         
         # Get GT joints without gradients
         with torch.no_grad():
-            _, gt_right_joints = mano_recon(right_gt_theta, side='right')
+            _, gt_right_joints = mano_recon(
+                right_gt_theta,
+                side='right',
+                apply_left_shapedirs_fix=True,
+            )
             gt_right_joints = gt_right_joints - gt_right_joints[:, 0:1, :]
         gt_joints[right_idx] = gt_right_joints
     
@@ -381,5 +397,4 @@ def get_refine_composite_loss(pred_theta, gt_theta, mse_loss, side, loss_weights
     loss['loss'] = total_loss
     
     return loss
-
 

@@ -398,6 +398,7 @@ class BiasGenerator:
             transl=transl,
             side=side,
             betas=betas,
+            apply_left_shapedirs_fix=True,
         )
         return joints  # (T,21,3)
 

@@ -116,7 +116,12 @@ class FrozenManoCanonicalizer:
             pred_theta = torch.as_tensor(pred_theta, device=self.device, dtype=torch.float32)
 
             zero_betas = torch.zeros((pred_theta.shape[0], 10), device=self.device, dtype=pred_theta.dtype)
-            _, recon_joint3d = mano_recon(pred_theta, side=side, betas=zero_betas)
+            _, recon_joint3d = mano_recon(
+                pred_theta,
+                side=side,
+                betas=zero_betas,
+                apply_left_shapedirs_fix=True,
+            )
 
             if hasattr(self.model, 'network') and hasattr(self.model.network, 'finger_scaling'):
                 finger_scaling = self.model.network.finger_scaling.detach().to(self.device)

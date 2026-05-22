@@ -69,6 +69,7 @@ class RefineModelInferencer():
             print(self.input_canonicalizer.status_line)
 
         self.set_side(side)
+        self.last_hyper_input = None
         self.update_condition(paired_poses)
 
         self.fixed_noise = fixed_noise
@@ -152,6 +153,7 @@ class RefineModelInferencer():
             Warning('Preference extractor is not enabled in the model but paired_poses are provided.')
 
         if hasattr(self.model, 'hyperlora'):
+            self.last_hyper_input = hyper_input
             if hyper_input is not None:
                 self.model.hyperlora.merge_weight(hyper_input)
             else:
