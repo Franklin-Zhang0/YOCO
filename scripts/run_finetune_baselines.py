@@ -150,6 +150,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip MANO reconstruction metrics.",
     )
+    parser.add_argument(
+        "--save-predictions",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save full-sequence finetuned predictions to predictions.hdf5.",
+    )
     return parser.parse_args()
 
 
@@ -268,28 +274,55 @@ def reconstruction_metrics(
     true_joints: np.ndarray | None,
     side: str,
     model: torch.nn.Module | None = None,
+    betas: np.ndarray | None = None,
 ) -> dict[str, float]:
     with torch.no_grad():
         try:
-            _, pred_joints = mano_recon(pred_theta, side=side)
+            betas_tensor = None
+            if betas is not None:
+                betas_tensor = torch.as_tensor(
+                    betas,
+                    dtype=torch.float32,
+                    device=pred_theta.device,
+                )
+                if betas_tensor.ndim == 1:
+                    betas_tensor = betas_tensor.unsqueeze(0).expand(pred_theta.shape[0], -1)
+
+            _, pred_joints = mano_recon(
+                pred_theta,
+                side=side,
+                betas=betas_tensor,
+                apply_left_shapedirs_fix=True,
+            )
             network = getattr(model, "network", None)
             if network is None and hasattr(model, "base_model"):
                 network = getattr(model.base_model, "network", None)
             if network is not None and hasattr(network, "finger_scaling"):
                 pred_joints = scale_hand_fingers(pred_joints, network.finger_scaling)
 
+            _, gt_joints = mano_recon(
+                gt_theta,
+                side=side,
+                betas=betas_tensor,
+                apply_left_shapedirs_fix=True,
+            )
             if true_joints is None:
-                _, gt_joints = mano_recon(gt_theta, side=side)
+                raw_true_local = None
                 target_joints = gt_joints
             else:
-                target_joints = torch.as_tensor(
+                raw_true_joints = torch.as_tensor(
                     true_joints,
                     dtype=torch.float32,
                     device=pred_theta.device,
                 )
+                raw_true_local = transform_joint3d(raw_true_joints)
+                target_joints = raw_true_local
 
             pred_local = transform_joint3d(pred_joints)
-            target_local = transform_joint3d(target_joints)
+            if torch.is_tensor(target_joints):
+                target_local = target_joints
+            else:
+                target_local = transform_joint3d(target_joints)
             pred_local = torch.as_tensor(
                 pred_local, dtype=torch.float32, device=pred_theta.device
             )
@@ -316,7 +349,7 @@ def reconstruction_metrics(
                 )
             )
 
-            return {
+            metrics = {
                 "mse": recon_mse,
                 "mae": recon_mae,
                 "mpjpe": mpjpe,
@@ -337,6 +370,10 @@ def reconstruction_metrics(
                     torch.mean(torch.abs(pred_dists - gt_dists)).cpu()
                 ),
             }
+            if raw_true_local is not None:
+                metrics["hdf5_true_mpjpe"] = mpjpe
+                metrics["hdf5_true_mpjpe_mm"] = mpjpe * 1000.0
+            return metrics
         except Exception as exc:
             return {"reconstruction_error": str(exc)}
 
@@ -372,6 +409,70 @@ def write_outputs(output_dir: Path, rows: list[dict[str, Any]], summary: dict[st
             writer.writerows(rows)
 
 
+def reconstruct_prediction_joints(
+    pred_theta: torch.Tensor,
+    side: str,
+    betas: np.ndarray | None,
+    model: torch.nn.Module | None = None,
+) -> np.ndarray:
+    with torch.no_grad():
+        betas_tensor = None
+        if betas is not None:
+            betas_tensor = torch.as_tensor(
+                betas,
+                dtype=torch.float32,
+                device=pred_theta.device,
+            )
+            if betas_tensor.ndim == 1:
+                betas_tensor = betas_tensor.unsqueeze(0).expand(pred_theta.shape[0], -1)
+
+        _, pred_joints = mano_recon(
+            pred_theta,
+            side=side,
+            betas=betas_tensor,
+            apply_left_shapedirs_fix=True,
+        )
+        network = getattr(model, "network", None)
+        if network is None and hasattr(model, "base_model"):
+            network = getattr(model.base_model, "network", None)
+        if network is not None and hasattr(network, "finger_scaling"):
+            pred_joints = scale_hand_fingers(pred_joints, network.finger_scaling)
+
+        pred_local = transform_joint3d(pred_joints)
+        pred_local = torch.as_tensor(
+            pred_local,
+            dtype=torch.float32,
+            device=pred_theta.device,
+        )
+        return pred_local.detach().cpu().numpy().astype(np.float32)
+
+
+def save_session_predictions(
+    output_dir: Path,
+    session_name: str,
+    sample_idx: int,
+    method: str,
+    num_calib_actions: int,
+    pred_theta: np.ndarray,
+    pred_joints: np.ndarray,
+    calib_idx: np.ndarray,
+    eval_idx: np.ndarray,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with h5py.File(output_dir / "predictions.hdf5", "a") as f:
+        group = f.require_group(session_name.split("/")[0])
+        sample_group = group.require_group(f"sample_{sample_idx}")
+        for key in ("pred_theta", "pred_joints", "calib_idx", "eval_idx"):
+            if key in sample_group:
+                del sample_group[key]
+        sample_group.create_dataset("pred_theta", data=pred_theta, compression="gzip")
+        sample_group.create_dataset("pred_joints", data=pred_joints, compression="gzip")
+        sample_group.create_dataset("calib_idx", data=calib_idx.astype(np.int64))
+        sample_group.create_dataset("eval_idx", data=eval_idx.astype(np.int64))
+        sample_group.attrs["method"] = method
+        sample_group.attrs["num_calib_actions"] = int(num_calib_actions)
+
+
 def run_session(
     group: h5py.Group,
     session_name: str,
@@ -381,6 +482,7 @@ def run_session(
     device: torch.device,
     num_calib_actions: int,
     sample_idx: int,
+    output_dir: Path,
 ) -> dict[str, Any]:
     model, _, _ = load_model(args.model_dir, device=str(device))
     model.to(device)
@@ -509,15 +611,18 @@ def run_session(
     }
     metrics.update(theta_metrics(pred_theta, gt_theta))
 
+    side = "right"
+    if "mano_side" in group:
+        side = decode_side(np.asarray(group["mano_side"]))
+    metrics["side"] = side
+
     if not args.no_reconstruction:
         true_joints = None
         if args.target_source == "dataset":
             true_key = resolve_true_joints_key(group, args.true_joints_key)
             if true_key is not None:
                 true_joints = read_array(group, true_key, sample_idx=sample_idx)[eval_idx]
-        side = "right"
-        if "mano_side" in group:
-            side = decode_side(np.asarray(group["mano_side"]))
+        betas = np.asarray(group["betas"], dtype=np.float32) if "betas" in group else None
         metrics.update(
             reconstruction_metrics(
                 pred_theta,
@@ -525,7 +630,37 @@ def run_session(
                 true_joints,
                 side,
                 model=adapted_model,
+                betas=betas,
             )
+        )
+
+    if args.save_predictions:
+        side = "right"
+        if "mano_side" in group:
+            side = decode_side(np.asarray(group["mano_side"]))
+        betas = np.asarray(group["betas"], dtype=np.float32) if "betas" in group else None
+        with torch.no_grad():
+            x_all = to_tensor(x_proc, device)
+            pred_all_proc = predict(adapted_model, x_all)
+            pred_all_np = pred_all_proc.detach().cpu().numpy()
+            pred_all_theta_np = np.asarray(process_y_eval(pred_all_np), dtype=np.float32)
+            pred_all_theta = to_tensor(pred_all_theta_np, device)
+            pred_all_joints = reconstruct_prediction_joints(
+                pred_all_theta,
+                side=side,
+                betas=betas,
+                model=adapted_model,
+            )
+        save_session_predictions(
+            output_dir,
+            session_name=session_name,
+            sample_idx=sample_idx,
+            method=args.method,
+            num_calib_actions=num_calib_actions,
+            pred_theta=pred_all_theta_np,
+            pred_joints=pred_all_joints,
+            calib_idx=calib_idx,
+            eval_idx=eval_idx,
         )
 
     if hasattr(adapted_model, "remove_hooks"):
@@ -551,6 +686,7 @@ def main() -> None:
 
         for num_calib_actions in args.num_calib_actions:
             output_dir = Path(args.output_dir) / args.method / f"k{num_calib_actions}"
+            run_start = perf_counter()
             rows: list[dict[str, Any]] = []
             total_units = 0
             for session_name in session_names:
@@ -604,11 +740,13 @@ def main() -> None:
                         device,
                         num_calib_actions=num_calib_actions,
                         sample_idx=sample_idx,
+                        output_dir=output_dir,
                     )
                     rows.append(row)
                     write_outputs(output_dir, rows, summarize(rows))
 
             summary = summarize(rows)
+            summary["wall_time_sec"] = float(perf_counter() - run_start)
             write_outputs(output_dir, rows, summary)
             print(f"Summary for {args.method} k={num_calib_actions}")
             print(json.dumps(summary, indent=2, sort_keys=True))

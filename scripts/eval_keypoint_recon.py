@@ -376,7 +376,12 @@ def main(args: Args) -> None:
         print(f"Theta MSE Loss: {theta_mse:.6f}")
         # pred_theta = torch.tensor(biased_thetas)[0].reshape(-1,45)
         # pred_theta = torch.tensor(gt_theta)
-        _, recon_joint3d = mano_recon(pred_theta, side=data[traj_id]['mano_side'][0].decode('utf-8'), betas=betas)
+        _, recon_joint3d = mano_recon(
+            pred_theta,
+            side=data[traj_id]['mano_side'][0].decode('utf-8'),
+            betas=betas,
+            apply_left_shapedirs_fix=True,
+        )
         
         if hasattr(model.network, 'finger_scaling'):
             with torch.no_grad():
@@ -390,7 +395,12 @@ def main(args: Args) -> None:
         
         # if 'world_hand_joints' in data[traj_id].keys():
         # gt_keypoint = transform_joint3d(data[traj_id]['world_hand_joints'][:])
-        _, recon_gt_kepoint = mano_recon(torch.tensor(gt_theta), side=data[traj_id]['mano_side'][0].decode('utf-8'), betas=betas)
+        _, recon_gt_kepoint = mano_recon(
+            torch.tensor(gt_theta),
+            side=data[traj_id]['mano_side'][0].decode('utf-8'),
+            betas=betas,
+            apply_left_shapedirs_fix=True,
+        )
         gt_keypoint = transform_joint3d(recon_gt_kepoint).cpu().numpy()
         # else:
         #     gt_keypoint = transform_joint3d(data[traj_id][keypoint_key][:])

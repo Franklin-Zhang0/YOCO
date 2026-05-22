@@ -6,8 +6,8 @@ cd "$ROOT_DIR"
 
 PYTHON_BIN="${PYTHON:-python}"
 MODEL_DIR="${MODEL_DIR:-$ROOT_DIR/combined_cnn_mlp_leaky_global_mixer_scheduler_composite_20260308_205854/best}"
-DATA_PATH="${DATA_PATH:-$ROOT_DIR/hand_keypoint_data/Interhand_Val_0511/hdf5/InterHand_retargeted_30fps_biased_complex.hdf5}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/expdata/finetune_baselines_mac}"
+DATA_PATH="${DATA_PATH:-$ROOT_DIR/hand_keypoint_data/Interhand_val/InterHand_retargeted_30fps_biased_super_shapedir_fix_bone50_only_filtered.hdf5}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/expdata_annie/finetune_baselines_mac_bone50_filtered}"
 LOG_DIR="${LOG_DIR:-$OUTPUT_DIR/logs}"
 
 DEVICE="${DEVICE:-cpu}"
@@ -20,8 +20,7 @@ MAX_SESSIONS="${MAX_SESSIONS:-0}"
 SAMPLE_IDX="${SAMPLE_IDX:--1}"
 
 METHODS=(lora full_ft residual_linear last_layer)
-PHASE1_KS=(16)
-PHASE2_KS=(4 8)
+KS=(4)
 
 mkdir -p "$LOG_DIR"
 
@@ -81,8 +80,12 @@ run_phase() {
   echo "=== $phase_name complete ==="
 }
 
-run_phase "phase 1: K=16 sanity/full pass" "${PHASE1_KS[@]}"
-run_phase "phase 2: K=4 and K=8 sweep" "${PHASE2_KS[@]}"
+run_phase "K=4 finetune baselines" "${KS[@]}"
+
+"$PYTHON_BIN" scripts/summarize_finetune_times.py \
+  --output-dir "$OUTPUT_DIR" \
+  --k 4 \
+  --methods "${METHODS[@]}"
 
 echo "All baseline runs completed."
 echo "Metrics: $OUTPUT_DIR"

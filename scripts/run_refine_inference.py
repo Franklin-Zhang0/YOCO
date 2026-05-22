@@ -171,7 +171,12 @@ def main():
         betas_tensor = betas_tensor.unsqueeze(0).expand(pred_theta.shape[0], -1)
     side = calib_data['mano_side'][0]
     
-    _, recon_joint3d = mano_recon(pred_theta, side=side, betas=betas_tensor)
+    _, recon_joint3d = mano_recon(
+        pred_theta,
+        side=side,
+        betas=betas_tensor,
+        apply_left_shapedirs_fix=True,
+    )
     
     # Apply finger scaling if model has it
     model = inferencer.model
