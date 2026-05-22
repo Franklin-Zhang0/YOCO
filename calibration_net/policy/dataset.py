@@ -133,6 +133,8 @@ class SequenceDataset(Dataset):
         self.cat_side = cat_side
         self.output_keys = output_keys
         self.hypernet_input_keys = hypernet_input_keys
+        self.preprocessing_x_config = preprocessing_x
+        self.preprocessing_y_config = preprocessing_y
         self.current_epoch = 0
         self.raw_data_cache: dict[int, dict[str, np.ndarray]] = {}
         self.precanonicalized_input_cache: dict[int, dict[str, np.ndarray]] = {}
@@ -169,12 +171,7 @@ class SequenceDataset(Dataset):
             self._precanonicalize_dataset_inputs()
 
         self.normalization_stats = self.get_normalization_stats()
-        self.preprocessing_x = build_preprocessing(
-            preprocessing_x, 'x', norm_stats=self.normalization_stats
-        )
-        self.preprocessing_y = build_preprocessing(
-            preprocessing_y, 'y', norm_stats=self.normalization_stats
-        )
+        self._rebuild_normalized_preprocessing()
         self.data_cache = {}
         self.data_item_cache = {}
 
@@ -184,6 +181,27 @@ class SequenceDataset(Dataset):
             self._load_reference_poses(reference_poses_path)
 
         if self.data_caching:
+            self.prefetch_data()
+
+    def _rebuild_normalized_preprocessing(self):
+        self.preprocessing_x = build_preprocessing(
+            self.preprocessing_x_config,
+            'x',
+            norm_stats=self.normalization_stats,
+        )
+        self.preprocessing_y = build_preprocessing(
+            self.preprocessing_y_config,
+            'y',
+            norm_stats=self.normalization_stats,
+        )
+
+    def set_normalization_stats(self, normalization_stats, refetch: bool = False):
+        """Apply external normalization stats and invalidate processed caches."""
+        self.normalization_stats = normalization_stats
+        self._rebuild_normalized_preprocessing()
+        self.data_cache = {}
+        self.data_item_cache = {}
+        if refetch and self.data_caching:
             self.prefetch_data()
 
     def set_epoch(self, epoch: int):
@@ -598,9 +616,23 @@ class SequenceDataset(Dataset):
 
         side = self._decode_side(index_dict(dict(data), 'mano_side'))
         enc_side = Side.__dict__[side.upper()].value
-        betas = index_dict(dict(data), 'betas')
+        betas = np.asarray(index_dict(dict(data), 'betas'), dtype=np.float32)
+        if betas.ndim == 1:
+            frame_betas = betas
+        elif betas.ndim == 2:
+            if betas.shape[0] == 1:
+                frame_betas = betas[0]
+            else:
+                frame_betas = betas[idx_in_demo]
+        else:
+            raise ValueError(f"Unsupported betas shape {betas.shape}")
 
-        item = {'input': inputs, 'output': outputs, 'side': enc_side, 'betas': betas}
+        item = {
+            'input': inputs,
+            'output': outputs,
+            'side': enc_side,
+            'betas': torch.tensor(frame_betas, dtype=torch.float32),
+        }
 
         if use_bias:
             item['original_data'] = torch.tensor(x_true[idx_in_demo], dtype=torch.float32)

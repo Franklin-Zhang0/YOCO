@@ -9,6 +9,7 @@ data_generation/
 *.h5
 *.npz
 *.log
+*.pid
 .vscode/
 .kilocode/
 .codex/
@@ -19,3 +20,4 @@ scripts/train_direct_finetune.sh
 
 # Timestamped local capture/calibration dumps, e.g. 20260306_151100/.
 20??????_??????/
+eval/*
