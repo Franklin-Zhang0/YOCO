@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""CyberGlove keypoint capture, four-pose calibration, and refinement.
+"""CyberGlove keypoint capture, preset-pose calibration, and refinement.
 
 This module keeps the runtime pieces together:
 
 * connect to OpenCyberGlove;
 * convert glove angles to 21 3D keypoints using the hand FK model;
-* collect four interactive calibration snapshots while showing reference
+* collect interactive calibration snapshots while showing reference
   skeletons in Viser;
 * pass the calibration pairs to ``RefineModelInferencer``;
 * refine live glove keypoints with the loaded refine model.
@@ -14,6 +14,7 @@ This module keeps the runtime pieces together:
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -56,7 +57,10 @@ MANO_CONNECTIONS = [
 ]
 
 
-# Captured from data/avp_calib_gt_poses/20260521_232739 on 2026-05-21.
+GLOVE_ANGLE_DIM = 22
+
+
+# Captured from AVP sessions under data/avp_calib_gt_poses/.
 PRESET_CALIBRATION_KEYPOINTS = {
     "pinch": np.array(
         [
@@ -86,27 +90,79 @@ PRESET_CALIBRATION_KEYPOINTS = {
     ),
     "fully_open": np.array(
         [
-            [0.177247092, 0.184021324, 0.883406997],
-            [0.156592324, 0.174016014, 0.900383174],
-            [0.119640611, 0.172941238, 0.938204288],
-            [0.093258373, 0.175467402, 0.954924703],
-            [0.072785690, 0.176745474, 0.974883437],
-            [0.086403936, 0.182150826, 0.908225536],
-            [0.044998415, 0.194125801, 0.911784530],
-            [0.020851677, 0.194968298, 0.913708329],
-            [-0.000666103, 0.195157811, 0.915409088],
-            [0.088171765, 0.184541374, 0.886877179],
-            [0.041490082, 0.196643725, 0.882074535],
-            [0.013026956, 0.196438491, 0.878785729],
-            [-0.009183953, 0.196710438, 0.876019180],
-            [0.089858025, 0.183521405, 0.868301988],
-            [0.051079057, 0.195554391, 0.860686958],
-            [0.024810592, 0.196156651, 0.855916679],
-            [0.003489700, 0.196178526, 0.852062404],
-            [0.099885240, 0.181983262, 0.851412117],
-            [0.071354493, 0.191930383, 0.837072730],
-            [0.054332934, 0.193610653, 0.828790307],
-            [0.036578305, 0.194427446, 0.820211411],
+            [0.265698642, 0.223238423, 0.874137402],
+            [0.244943053, 0.213205621, 0.891179562],
+            [0.208189249, 0.213821501, 0.929491341],
+            [0.182238579, 0.217271402, 0.946910381],
+            [0.163828045, 0.218986347, 0.968801022],
+            [0.174739048, 0.220345169, 0.898936450],
+            [0.133415252, 0.232125714, 0.904628575],
+            [0.109491013, 0.235001966, 0.907773018],
+            [0.088225588, 0.237211347, 0.910555542],
+            [0.176246732, 0.223034307, 0.877527356],
+            [0.129488871, 0.235980913, 0.874895751],
+            [0.100766644, 0.237303615, 0.872746587],
+            [0.078538172, 0.238652706, 0.870899796],
+            [0.177846268, 0.222480446, 0.859604657],
+            [0.138950512, 0.234965086, 0.853021264],
+            [0.112669751, 0.238116190, 0.848951936],
+            [0.091376990, 0.239914730, 0.845664978],
+            [0.187946662, 0.221435398, 0.841813385],
+            [0.159081683, 0.232168108, 0.828735828],
+            [0.142045930, 0.234935671, 0.821208179],
+            [0.124105953, 0.237256840, 0.813314438],
+        ],
+        dtype=np.float32,
+    ),
+    "salute": np.array(
+        [
+            [0.261072189, 0.229663536, 0.876088142],
+            [0.240405247, 0.219658569, 0.893068016],
+            [0.193682984, 0.195416898, 0.898502350],
+            [0.175520033, 0.196741313, 0.872957110],
+            [0.174578398, 0.205563262, 0.845787346],
+            [0.170339823, 0.228111476, 0.900829315],
+            [0.127986342, 0.222722724, 0.893472314],
+            [0.104102947, 0.221157074, 0.889406025],
+            [0.082902990, 0.223353505, 0.885993779],
+            [0.171956137, 0.231100634, 0.879642189],
+            [0.123598859, 0.227908820, 0.876296699],
+            [0.095169343, 0.224432200, 0.873319983],
+            [0.072967172, 0.224655896, 0.870652795],
+            [0.173527554, 0.229172707, 0.861926436],
+            [0.132380515, 0.227711171, 0.858294606],
+            [0.105709054, 0.226738960, 0.856388092],
+            [0.084224716, 0.228617996, 0.854997754],
+            [0.183434218, 0.224211454, 0.845146060],
+            [0.150228977, 0.221332759, 0.842793584],
+            [0.131462365, 0.221292585, 0.841446757],
+            [0.111924566, 0.223473161, 0.840020061],
+        ],
+        dtype=np.float32,
+    ),
+    "claw": np.array(
+        [
+            [0.261970490, 0.228584439, 0.874282241],
+            [0.241397709, 0.218621969, 0.891195416],
+            [0.208726674, 0.186614677, 0.917352378],
+            [0.183638453, 0.171425939, 0.906583965],
+            [0.175511599, 0.171448663, 0.879303634],
+            [0.171896368, 0.226188898, 0.900695801],
+            [0.129305393, 0.219075441, 0.899979770],
+            [0.117616273, 0.197954461, 0.898361802],
+            [0.117836930, 0.176487759, 0.896770597],
+            [0.173242748, 0.230110332, 0.877864957],
+            [0.125634953, 0.228494957, 0.869295716],
+            [0.113091469, 0.202754185, 0.867623210],
+            [0.115831420, 0.180667847, 0.869050682],
+            [0.174858779, 0.228780702, 0.860217571],
+            [0.135716602, 0.224782318, 0.848060012],
+            [0.125198275, 0.200575873, 0.844291210],
+            [0.125504375, 0.179031253, 0.843754292],
+            [0.184881747, 0.224619225, 0.842444718],
+            [0.159541994, 0.205607772, 0.832251072],
+            [0.155870110, 0.187398821, 0.829771399],
+            [0.156480432, 0.167785466, 0.828714967],
         ],
         dtype=np.float32,
     ),
@@ -203,19 +259,48 @@ class GloveForwardKinematics:
         )
         return (np.asarray(joints, dtype=np.float32) / 1000.0).astype(np.float32)
 
-    def zeros(self) -> np.ndarray:
-        return np.zeros(len(self.default_gt_order), dtype=np.float32)
-
-    def vector_from_named_values(self, values: dict[str, float]) -> np.ndarray:
-        angles = self.zeros()
-        for i, name in enumerate(self.default_gt_order):
-            angles[i] = float(values.get(name, 0.0))
-        return angles
-
 
 def _to_local_keypoints(joints: np.ndarray) -> np.ndarray:
     local = joint_3d_world_to_local(np.asarray(joints, dtype=np.float32))
     return np.asarray(local, dtype=np.float32)
+
+
+def _resolve_calibration_pose_order(
+    pose_names: Sequence[str] | None,
+    default_pose_order: Sequence[str],
+) -> tuple[str, ...]:
+    if pose_names is None:
+        return tuple(default_pose_order)
+
+    resolved = tuple(pose_names)
+    if resolved == ("all",):
+        return tuple(default_pose_order)
+    if not resolved:
+        raise ValueError("At least one calibration pose must be selected.")
+
+    unknown = [
+        pose_name
+        for pose_name in resolved
+        if pose_name not in PRESET_CALIBRATION_KEYPOINTS
+    ]
+    if unknown:
+        available = ", ".join(PRESET_CALIBRATION_KEYPOINTS)
+        raise ValueError(
+            f"Unknown calibration pose(s): {unknown}. Available poses: {available}."
+        )
+    return resolved
+
+
+def _parse_calib_pose_args(values: Sequence[str] | None) -> tuple[str, ...] | None:
+    if values is None:
+        return None
+
+    pose_names = []
+    for value in values:
+        pose_names.extend(
+            pose_name.strip() for pose_name in value.split(",") if pose_name.strip()
+        )
+    return tuple(pose_names)
 
 
 class ViserCalibrationView:
@@ -277,34 +362,48 @@ class ViserCalibrationView:
 
 
 class GloveRefinePublisher:
-    """Connect a CyberGlove, calibrate four poses, and refine keypoints."""
+    """Connect a CyberGlove, calibrate preset poses, and refine keypoints."""
 
-    CALIBRATION_POSE_ORDER = ("pinch", "fully_open", "fist", "little_pinch")
+    CALIBRATION_POSE_ORDER = (
+        "pinch",
+        "fully_open",
+        "fist",
+        "little_pinch",
+        "salute",
+        "claw",
+    )
 
     def __init__(
         self,
         *,
         side: str,
-        glove_port: str | None = None,
-        hand_model_path: str | Path,
-        glove_model_path: str | Path | None = None,
         refine_model_dir: str | Path,
+        glove_port: str | None = None,
+        hand_model_path: str | Path | None = None,
+        glove_model_path: str | Path | None = None,
         device: str | None = None,
         viser_port: int | None = 8097,
         fixed_noise: bool = True,
         dummy: bool = False,
         dummy_noise_std: float = 0.003,
+        calibration_pose_order: Sequence[str] | None = None,
     ) -> None:
         if side not in {"left", "right"}:
             raise ValueError("side must be 'left' or 'right'.")
         if not dummy and glove_port is None:
             raise ValueError("glove_port is required unless dummy=True.")
+        if not dummy and hand_model_path is None:
+            raise ValueError("hand_model_path is required unless dummy=True.")
         if not dummy and glove_model_path is None:
             raise ValueError("glove_model_path is required unless dummy=True.")
 
         self.side = side
         self.glove_port = glove_port
-        self.hand_model_path = Path(hand_model_path).expanduser()
+        self.hand_model_path = (
+            Path(hand_model_path).expanduser()
+            if hand_model_path is not None
+            else None
+        )
         self.glove_model_path = (
             Path(glove_model_path).expanduser()
             if glove_model_path is not None
@@ -315,7 +414,15 @@ class GloveRefinePublisher:
         self.dummy_noise_std = float(dummy_noise_std)
         self._dummy_phase = 0
         self._dummy_pose_name: str | None = None
-        self.fk = GloveForwardKinematics(self.hand_model_path)
+        self.calibration_pose_order = _resolve_calibration_pose_order(
+            calibration_pose_order,
+            self.CALIBRATION_POSE_ORDER,
+        )
+        self.fk = (
+            GloveForwardKinematics(self.hand_model_path)
+            if self.hand_model_path is not None
+            else None
+        )
         self.refiner = RefineModelInferencer(
             model_dir=str(self.refine_model_dir),
             side=side,
@@ -361,6 +468,8 @@ class GloveRefinePublisher:
             return self._get_dummy_keypoints()
         if self.sdk is None:
             raise RuntimeError("OpenCyberGlove SDK is not initialized.")
+        if self.fk is None:
+            raise RuntimeError("Glove FK model is not initialized.")
 
         glove = getattr(self.sdk, f"{self.side}_glove")
         raw = self.sdk.get_data(hand_type=self.side)
@@ -395,13 +504,13 @@ class GloveRefinePublisher:
         )
 
     def calibrate_refine_condition(self) -> dict[str, np.ndarray]:
-        """Collect four snapshots and update the refine model's paired condition."""
+        """Collect preset snapshots and update the refine model condition."""
         if not self._connected:
             raise RuntimeError("Call connect() before calibration.")
 
         biased = []
         target = []
-        for pose_name in self.CALIBRATION_POSE_ORDER:
+        for pose_name in self.calibration_pose_order:
             target_joints = self.reference_keypoints(pose_name)
             if self.view is not None:
                 self.view.update(pose_name, target_joints)
@@ -450,8 +559,8 @@ class GloveRefinePublisher:
     def _get_dummy_keypoints(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         pose_name = self._dummy_pose_name
         if pose_name is None:
-            pose_name = self.CALIBRATION_POSE_ORDER[
-                self._dummy_phase % len(self.CALIBRATION_POSE_ORDER)
+            pose_name = self.calibration_pose_order[
+                self._dummy_phase % len(self.calibration_pose_order)
             ]
             self._dummy_phase += 1
 
@@ -464,22 +573,25 @@ class GloveRefinePublisher:
                 size=keypoints.shape,
             ).astype(np.float32)
 
-        angles = self.fk.zeros()
+        angles = np.zeros(GLOVE_ANGLE_DIM, dtype=np.float32)
         tensile = np.zeros(19, dtype=np.float32)
         timestamp = time.monotonic_ns()
-        return keypoints, angles.astype(np.float32), tensile, timestamp
+        return keypoints, angles, tensile, timestamp
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Connect CyberGlove, run four-pose calibration, and preview "
+            "Connect CyberGlove, run preset-pose calibration, and preview "
             "refinement."
         )
     )
     parser.add_argument("--side", choices=("left", "right"), default="right")
     parser.add_argument("--glove-port")
-    parser.add_argument("--hand-model-path", required=True)
+    parser.add_argument(
+        "--hand-model-path",
+        help="OpenCyberGlove hand_model.pkl. Required unless --dummy is set.",
+    )
     parser.add_argument("--glove-model-path")
     parser.add_argument("--refine-model-dir", required=True)
     parser.add_argument("--device", default=None)
@@ -496,6 +608,16 @@ def parse_args() -> argparse.Namespace:
         default=0.003,
         help="Stddev of synthetic keypoint noise in meters for dummy mode.",
     )
+    parser.add_argument(
+        "--calib-poses",
+        nargs="+",
+        default=None,
+        help=(
+            "Calibration poses to collect. Use space-separated names or a "
+            "comma-separated list. Use 'all' or omit for the default order: "
+            f"{', '.join(GloveRefinePublisher.CALIBRATION_POSE_ORDER)}."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -511,6 +633,7 @@ def main() -> None:
         viser_port=args.viser_port,
         dummy=args.dummy,
         dummy_noise_std=args.dummy_noise_std,
+        calibration_pose_order=_parse_calib_pose_args(args.calib_poses),
     )
     try:
         publisher.connect(calibrate_glove=not args.no_glove_calibration)
