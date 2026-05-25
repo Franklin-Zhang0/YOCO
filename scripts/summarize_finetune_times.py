@@ -12,7 +12,7 @@ import h5py
 
 DEFAULT_DATA_PATH = (
     "hand_keypoint_data/Interhand_val/"
-    "InterHand_retargeted_30fps_biased_super_shapedir_fix_bone50_only_filtered.hdf5"
+    "InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5"
 )
 
 
@@ -33,8 +33,9 @@ def parse_args() -> argparse.Namespace:
         "--methods",
         nargs="*",
         default=[
-            "best_biased",
-            "best_original",
+            "best_world_hand_joints_biased",
+            "best_world_hand_joints",
+            "best_world_hand_joints_true",
             "gt_mano_fk",
             "lora",
             "full_ft",
@@ -92,6 +93,12 @@ def _mean_from_rows(rows: list[dict[str, Any]], key: str) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _fmt_float(value: Any, width: int, precision: int) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value):>{width}.{precision}f}"
+    return f"{'NA':>{width}}"
+
+
 def _comparison_row(
     method: str,
     k: int,
@@ -119,6 +126,7 @@ def _comparison_row(
         "mpjpe_mm_mean": _mean_from_rows(rows, "mpjpe_mm"),
         "pa_mpjpe_mm_mean": _mean_from_rows(rows, "pa_mpjpe_mm"),
         "tip_mpjpe_mm_mean": _mean_from_rows(rows, "tip_mpjpe_mm"),
+        "theta_mse_mean": _mean_from_rows(rows, "theta_mse"),
         "mpjpe_mean": _mean_from_rows(rows, "mpjpe"),
         "pa_mpjpe_mean": _mean_from_rows(rows, "pa_mpjpe"),
         "tip_mpjpe_mean": _mean_from_rows(rows, "tip_mpjpe"),
@@ -184,8 +192,8 @@ def main() -> None:
 
     print(f"Timing comparison saved to {csv_path}")
     print()
-    print("method              side      units  wall_s    cond_s   adapt_s   infer_s   recon_s   mpjpe   pa      tip")
-    print("------------------  -------  -----  --------  -------  --------  --------  --------  ------  ------  ------")
+    print("method              side      units  wall_s    cond_s   adapt_s   infer_s   recon_s   mpjpe   pa      tip     theta_mse")
+    print("------------------  -------  -----  --------  -------  --------  --------  --------  ------  ------  ------  ----------")
     for row in rows:
         if row.get("status") != "ok":
             print(f"{row['method']:<18}  missing ({row['metrics_path']})")
@@ -199,9 +207,10 @@ def main() -> None:
             f"{row['total_adaptation_time_sec']:>8.2f}  "
             f"{row['total_inference_time_sec']:>8.2f}  "
             f"{row['total_reconstruction_time_sec']:>8.2f}  "
-            f"{(row['mpjpe_mm_mean'] or 0.0):>6.2f}  "
-            f"{(row['pa_mpjpe_mm_mean'] or 0.0):>6.2f}  "
-            f"{(row['tip_mpjpe_mm_mean'] or 0.0):>6.2f}"
+            f"{_fmt_float(row['mpjpe_mm_mean'], 6, 2)}  "
+            f"{_fmt_float(row['pa_mpjpe_mm_mean'], 6, 2)}  "
+            f"{_fmt_float(row['tip_mpjpe_mm_mean'], 6, 2)}  "
+            f"{_fmt_float(row['theta_mse_mean'], 10, 6)}"
         )
 
 

@@ -36,23 +36,23 @@ class ValDatasetConfig:
 class HypernetCfg:
     input_size: int = field(default_factory=int)
     max_modules: int = -1
-    rank: int = 2
-    alpha: float = 2.0
+    rank: int = 8
+    alpha: float = 8.0
     hidden_layers: list = field(default_factory=lambda: [256, 256])
     name_filter: list[str] = field(default_factory=list)
-    drop_out: float = 0.0
+    drop_out: float = 0.1
     # Stability improvements
     train_init: bool = False  # Use Wasserstein initialization (expensive)
     init_method: str = 'xavier'  # 'xavier' | 'wasserstein'
-    use_tanh: bool = False  # Bound LoRA outputs with tanh
-    scale_A: float = 1.0  # Scale for A matrix (after tanh)
-    scale_B: float = 1.0  # Scale for B matrix (after tanh)
-    use_gates: bool = False  # Per-module learnable gates
+    use_tanh: bool = True  # Bound LoRA outputs with tanh
+    scale_A: float = 0.1  # Scale for A matrix (after tanh)
+    scale_B: float = 0.2  # Scale for B matrix (after tanh)
+    use_gates: bool = True  # Per-module learnable gates
     gate_init: float = 0.0  # Initial gate value (before sigmoid)
     max_norm: Optional[float] = None  # Max Frobenius norm for delta weights
-    reg_weight: float = 0.0  # Weight for regularization loss
+    reg_weight: float = 0.001  # Weight for regularization loss
     reg_type: str = 'frobenius'  # 'frobenius' | 'b_only' | 'nuclear'
-    head_type: str = 'mlp'  # 'mlp' | 'dit_flow'
+    head_type: str = 'dit_flow'  # 'mlp' | 'dit_flow'
     dit_hidden_dim: int = 128
     dit_num_tokens: int = 4
     dit_depth: int = 2
@@ -148,10 +148,12 @@ class BaselineConfig:
     lr: float = 1e-4
     weight_decay: float = 0.0
     seed: int = 42
-    target_modules: list[str] = field(default_factory=lambda: ['mano_regressor', 'fusion_attention'])
-    lora_rank: int = 4
+    target_modules: list[str] = field(default_factory=list)
+    lora_rank: int = 8
     lora_alpha: float = 8.0
-    lora_dropout: float = 0.0
+    lora_dropout: float = 0.1
+    lora_use_gates: bool = True
+    lora_gate_init: float = 0.0
     
 @dataclass
 class Config:

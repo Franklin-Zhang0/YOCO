@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Visualize the paired pose HDF5 (world_hand_joints and world_hand_joints_biased).
+Visualize world_hand_joints, world_hand_joints_true, world_hand_joints_biased,
+and exported predictions.
 """
 
 import sys
@@ -20,13 +21,18 @@ from calibration_net.utils import mano_recon, scale_hand_fingers, transform_join
 DEFAULT_MODEL_PATH = "combined_cnn_mlp_leaky_global_mixer_scheduler_composite_20260308_205854/best"
 
 LAYER_COLORS = {
-    "true": np.array([1.0, 0.05, 0.05]),
-    "biased_raw": np.array([0.05, 0.25, 1.0]),
+    "world_hand_joints": np.array([1.0, 0.05, 0.05]),
+    "world_hand_joints_true": np.array([1.0, 0.35, 0.05]),
+    "world_hand_joints_biased": np.array([0.05, 0.25, 1.0]),
     "gt_mano_fk_raw": np.array([0.0, 0.95, 0.25]),
-    "true_model_raw": np.array([0.0, 0.55, 0.55]),
-    "biased_model_raw": np.array([0.65, 0.0, 0.85]),
+    "model_world_hand_joints": np.array([0.0, 0.55, 0.55]),
+    "model_world_hand_joints_biased": np.array([0.65, 0.0, 0.85]),
+    "best_world_hand_joints_biased": np.array([1.0, 0.65, 0.0]),
+    "best_world_hand_joints": np.array([0.15, 0.9, 1.0]),
+    "best_world_hand_joints_true": np.array([0.25, 1.0, 0.55]),
     "best_biased": np.array([1.0, 0.65, 0.0]),
     "best_original": np.array([0.15, 0.9, 1.0]),
+    "best_true": np.array([0.25, 1.0, 0.55]),
     "gt_mano_fk": np.array([0.55, 1.0, 0.05]),
     "lora": np.array([1.0, 0.15, 0.75]),
     "full_ft": np.array([1.0, 1.0, 0.0]),
@@ -162,16 +168,48 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Visualize paired poses HDF5")
     parser.add_argument('hdf5_path', type=str, help='Path to paired poses HDF5 file (e.g., paired_poses.hdf5)')
     parser.add_argument('--model-path', type=str, default=DEFAULT_MODEL_PATH, help='Default model path for model predictions')
-    parser.add_argument('--true-model-path', type=str, default=None, help='Model path for world_hand_joints predictions')
-    parser.add_argument('--biased-model-path', type=str, default=None, help='Model path for world_hand_joints_biased predictions')
-    parser.add_argument('--finetune-output-dir', type=str, default='expdata_annie/finetune_baselines_mac_bone50_filtered', help='Directory containing finetune baseline outputs')
+    parser.add_argument('--gt-key', type=str, default='world_hand_joints', help='GT joint key for metrics/visualization')
+    parser.add_argument(
+        '--world-hand-joints-true-key',
+        '--true-key',
+        dest='true_key',
+        type=str,
+        default='world_hand_joints_true',
+        help='Additional world_hand_joints_true key to visualize',
+    )
+    parser.add_argument(
+        '--world-hand-joints-key',
+        '--original-key',
+        dest='original_key',
+        type=str,
+        default='world_hand_joints',
+        help='Input key for model_world_hand_joints',
+    )
+    parser.add_argument(
+        '--world-hand-joints-model-path',
+        '--true-model-path',
+        dest='world_hand_joints_model_path',
+        type=str,
+        default=None,
+        help='Model path for world_hand_joints predictions',
+    )
+    parser.add_argument(
+        '--world-hand-joints-biased-model-path',
+        '--biased-model-path',
+        dest='world_hand_joints_biased_model_path',
+        type=str,
+        default=None,
+        help='Model path for world_hand_joints_biased predictions',
+    )
+    parser.add_argument('--finetune-output-dir', type=str, default='expdata_annie/current_export_franklin_aligned_joint20cm_marked_right', help='Directory containing finetune baseline outputs')
     parser.add_argument('--finetune-k', type=int, default=4, help='Calibration K for finetune predictions to visualize')
     parser.add_argument(
         '--finetune-methods',
         nargs='*',
         default=[
-            'best_biased',
-            'best_original',
+            'best_world_hand_joints_biased',
+            'best_world_hand_joints',
+            'best_world_hand_joints_true',
             'gt_mano_fk',
             'lora',
             'full_ft',
@@ -191,13 +229,13 @@ def parse_args():
 
 def main():
     args = parse_args()
-    true_model_path = args.true_model_path or args.model_path
-    biased_model_path = args.biased_model_path or args.model_path
+    world_hand_joints_model_path = args.world_hand_joints_model_path or args.model_path
+    world_hand_joints_biased_model_path = args.world_hand_joints_biased_model_path or args.model_path
     device = resolve_torch_device(args.device)
     
     print(f"Loading HDF5 file: {args.hdf5_path}")
-    print(f"True-joint model: {true_model_path}")
-    print(f"Biased-joint model: {biased_model_path}")
+    print(f"world_hand_joints model: {world_hand_joints_model_path}")
+    print(f"world_hand_joints_biased model: {world_hand_joints_biased_model_path}")
     hdf5_file = h5py.File(args.hdf5_path, 'r')
     episodes = sorted(list(hdf5_file.keys()), key=lambda x: int(x) if x.isdigit() else x)
     episode_cache = {}
@@ -207,6 +245,22 @@ def main():
     if not episodes:
         print("No episodes found in the HDF5 file.")
         return
+
+    def has_prediction_for_episode(ep: str, sample_idx: int = 0) -> bool:
+        for method in args.finetune_methods:
+            pred_path = finetune_output_dir / method / f"k{args.finetune_k}" / "predictions.hdf5"
+            if not pred_path.exists():
+                continue
+            with h5py.File(pred_path, "r") as pred_file:
+                if f"{ep}/sample_{sample_idx}/pred_joints" in pred_file:
+                    return True
+        return False
+
+    initial_ep_idx = 0
+    for idx, ep in enumerate(episodes):
+        if has_prediction_for_episode(ep):
+            initial_ep_idx = idx
+            break
 
     def get_inferencer(model_path: str, side: str, paired_poses: dict[str, np.ndarray]):
         cache_key = (model_path, side)
@@ -244,7 +298,7 @@ def main():
             pred_theta,
             side=side,
             betas=betas_tensor,
-            apply_left_shapedirs_fix=False,
+            apply_left_shapedirs_fix=True,
         )
         model = inferencer.model
         if hasattr(model, 'network') and hasattr(model.network, 'finger_scaling'):
@@ -269,7 +323,7 @@ def main():
             gt_theta,
             side=side,
             betas=betas_tensor,
-            apply_left_shapedirs_fix=False,
+            apply_left_shapedirs_fix=True,
         )
         return _to_numpy(transform_joint3d(gt_joint3d))
 
@@ -282,48 +336,66 @@ def main():
         side = _decode_hdf5_string(grp['mano_side'][0])
         betas = np.array(grp['betas'])
 
+        metric_gt_key = args.gt_key if args.gt_key in grp else 'world_hand_joints'
+        original_key = args.original_key if args.original_key in grp else 'world_hand_joints'
+
         if 'world_hand_joints' in grp:
-            true_raw = np.array(grp['world_hand_joints'])
-            true_vis = _to_numpy(transform_joint3d(true_raw))
+            world_hand_joints_raw = np.array(grp['world_hand_joints'])
+            world_hand_joints_vis = _to_numpy(transform_joint3d(world_hand_joints_raw))
         else:
-            true_raw = None
-            true_vis = None
+            world_hand_joints_raw = None
+            world_hand_joints_vis = None
+
+        metric_gt_raw = np.array(grp[metric_gt_key]) if metric_gt_key in grp else world_hand_joints_raw
+        metric_gt_vis = _to_numpy(transform_joint3d(metric_gt_raw)) if metric_gt_raw is not None else None
+
+        true_key = args.true_key if args.true_key in grp else None
+        if true_key is not None:
+            world_hand_joints_true_raw = np.array(grp[true_key])
+            world_hand_joints_true_vis = _to_numpy(transform_joint3d(world_hand_joints_true_raw))
+        else:
+            world_hand_joints_true_raw = None
+            world_hand_joints_true_vis = None
+
+        original_raw = np.array(grp[original_key]) if original_key in grp else world_hand_joints_raw
 
         if 'world_hand_joints_biased' in grp:
             jb_dataset = grp['world_hand_joints_biased']
             if jb_dataset.ndim == 4:
-                biased_raw = np.array(jb_dataset[sample_idx])
+                world_hand_joints_biased_raw = np.array(jb_dataset[sample_idx])
             else:
-                biased_raw = np.array(jb_dataset)
-            biased_vis = _to_numpy(transform_joint3d(biased_raw))
+                world_hand_joints_biased_raw = np.array(jb_dataset)
+            world_hand_joints_biased_vis = _to_numpy(transform_joint3d(world_hand_joints_biased_raw))
         else:
-            biased_raw = None
-            biased_vis = None
+            world_hand_joints_biased_raw = None
+            world_hand_joints_biased_vis = None
 
         gt_mano_angles = np.array(grp['mano_angles']) if 'mano_angles' in grp else None
         gt_mano_fk_vis = reconstruct_gt_mano_joints(gt_mano_angles, side, betas)
 
         paired_poses = {}
-        if biased_raw is not None:
-            paired_poses['world_hand_joints_biased'] = biased_raw
-        if true_raw is not None:
-            paired_poses['world_hand_joints'] = true_raw
+        if world_hand_joints_biased_raw is not None:
+            paired_poses['world_hand_joints_biased'] = world_hand_joints_biased_raw
+        if world_hand_joints_raw is not None:
+            paired_poses['world_hand_joints'] = world_hand_joints_raw
+        if true_key is not None and world_hand_joints_true_raw is not None:
+            paired_poses[true_key] = world_hand_joints_true_raw
 
         true_model_vis = reconstruct_model_joints(
-            true_model_path,
-            true_raw,
+            world_hand_joints_model_path,
+            original_raw,
             side,
             betas,
             paired_poses,
         )
         biased_model_vis = reconstruct_model_joints(
-            biased_model_path,
-            biased_raw,
+            world_hand_joints_biased_model_path,
+            world_hand_joints_biased_raw,
             side,
             betas,
             paired_poses,
         )
-        finetuned = {}
+        finetuned = {method: None for method in args.finetune_methods}
         for method in args.finetune_methods:
             pred_path = finetune_output_dir / method / f"k{args.finetune_k}" / "predictions.hdf5"
             if not pred_path.exists():
@@ -335,11 +407,14 @@ def main():
 
         episode_cache[cache_key] = {
             'side': side,
-            'true': true_vis,
-            'biased': biased_vis,
+            'metric_gt_key': metric_gt_key,
+            'metric_gt': metric_gt_vis,
+            'world_hand_joints': world_hand_joints_vis,
+            'world_hand_joints_true': world_hand_joints_true_vis,
+            'world_hand_joints_biased': world_hand_joints_biased_vis,
             'gt_mano_fk': gt_mano_fk_vis,
-            'true_model': true_model_vis,
-            'biased_model': biased_model_vis,
+            'model_world_hand_joints': true_model_vis,
+            'model_world_hand_joints_biased': biased_model_vis,
             'finetuned': finetuned,
         }
         return episode_cache[cache_key]
@@ -364,7 +439,7 @@ def main():
     )
     add_scale_reference(server)
     
-    ep_slider = server.gui.add_slider("episode", min=0, max=max(0, len(episodes)-1), step=1, initial_value=0)
+    ep_slider = server.gui.add_slider("episode", min=0, max=max(0, len(episodes)-1), step=1, initial_value=initial_ep_idx)
     
     # We will update frame_slider.max dynamically
     frame_slider = server.gui.add_slider("frame", min=0, max=100, step=1, initial_value=0)
@@ -375,11 +450,12 @@ def main():
     info_markdown = server.gui.add_markdown("info", "")
     metrics_markdown = server.gui.add_markdown("frame MPJPE", "")
     layer_names = [
-        "true",
-        "biased_raw",
+        "world_hand_joints",
+        "world_hand_joints_true",
+        "world_hand_joints_biased",
         "gt_mano_fk_raw",
-        "true_model_raw",
-        "biased_model_raw",
+        "model_world_hand_joints",
+        "model_world_hand_joints_biased",
         *[f"finetuned_{method}" for method in args.finetune_methods],
     ]
     layer_visible = {}
@@ -400,10 +476,15 @@ def main():
             return None
         return float(np.mean(np.linalg.norm(pred_frame - gt_frame, axis=-1)) * 1000.0)
 
-    def update_metrics_panel(layer_data: dict[str, np.ndarray | None], gt_joints: np.ndarray | None, frame_idx: int) -> None:
+    def update_metrics_panel(
+        layer_data: dict[str, np.ndarray | None],
+        gt_joints: np.ndarray | None,
+        frame_idx: int,
+        metric_gt_key: str,
+    ) -> None:
         visible_metrics = []
         for name, joints in layer_data.items():
-            if name == "true" or not layer_is_visible(name):
+            if name == metric_gt_key or not layer_is_visible(name):
                 continue
             mpjpe = frame_mpjpe_mm(joints, gt_joints, frame_idx)
             if mpjpe is None:
@@ -411,10 +492,10 @@ def main():
             visible_metrics.append((name, mpjpe))
 
         if not visible_metrics:
-            metrics_markdown.content = "**Frame MPJPE vs GT**\n\nNo visible comparable layers."
+            metrics_markdown.content = f"**Frame MPJPE vs `{metric_gt_key}`**\n\nNo visible comparable layers."
             return
 
-        lines = ["**Frame MPJPE vs GT**", ""]
+        lines = [f"**Frame MPJPE vs `{metric_gt_key}`**", ""]
         for name, mpjpe in visible_metrics:
             label_name = name.removeprefix("finetuned_")
             lines.append(f"- `{label_name}`: `{mpjpe:.2f} mm`")
@@ -469,16 +550,21 @@ def main():
 
         ep_data = load_episode(ep, sample_idx)
         
-        jt = ep_data['true']
-        jb = ep_data['biased']
+        jt = ep_data['world_hand_joints']
+        jt_true = ep_data['world_hand_joints_true']
+        metric_gt = ep_data['metric_gt']
+        metric_gt_key = ep_data['metric_gt_key']
+        jb = ep_data['world_hand_joints_biased']
         gt_mano_fk = ep_data['gt_mano_fk']
-        jt_model = ep_data['true_model']
-        jb_model = ep_data['biased_model']
+        jt_model = ep_data['model_world_hand_joints']
+        jb_model = ep_data['model_world_hand_joints_biased']
         finetuned = ep_data['finetuned']
         
         # Determine number of frames
         T = max(
             _num_frames(jt),
+            _num_frames(jt_true),
+            _num_frames(metric_gt),
             _num_frames(jb),
             _num_frames(gt_mano_fk),
             _num_frames(jt_model),
@@ -496,34 +582,40 @@ def main():
         frame_slider.max = max(1, T - 1)
 
         layer_data = {
-            "true": jt,
-            "biased_raw": jb,
+            "world_hand_joints": jt,
+            "world_hand_joints_true": jt_true,
+            "world_hand_joints_biased": jb,
             "gt_mano_fk_raw": gt_mano_fk,
-            "true_model_raw": jt_model,
-            "biased_model_raw": jb_model,
+            "model_world_hand_joints": jt_model,
+            "model_world_hand_joints_biased": jb_model,
         }
         for method, joints in finetuned.items():
             layer_data[f"finetuned_{method}"] = joints
         
         with server.atomic():
-            draw_joint_layer("true", jt, frame_idx, LAYER_COLORS["true"])
-            draw_joint_layer("biased_raw", jb, frame_idx, LAYER_COLORS["biased_raw"])
+            draw_joint_layer("world_hand_joints", jt, frame_idx, LAYER_COLORS["world_hand_joints"])
+            draw_joint_layer("world_hand_joints_true", jt_true, frame_idx, LAYER_COLORS["world_hand_joints_true"])
+            draw_joint_layer("world_hand_joints_biased", jb, frame_idx, LAYER_COLORS["world_hand_joints_biased"])
             draw_joint_layer("gt_mano_fk_raw", gt_mano_fk, frame_idx, LAYER_COLORS["gt_mano_fk_raw"])
-            draw_joint_layer("true_model_raw", jt_model, frame_idx, LAYER_COLORS["true_model_raw"])
-            draw_joint_layer("biased_model_raw", jb_model, frame_idx, LAYER_COLORS["biased_model_raw"])
+            draw_joint_layer("model_world_hand_joints", jt_model, frame_idx, LAYER_COLORS["model_world_hand_joints"])
+            draw_joint_layer("model_world_hand_joints_biased", jb_model, frame_idx, LAYER_COLORS["model_world_hand_joints_biased"])
             for method, joints in finetuned.items():
                 color = LAYER_COLORS.get(method, np.array([0.8, 0.8, 0.8]))
                 draw_joint_layer(f"finetuned_{method}", joints, frame_idx, color)
-            update_metrics_panel(layer_data, jt, frame_idx)
+            update_metrics_panel(layer_data, metric_gt, frame_idx, metric_gt_key)
 
+        loaded_methods = [method for method, joints in finetuned.items() if joints is not None]
+        missing_methods = [method for method, joints in finetuned.items() if joints is None]
         info_markdown.content = (
             f"**episode**: `{ep}`\n"
             f"**frames**: `{T}`\n"
             f"**side**: `{ep_data['side']}`\n"
             f"**current frame**: `{frame_idx}`\n"
             f"**sample**: `{sample_idx}` / `{num_samples - 1}`\n"
+            f"**metric_gt_key**: `{metric_gt_key}`\n"
             f"**finetune_k**: `{args.finetune_k}`\n"
-            f"**loaded_finetune_methods**: `{', '.join(finetuned.keys()) if finetuned else 'none'}`"
+            f"**loaded_finetune_methods**: `{', '.join(loaded_methods) if loaded_methods else 'none'}`\n"
+            f"**missing_finetune_methods**: `{', '.join(missing_methods) if missing_methods else 'none'}`"
         )
 
     @ep_slider.on_update
@@ -563,24 +655,26 @@ def main():
         "\n".join([
             "Legend:",
             "- **red**: world_hand_joints",
-            "- **blue**: world_hand_joints_biased raw",
+            "- **orange-red**: world_hand_joints_true",
+            "- **blue**: world_hand_joints_biased",
             "- **green**: gt MANO pose -> FK joints raw",
-            "- **teal**: model(world_hand_joints) raw",
-            "- **purple**: model(world_hand_joints_biased) raw",
-            "- **amber**: best model on biased joints",
-            "- **cyan**: best model on original joints",
+            "- **teal**: model(world_hand_joints)",
+            "- **purple**: model(world_hand_joints_biased)",
+            "- **amber**: best_world_hand_joints_biased",
+            "- **cyan**: best_world_hand_joints",
+            "- **mint**: best_world_hand_joints_true",
             "- **lime**: gt MANO FK predictions file",
-            "- **pink**: finetuned LoRA on biased joints",
-            "- **yellow**: finetuned full_ft on biased joints",
-            "- **brown**: finetuned residual_linear on biased joints",
-            "- **periwinkle**: finetuned last_layer on biased joints",
+            "- **pink**: finetuned LoRA on world_hand_joints_biased",
+            "- **yellow**: finetuned full_ft on world_hand_joints_biased",
+            "- **brown**: finetuned residual_linear on world_hand_joints_biased",
+            "- **periwinkle**: finetuned last_layer on world_hand_joints_biased",
             "- **magenta**: HyperNet/HyperLoRA conditioned on K paired poses",
             "- **pale green**: HyperNet LoRA further finetuned",
         ]),
     )
 
     # Initial render
-    render(0, 0, 0)
+    render(initial_ep_idx, 0, 0)
     print(f"Viser server running at http://localhost:{args.port}")
     print("Press Ctrl+C to stop.")
     

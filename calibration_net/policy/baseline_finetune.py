@@ -18,12 +18,12 @@ class BaselineConfig:
     lr: float = 1e-4
     weight_decay: float = 0.0
     seed: int = 42
-    target_modules: list[str] = field(
-        default_factory=lambda: ["mano_regressor", "fusion_attention"]
-    )
-    lora_rank: int = 4
+    target_modules: list[str] = field(default_factory=list)
+    lora_rank: int = 8
     lora_alpha: float = 8.0
-    lora_dropout: float = 0.0
+    lora_dropout: float = 0.1
+    lora_use_gates: bool = True
+    lora_gate_init: float = 0.0
 
 
 class StaticLoRAAdapter(nn.Module):
@@ -31,9 +31,11 @@ class StaticLoRAAdapter(nn.Module):
         self,
         base_model: nn.Module,
         target_modules: Iterable[str],
-        rank: int = 4,
+        rank: int = 8,
         alpha: float = 8.0,
-        dropout: float = 0.0,
+        dropout: float = 0.1,
+        use_gates: bool = True,
+        gate_init: float = 0.0,
     ):
         super().__init__()
         self.base_model = base_model
@@ -42,7 +44,10 @@ class StaticLoRAAdapter(nn.Module):
         self.alpha = float(alpha)
         self.scaling = self.alpha / max(self.rank, 1)
         self.dropout = nn.Dropout(float(dropout))
+        self.use_gates = bool(use_gates)
+        self.gate_init = float(gate_init)
         self.adapters = nn.ModuleDict()
+        self.gates = nn.ParameterDict()
         self.target_names: list[str] = []
         self._hooks = []
         self._build()
@@ -72,12 +77,20 @@ class StaticLoRAAdapter(nn.Module):
             )
             nn.init.kaiming_uniform_(adapter["A"].weight, a=5**0.5)
             nn.init.zeros_(adapter["B"].weight)
-            self.adapters[self._safe_name(name)] = adapter
+            safe_name = self._safe_name(name)
+            self.adapters[safe_name] = adapter
+            gate = None
+            if self.use_gates:
+                gate = nn.Parameter(torch.tensor(self.gate_init, dtype=torch.float32))
+                self.gates[safe_name] = gate
             self.target_names.append(name)
 
-            def hook(_module, inputs, output, adapter=adapter):
+            def hook(_module, inputs, output, adapter=adapter, gate=gate):
                 x = self.dropout(inputs[0])
-                return output + adapter["B"](adapter["A"](x)) * self.scaling
+                lora_output = adapter["B"](adapter["A"](x)) * self.scaling
+                if gate is not None:
+                    lora_output = torch.sigmoid(gate) * lora_output
+                return output + lora_output
 
             self._hooks.append(module.register_forward_hook(hook))
 
@@ -127,9 +140,11 @@ def configure_baseline_model(
     input_shape: tuple[int, ...],
     output_size: int,
     target_modules: Iterable[str],
-    lora_rank: int = 4,
+    lora_rank: int = 8,
     lora_alpha: float = 8.0,
-    lora_dropout: float = 0.0,
+    lora_dropout: float = 0.1,
+    lora_use_gates: bool = True,
+    lora_gate_init: float = 0.0,
 ) -> nn.Module:
     method = method.lower()
     if method == "lora":
@@ -139,6 +154,8 @@ def configure_baseline_model(
             rank=lora_rank,
             alpha=lora_alpha,
             dropout=lora_dropout,
+            use_gates=lora_use_gates,
+            gate_init=lora_gate_init,
         )
 
     if method == "full_ft":

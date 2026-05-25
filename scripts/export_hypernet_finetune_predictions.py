@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
         "--model-dir",
         default=(
             "hand_keypoint_data/ckpts/"
-            "fair_ditflow_5ds_biasmix_round6_gttrue_no_canon_20260521_134310_20260521_134356/best"
+            "fair_ditflow_5ds_biasmix_round6_4pair_lr1e5_all_lora_worldgt_reject005_glvnd_20260524_104940/best"
         ),
         help="Trained HyperLoRA checkpoint dir",
     )
@@ -47,26 +47,74 @@ def parse_args() -> argparse.Namespace:
         "--data-path",
         default=(
             "hand_keypoint_data/Interhand_val/"
-            "InterHand_retargeted_30fps_biased_super_shapedir_fix_bone50_only_filtered.hdf5"
+            "InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5"
         ),
         help="HDF5 dataset to export",
     )
     parser.add_argument(
         "--output-dir",
-        default="expdata_annie/finetune_baselines_mac_bone50_filtered",
+        default="expdata_annie/current_export_franklin_aligned_joint20cm_marked_right",
         help="Output root",
     )
     parser.add_argument("--num-calib-actions", type=int, default=4)
     parser.add_argument("--sample-idx", type=int, default=-1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default=None)
+    parser.add_argument(
+        "--calib-selection",
+        default="random",
+        choices=["random", "first", "uniform"],
+        help="Calibration frame selection mode. Matches eval/evaluate_calibration.py.",
+    )
+    parser.add_argument(
+        "--exclude-calib-from-eval",
+        action="store_true",
+        help="Exclude calibration frames from metrics. Default matches Franklin eval: include them.",
+    )
     parser.add_argument("--input-key", default="world_hand_joints_biased")
-    parser.add_argument("--true-key", default="world_hand_joints")
+    parser.add_argument(
+        "--true-key",
+        default="world_hand_joints_true",
+        help="Clean joint key used only for HyperLoRA conditioning pairs.",
+    )
+    parser.add_argument(
+        "--paired-target-key",
+        default="world_hand_joints",
+        help=(
+            "Key name used inside paired_poses for the clean calibration joints. "
+            "Franklin eval reads --true-key but passes it to the inferencer as world_hand_joints."
+        ),
+    )
+    parser.add_argument(
+        "--metric-gt-key",
+        default="world_hand_joints",
+        help=(
+            "GT joint key used for MPJPE/PA-MPJPE/tip MPJPE metrics. "
+            "This is intentionally separate from --true-key: Franklin-style "
+            "conditioning can use world_hand_joints_true while metrics use "
+            "normal-beta world_hand_joints."
+        ),
+    )
+    parser.add_argument(
+        "--pred-beta-source",
+        default="auto",
+        choices=["auto", "group", "neutral"],
+        help=(
+            "MANO beta used for predicted-theta FK. auto uses neutral beta for "
+            "world_hand_joints_true targets and group betas otherwise."
+        ),
+    )
     parser.add_argument("--max-sessions", type=int, default=0)
+    parser.add_argument(
+        "--side-filter",
+        default="right",
+        choices=["all", "left", "right"],
+        help="Only export/evaluate one MANO side. Default: right, matching Franklin eval.",
+    )
     parser.add_argument(
         "--variants",
         nargs="*",
-        default=["hypernet", "hypernet_lora_ft"],
+        default=["hypernet"],
         choices=["hypernet", "hypernet_lora_ft"],
         help="Which HyperLoRA variants to export/evaluate.",
     )
@@ -117,47 +165,159 @@ def biased_sample_indices(group: h5py.Group, input_key: str, sample_idx: int) ->
     return [0]
 
 
-def choose_calib_indices(length: int, num_calib: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+def read_bad_frame_mask(group: h5py.Group, length: int) -> np.ndarray | None:
+    if "bad_frame" not in group:
+        return None
+    mask = np.asarray(group["bad_frame"], dtype=bool).reshape(-1)
+    if len(mask) != length:
+        raise ValueError(f"bad_frame length {len(mask)} does not match sequence length {length}")
+    return mask
+
+
+def read_valid_joint_mask(group: h5py.Group, length: int) -> np.ndarray | None:
+    if "gt_joint_mask" not in group:
+        return None
+    bad = np.asarray(group["gt_joint_mask"], dtype=bool)
+    if bad.shape != (length, 21):
+        raise ValueError(f"gt_joint_mask shape {bad.shape} does not match expected {(length, 21)}")
+    return ~bad
+
+
+def select_mano_betas(
+    group: h5py.Group,
+    metric_gt_key: str,
+    pred_beta_source: str,
+) -> tuple[np.ndarray | None, str]:
+    source = pred_beta_source
+    if source == "auto":
+        source = "neutral" if metric_gt_key == "world_hand_joints_true" else "group"
+    if source == "neutral":
+        return None, source
+    if "betas" not in group:
+        return None, "missing_group"
+    return np.asarray(group["betas"], dtype=np.float32), source
+
+
+def choose_calib_indices(
+    length: int,
+    num_calib: int,
+    rng: np.random.Generator,
+    mode: str,
+    exclude_calib_from_eval: bool,
+    bad_frame_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     all_indices = np.arange(length)
-    if length <= num_calib:
-        return all_indices, all_indices
-    rng = np.random.default_rng(seed)
-    calib_idx = np.sort(rng.choice(all_indices, size=num_calib, replace=False))
+    good_indices = all_indices if bad_frame_mask is None else all_indices[~bad_frame_mask]
+    if len(good_indices) == 0:
+        raise ValueError("No non-bad frames available for HyperLoRA calibration/eval")
+    count = min(max(int(num_calib), 1), len(good_indices))
+
+    if mode == "first":
+        calib_idx = good_indices[:count]
+    elif mode == "random":
+        calib_idx = np.sort(rng.choice(good_indices, size=count, replace=False))
+    elif mode == "uniform":
+        if count == 1:
+            calib_idx = good_indices[[0]]
+        else:
+            uniform_idx = np.linspace(0, len(good_indices) - 1, num=count).round().astype(np.int64)
+            calib_idx = good_indices[uniform_idx]
+    else:
+        raise ValueError("calib-selection must be 'random', 'first', or 'uniform'")
+
     eval_mask = np.ones(length, dtype=bool)
-    eval_mask[calib_idx] = False
+    if exclude_calib_from_eval:
+        eval_mask[calib_idx] = False
+        if not eval_mask.any():
+            raise ValueError("exclude-calib-from-eval leaves no frames to evaluate")
     return calib_idx, all_indices[eval_mask]
 
 
+def _similarity_align_one(
+    source: np.ndarray,
+    target: np.ndarray,
+    fit_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    src = np.asarray(source, dtype=np.float64)
+    tgt = np.asarray(target, dtype=np.float64)
+    if fit_mask is None:
+        src_fit = src
+        tgt_fit = tgt
+    else:
+        valid = np.asarray(fit_mask, dtype=bool)
+        if int(valid.sum()) < 3:
+            return src.copy()
+        src_fit = src[valid]
+        tgt_fit = tgt[valid]
+
+    src_mean = src_fit.mean(axis=0, keepdims=True)
+    tgt_mean = tgt_fit.mean(axis=0, keepdims=True)
+    src_centered = src_fit - src_mean
+    tgt_centered = tgt_fit - tgt_mean
+    src_var = float(np.sum(src_centered ** 2))
+    if src_var < 1e-12:
+        return np.broadcast_to(tgt_mean, src.shape).copy()
+
+    cov = src_centered.T @ tgt_centered
+    u, singular_values, vh = np.linalg.svd(cov)
+    z = np.eye(cov.shape[0], dtype=np.float64)
+    if np.linalg.det(u @ vh) < 0:
+        z[-1, -1] = -1.0
+    rot = u @ z @ vh
+    scale = float(np.sum(singular_values * np.diag(z)) / src_var)
+    return scale * ((src - src_mean) @ rot) + tgt_mean
+
+
 def batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
-    aligned = np.empty_like(source, dtype=np.float64)
-    for i, (src, tgt) in enumerate(zip(source, target)):
-        src_mean = src.mean(axis=0, keepdims=True)
-        tgt_mean = tgt.mean(axis=0, keepdims=True)
-        src_centered = src - src_mean
-        tgt_centered = tgt - tgt_mean
-        src_var = float(np.sum(src_centered ** 2))
-        if src_var < 1e-12:
-            aligned[i] = np.broadcast_to(tgt_mean, src.shape)
-            continue
-        u, _, vh = np.linalg.svd(src_centered.T @ tgt_centered)
-        rot = u @ vh
-        if np.linalg.det(rot) < 0:
-            vh[-1] *= -1
-            rot = u @ vh
-        scale = np.trace(rot.T @ src_centered.T @ tgt_centered) / src_var
-        aligned[i] = scale * (src_centered @ rot) + tgt_mean
-    return aligned.astype(np.float32)
+    return np.stack(
+        [_similarity_align_one(src, tgt) for src, tgt in zip(source, target)],
+        axis=0,
+    ).astype(np.float32)
 
 
-def compute_joint_metrics(pred_joints: np.ndarray, gt_joints: np.ndarray) -> dict[str, float]:
+def batch_similarity_align_masked(
+    source: np.ndarray,
+    target: np.ndarray,
+    valid_mask: np.ndarray | None,
+) -> np.ndarray:
+    if valid_mask is None:
+        return batch_similarity_align(source, target)
+    return np.stack(
+        [
+            _similarity_align_one(src, tgt, valid)
+            for src, tgt, valid in zip(source, target, valid_mask)
+        ],
+        axis=0,
+    ).astype(np.float32)
+
+
+def compute_joint_metrics(
+    pred_joints: np.ndarray,
+    gt_joints: np.ndarray,
+    valid_joint_mask: np.ndarray | None = None,
+) -> dict[str, float]:
     pred = np.asarray(pred_joints, dtype=np.float32)
     gt = np.asarray(gt_joints, dtype=np.float32)
-    pa_pred = batch_similarity_align(pred, gt)
-    mpjpe = float(np.mean(np.linalg.norm(pred - gt, axis=-1)))
-    pa_mpjpe = float(np.mean(np.linalg.norm(pa_pred - gt, axis=-1)))
-    tip_mpjpe = float(
-        np.mean(np.linalg.norm(pred[:, TIP_JOINT_INDICES] - gt[:, TIP_JOINT_INDICES], axis=-1))
-    )
+    if valid_joint_mask is not None:
+        valid_joint_mask = np.asarray(valid_joint_mask, dtype=bool)
+        if valid_joint_mask.shape != pred.shape[:2]:
+            raise ValueError(
+                f"valid_joint_mask shape {valid_joint_mask.shape} does not match joints shape {pred.shape[:2]}"
+            )
+    valid = np.ones(pred.shape[:2], dtype=bool) if valid_joint_mask is None else valid_joint_mask
+    if not np.any(valid):
+        raise ValueError("No valid joints left for HyperLoRA metrics")
+    pa_pred = batch_similarity_align_masked(pred, gt, valid_joint_mask)
+    err = np.linalg.norm(pred - gt, axis=-1)
+    pa_err = np.linalg.norm(pa_pred - gt, axis=-1)
+    tip_valid = valid[:, TIP_JOINT_INDICES]
+    tip_err = np.linalg.norm(pred[:, TIP_JOINT_INDICES] - gt[:, TIP_JOINT_INDICES], axis=-1)
+    if not np.any(tip_valid):
+        tip_valid = valid
+        tip_err = err
+    mpjpe = float(np.mean(err[valid]))
+    pa_mpjpe = float(np.mean(pa_err[valid]))
+    tip_mpjpe = float(np.mean(tip_err[tip_valid]))
     return {
         "mpjpe": mpjpe,
         "mpjpe_mm": mpjpe * 1000.0,
@@ -165,6 +325,18 @@ def compute_joint_metrics(pred_joints: np.ndarray, gt_joints: np.ndarray) -> dic
         "pa_mpjpe_mm": pa_mpjpe * 1000.0,
         "tip_mpjpe": tip_mpjpe,
         "tip_mpjpe_mm": tip_mpjpe * 1000.0,
+        "num_metric_joints": int(np.sum(valid)),
+        "num_masked_bad_joints": int(valid.size - np.sum(valid)),
+    }
+
+
+def compute_theta_metrics(pred_theta: np.ndarray, gt_theta: np.ndarray) -> dict[str, float]:
+    pred = np.asarray(pred_theta, dtype=np.float32)
+    gt = np.asarray(gt_theta, dtype=np.float32)
+    if pred.shape != gt.shape:
+        raise ValueError(f"pred theta shape {pred.shape} does not match gt theta shape {gt.shape}")
+    return {
+        "theta_mse": float(np.mean((pred - gt) ** 2)),
     }
 
 
@@ -258,6 +430,26 @@ class TrainableHyperLoRAAdapter(nn.Module):
 
         self._hooks = []
         self._register_hooks()
+        self._assert_only_generated_lora_is_trainable()
+
+    def _trainable_parameter_names(self) -> list[str]:
+        return [name for name, param in self.named_parameters() if param.requires_grad]
+
+    def _assert_only_generated_lora_is_trainable(self) -> None:
+        allowed_prefixes = ("lora_params.",)
+        if self.train_gates:
+            allowed_prefixes = allowed_prefixes + ("model.hyperlora.gates.",)
+        unexpected = [
+            name
+            for name in self._trainable_parameter_names()
+            if not name.startswith(allowed_prefixes)
+        ]
+        if unexpected:
+            raise RuntimeError(
+                "Unexpected trainable parameters in HyperLoRA finetune. "
+                "Only generated LoRA tensors should be tuned, but got: "
+                + ", ".join(unexpected[:20])
+            )
 
     def _register_hooks(self) -> None:
         self.remove_hooks()
@@ -293,7 +485,12 @@ class TrainableHyperLoRAAdapter(nn.Module):
 
     @torch.no_grad()
     def predict_theta(self, x: torch.Tensor) -> torch.Tensor:
+        self.eval()
         return self.model.predict(x)
+
+    @property
+    def num_trainable_lora_tensors(self) -> int:
+        return len(self.lora_params)
 
 
 def train_hyper_lora_params(
@@ -305,16 +502,46 @@ def train_hyper_lora_params(
     weight_decay: float,
     grad_clip: float,
     device: torch.device,
-) -> tuple[list[float], float]:
+) -> tuple[list[float], float, float, float]:
     params = [p for p in adapter.parameters() if p.requires_grad]
     if not params:
         raise RuntimeError("No trainable HyperLoRA parameters")
     optimizer = torch.optim.AdamW(params, lr=float(lr), weight_decay=float(weight_decay))
     x_tensor = torch.as_tensor(x_calib, dtype=torch.float32, device=device)
     y_tensor = torch.as_tensor(y_calib, dtype=torch.float32, device=device)
+
+    def keep_frozen_modules_eval() -> None:
+        for child in adapter.modules():
+            child_params = list(child.parameters(recurse=True))
+            if child_params and not any(param.requires_grad for param in child_params):
+                child.eval()
+        # HyperLoRA dropout is implemented in lora_hook through the target
+        # Linear module's training flag. Keep only those stateless Linear
+        # layers in train mode; frozen BatchNorm/dropout parents stay eval.
+        for layer, _module in adapter.hyperlora.modules_list:
+            layer.train()
+
+    @torch.no_grad()
+    def eval_loss() -> float:
+        adapter.eval()
+        result = adapter.train_forward(x_tensor, y_tensor)
+        return float(result["loss"].mean().detach().cpu())
+
+    def clone_trainable_params() -> list[torch.Tensor]:
+        return [param.detach().clone() for param in params]
+
+    def restore_trainable_params(state: list[torch.Tensor]) -> None:
+        with torch.no_grad():
+            for param, saved in zip(params, state):
+                param.copy_(saved)
+
     losses: list[float] = []
     start = perf_counter()
+    initial_loss = eval_loss()
+    best_loss = initial_loss
+    best_state = clone_trainable_params()
     adapter.train()
+    keep_frozen_modules_eval()
     for _ in range(int(steps)):
         optimizer.zero_grad(set_to_none=True)
         result = adapter.train_forward(x_tensor, y_tensor)
@@ -323,8 +550,15 @@ def train_hyper_lora_params(
         if grad_clip is not None and grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(params, float(grad_clip))
         optimizer.step()
-        losses.append(float(loss.detach().cpu()))
-    return losses, perf_counter() - start
+        post_step_loss = eval_loss()
+        losses.append(post_step_loss)
+        if post_step_loss < best_loss:
+            best_loss = post_step_loss
+            best_state = clone_trainable_params()
+        adapter.train()
+        keep_frozen_modules_eval()
+    restore_trainable_params(best_state)
+    return losses, perf_counter() - start, initial_loss, best_loss
 
 
 def main() -> None:
@@ -332,6 +566,7 @@ def main() -> None:
     device = resolve_torch_device(args.device)
     rows_by_variant: dict[str, list[dict[str, Any]]] = {variant: [] for variant in args.variants}
     run_start_by_variant: dict[str, float] = {variant: perf_counter() for variant in args.variants}
+    rng = np.random.default_rng(args.seed)
 
     def fresh_loaded_model():
         loaded = load_model(args.model_dir, device=str(device))
@@ -342,6 +577,23 @@ def main() -> None:
                 canonicalizer_cfg["extractor_path"] = args.canonicalizer_extractor_path
         return loaded
 
+    inferencer: RefineModelInferencer | None = None
+
+    def get_inferencer(side: str) -> RefineModelInferencer:
+        nonlocal inferencer
+        if inferencer is None:
+            inferencer = RefineModelInferencer(
+                model_dir=args.model_dir,
+                side=side,
+                device=device,
+                paired_poses=None,
+                fixed_noise=True,
+                loaded_model=fresh_loaded_model(),
+            )
+        else:
+            inferencer.set_side(side)
+        return inferencer
+
     with h5py.File(args.data_path, "r") as f:
         session_names = list(f.keys())
         try:
@@ -351,17 +603,27 @@ def main() -> None:
         if args.max_sessions > 0:
             session_names = session_names[: args.max_sessions]
 
-        total_units = sum(
-            len(biased_sample_indices(f[name], args.input_key, args.sample_idx))
-            for name in session_names
-        )
+        total_units = 0
+        for name in session_names:
+            group = f[name]
+            side = decode_side(np.asarray(group["mano_side"])) if "mano_side" in group else "right"
+            if args.side_filter != "all" and side != args.side_filter:
+                continue
+            total_units += len(biased_sample_indices(group, args.input_key, args.sample_idx))
         unit_idx = 0
         for session_name in tqdm(session_names, desc="hypernet export sessions"):
             group = f[session_name]
+            side = decode_side(np.asarray(group["mano_side"])) if "mano_side" in group else "right"
+            if args.side_filter != "all" and side != args.side_filter:
+                continue
             if args.input_key not in group:
                 raise KeyError(f"{args.input_key!r} not found in session {session_name}")
             if args.true_key not in group:
                 raise KeyError(f"{args.true_key!r} not found in session {session_name}")
+            if args.metric_gt_key not in group:
+                raise KeyError(f"{args.metric_gt_key!r} not found in session {session_name}")
+            if "mano_angles" not in group:
+                raise KeyError(f"'mano_angles' not found in session {session_name}")
 
             sample_indices = biased_sample_indices(group, args.input_key, args.sample_idx)
             for sample_idx in tqdm(
@@ -375,43 +637,54 @@ def main() -> None:
 
                 biased_seq = read_sequence(group, args.input_key, sample_idx=sample_idx)
                 true_seq = read_sequence(group, args.true_key, sample_idx=sample_idx)
-                if len(biased_seq) != len(true_seq):
+                metric_gt_seq = read_sequence(group, args.metric_gt_key, sample_idx=0)
+                gt_theta_seq = read_sequence(group, "mano_angles", sample_idx=0)
+                if len(biased_seq) != len(true_seq) or len(biased_seq) != len(metric_gt_seq):
                     raise ValueError(
                         f"Length mismatch for {session_name}/sample_{sample_idx}: "
-                        f"{len(biased_seq)} vs {len(true_seq)}"
+                        f"biased={len(biased_seq)} true={len(true_seq)} metric_gt={len(metric_gt_seq)}"
                     )
+                if len(biased_seq) != len(gt_theta_seq):
+                    raise ValueError(
+                        f"Length mismatch for {session_name}/sample_{sample_idx}: "
+                        f"biased={len(biased_seq)} mano_angles={len(gt_theta_seq)}"
+                    )
+                bad_frame_mask = read_bad_frame_mask(group, len(biased_seq))
+                valid_joint_mask_all = read_valid_joint_mask(group, len(biased_seq))
 
                 calib_idx, eval_idx = choose_calib_indices(
                     len(biased_seq),
                     args.num_calib_actions,
-                    args.seed,
+                    rng,
+                    args.calib_selection,
+                    args.exclude_calib_from_eval,
+                    bad_frame_mask=bad_frame_mask,
                 )
                 paired_poses = {
                     "world_hand_joints_biased": biased_seq[calib_idx],
-                    "world_hand_joints": true_seq[calib_idx],
+                    args.paired_target_key: true_seq[calib_idx],
                 }
-                side = decode_side(np.asarray(group["mano_side"])) if "mano_side" in group else "right"
-                betas = np.asarray(group["betas"], dtype=np.float32) if "betas" in group else None
-                gt_joints = np.asarray(transform_joint3d(true_seq), dtype=np.float32)
+                betas, beta_source = select_mano_betas(
+                    group,
+                    args.metric_gt_key,
+                    args.pred_beta_source,
+                )
+                gt_joints = np.asarray(transform_joint3d(metric_gt_seq), dtype=np.float32)
+                inferencer = get_inferencer(side)
 
                 for variant in args.variants:
                     output_dir = Path(args.output_dir) / variant / f"k{args.num_calib_actions}"
                     predictions_path = output_dir / "predictions.hdf5"
 
-                    start = perf_counter()
-                    loaded_model = fresh_loaded_model()
-                    inferencer = RefineModelInferencer(
-                        model_dir=args.model_dir,
-                        side=side,
-                        device=device,
-                        paired_poses=paired_poses,
-                        fixed_noise=True,
-                        loaded_model=loaded_model,
-                    )
+                    condition_start = perf_counter()
+                    inferencer.update_condition(paired_poses=paired_poses)
+                    conditioning_time = perf_counter() - condition_start
                     hyper_input = inferencer.last_hyper_input
 
                     adaptation_time = 0.0
                     losses: list[float] = []
+                    initial_adapt_loss = None
+                    best_adapt_loss = None
                     adapter = None
                     if variant == "hypernet":
                         pass
@@ -437,7 +710,12 @@ def main() -> None:
                             process_y_train(np.asarray(group["mano_angles"][calib_idx], dtype=np.float32)),
                             dtype=np.float32,
                         )
-                        losses, adaptation_time = train_hyper_lora_params(
+                        (
+                            losses,
+                            adaptation_time,
+                            initial_adapt_loss,
+                            best_adapt_loss,
+                        ) = train_hyper_lora_params(
                             adapter,
                             x_calib=x_calib,
                             y_calib=y_calib,
@@ -449,7 +727,6 @@ def main() -> None:
                         )
                     else:
                         raise ValueError(f"Unknown variant: {variant}")
-                    conditioning_time = perf_counter() - start - adaptation_time
 
                     start = perf_counter()
                     if adapter is None:
@@ -476,6 +753,11 @@ def main() -> None:
                     joint_metrics = compute_joint_metrics(
                         pred_joints[eval_idx],
                         gt_joints[eval_idx],
+                        valid_joint_mask_all[eval_idx] if valid_joint_mask_all is not None else None,
+                    )
+                    theta_metrics = compute_theta_metrics(
+                        pred_theta[eval_idx],
+                        gt_theta_seq[eval_idx],
                     )
 
                     save_predictions(
@@ -490,6 +772,13 @@ def main() -> None:
                             "method": variant,
                             "num_calib_actions": int(args.num_calib_actions),
                             "model_dir": str(args.model_dir),
+                            "calib_selection": args.calib_selection,
+                            "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
+                            "input_key": args.input_key,
+                            "true_key": args.true_key,
+                            "paired_target_key": args.paired_target_key,
+                            "metric_gt_key": args.metric_gt_key,
+                            "pred_beta_source": beta_source,
                         },
                     )
                     rows_by_variant[variant].append(
@@ -502,18 +791,47 @@ def main() -> None:
                             "num_calib_actions": int(args.num_calib_actions),
                             "num_calib_samples": int(len(calib_idx)),
                             "num_eval_samples": int(len(eval_idx)),
+                            "calib_selection": args.calib_selection,
+                            "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
+                            "input_key": args.input_key,
+                            "true_key": args.true_key,
+                            "paired_target_key": args.paired_target_key,
+                            "metric_gt_key": args.metric_gt_key,
+                            "pred_beta_source": beta_source,
+                            "calib_idx": " ".join(str(int(i)) for i in calib_idx),
                             "conditioning_time_sec": float(conditioning_time),
                             "adaptation_time_sec": float(adaptation_time),
                             "inference_time_sec": float(inference_time),
                             "reconstruction_time_sec": float(reconstruction_time),
                             "ft_steps": int(args.ft_steps) if variant == "hypernet_lora_ft" else 0,
-                            "initial_adapt_loss": float(losses[0]) if losses else None,
+                            "initial_adapt_loss": (
+                                float(initial_adapt_loss)
+                                if initial_adapt_loss is not None
+                                else None
+                            ),
                             "final_adapt_loss": float(losses[-1]) if losses else None,
+                            "best_adapt_loss": (
+                                float(best_adapt_loss)
+                                if best_adapt_loss is not None
+                                else None
+                            ),
+                            "trainable_params": int(
+                                sum(p.numel() for p in adapter.parameters() if p.requires_grad)
+                            ) if adapter is not None else 0,
+                            "trainable_lora_tensors": int(
+                                adapter.num_trainable_lora_tensors
+                            ) if adapter is not None else 0,
+                            "trainable_param_names": " ".join(
+                                adapter._trainable_parameter_names()
+                            ) if adapter is not None else "",
                             **joint_metrics,
+                            **theta_metrics,
                         }
                     )
                     if adapter is not None:
                         adapter.remove_hooks()
+                        if hasattr(inferencer.model, "hyperlora"):
+                            inferencer.model.hyperlora.unmerge_weight()
 
     for variant, rows in rows_by_variant.items():
         summary = {
@@ -531,6 +849,7 @@ def main() -> None:
             "pa_mpjpe_mm",
             "tip_mpjpe",
             "tip_mpjpe_mm",
+            "theta_mse",
         ):
             values = [row[key] for row in rows if row.get(key) is not None]
             if values:

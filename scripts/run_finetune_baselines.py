@@ -35,29 +35,65 @@ from calibration_net.utils import mano_recon, scale_hand_fingers, transform_join
 TIP_JOINT_INDICES = [4, 8, 12, 16, 20]
 
 
+def _similarity_align_one(
+    source: np.ndarray,
+    target: np.ndarray,
+    fit_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Canonical Umeyama similarity alignment for row-vector joints."""
+    src = np.asarray(source, dtype=np.float64)
+    tgt = np.asarray(target, dtype=np.float64)
+    if fit_mask is None:
+        src_fit = src
+        tgt_fit = tgt
+    else:
+        valid = np.asarray(fit_mask, dtype=bool)
+        if int(valid.sum()) < 3:
+            return src.copy()
+        src_fit = src[valid]
+        tgt_fit = tgt[valid]
+
+    src_mean = src_fit.mean(axis=0, keepdims=True)
+    tgt_mean = tgt_fit.mean(axis=0, keepdims=True)
+    src_centered = src_fit - src_mean
+    tgt_centered = tgt_fit - tgt_mean
+    src_var = float(np.sum(src_centered ** 2))
+    if src_var < 1e-12:
+        return np.broadcast_to(tgt_mean, src.shape).copy()
+
+    cov = src_centered.T @ tgt_centered
+    u, singular_values, vh = np.linalg.svd(cov)
+    z = np.eye(cov.shape[0], dtype=np.float64)
+    if np.linalg.det(u @ vh) < 0:
+        z[-1, -1] = -1.0
+    rot = u @ z @ vh
+    scale = float(np.sum(singular_values * np.diag(z)) / src_var)
+    return scale * ((src - src_mean) @ rot) + tgt_mean
+
+
 def batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     """Align source joints to target joints per frame with similarity Procrustes."""
-    aligned = np.empty_like(source, dtype=np.float64)
-    for i, (src, tgt) in enumerate(zip(source, target)):
-        src_mean = src.mean(axis=0, keepdims=True)
-        tgt_mean = tgt.mean(axis=0, keepdims=True)
-        src_centered = src - src_mean
-        tgt_centered = tgt - tgt_mean
-        src_var = np.sum(src_centered ** 2)
+    return np.stack(
+        [_similarity_align_one(src, tgt) for src, tgt in zip(source, target)],
+        axis=0,
+    )
 
-        if src_var < 1e-12:
-            aligned[i] = np.broadcast_to(tgt_mean, src.shape)
-            continue
 
-        u, _, vh = np.linalg.svd(src_centered.T @ tgt_centered)
-        rot = u @ vh
-        if np.linalg.det(rot) < 0:
-            vh[-1] *= -1
-            rot = u @ vh
+def batch_similarity_align_masked(
+    source: np.ndarray,
+    target: np.ndarray,
+    valid_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    if valid_mask is None:
+        return batch_similarity_align(source, target)
 
-        scale = np.trace(rot.T @ src_centered.T @ tgt_centered) / src_var
-        aligned[i] = scale * (src_centered @ rot) + tgt_mean
-    return aligned
+    return np.stack(
+        [
+            _similarity_align_one(src, tgt, valid)
+            for src, tgt, valid in zip(source, target, valid_mask)
+        ],
+        axis=0,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,8 +148,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--true-joints-key",
-        default="",
-        help="Optional true joint key. Auto-detects world_hand_joints_true/world_hand_joints.",
+        default="world_hand_joints",
+        help="GT joint key used for MPJPE/PA-MPJPE/tip MPJPE metrics.",
+    )
+    parser.add_argument(
+        "--pred-beta-source",
+        default="auto",
+        choices=["auto", "group", "neutral"],
+        help=(
+            "MANO beta used for predicted-theta FK. auto uses neutral beta for "
+            "world_hand_joints_true targets and group betas otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--side-filter",
+        default="right",
+        choices=["all", "left", "right"],
+        help="Only run one MANO side. Default: right, matching Franklin eval.",
+    )
+    parser.add_argument(
+        "--exclude-calib-from-eval",
+        action="store_true",
+        help="Exclude calibration frames from metrics. Default matches Franklin eval: include them.",
     )
     parser.add_argument(
         "--split-key",
@@ -130,14 +186,25 @@ def parse_args() -> argparse.Namespace:
             "Use -1 to evaluate all biased samples as separate sessions."
         ),
     )
-    parser.add_argument("--lora-rank", type=int, default=4)
+    parser.add_argument("--lora-rank", type=int, default=8)
     parser.add_argument("--lora-alpha", type=float, default=8.0)
-    parser.add_argument("--lora-dropout", type=float, default=0.0)
+    parser.add_argument("--lora-dropout", type=float, default=0.1)
+    parser.add_argument(
+        "--lora-use-gates",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use sigmoid gates on static LoRA outputs, matching Franklin HyperLoRA.",
+    )
+    parser.add_argument("--lora-gate-init", type=float, default=0.0)
     parser.add_argument(
         "--target-modules",
         nargs="*",
-        default=["mano_regressor", "fusion_attention"],
-        help="Name filters for static LoRA target Linear modules.",
+        default=[],
+        help=(
+            "Name filters for static LoRA target Linear modules. "
+            "Default is empty, matching Franklin HyperLoRA name_filter=[] "
+            "and applying LoRA to all Linear layers."
+        ),
     )
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument(
@@ -179,6 +246,24 @@ def read_array(group: h5py.Group, key: str, sample_idx: int = 0) -> np.ndarray:
     return array.astype(np.float32, copy=False) if np.issubdtype(array.dtype, np.number) else array
 
 
+def read_bad_frame_mask(group: h5py.Group, length: int) -> np.ndarray:
+    if "bad_frame" not in group:
+        return np.zeros(length, dtype=bool)
+    mask = np.asarray(group["bad_frame"], dtype=bool).reshape(-1)
+    if len(mask) != length:
+        raise ValueError(f"bad_frame length {len(mask)} does not match sequence length {length}")
+    return mask
+
+
+def read_valid_joint_mask(group: h5py.Group, length: int) -> np.ndarray | None:
+    if "gt_joint_mask" not in group:
+        return None
+    bad = np.asarray(group["gt_joint_mask"], dtype=bool)
+    if bad.shape != (length, 21):
+        raise ValueError(f"gt_joint_mask shape {bad.shape} does not match expected {(length, 21)}")
+    return ~bad
+
+
 def biased_sample_indices(group: h5py.Group, input_key: str, sample_idx: int) -> list[int]:
     if input_key not in group:
         return [0]
@@ -210,15 +295,35 @@ def resolve_true_joints_key(group: h5py.Group, requested_key: str) -> str | None
     return None
 
 
+def select_mano_betas(
+    group: h5py.Group,
+    true_joints_key: str | None,
+    pred_beta_source: str,
+) -> tuple[np.ndarray | None, str]:
+    source = pred_beta_source
+    if source == "auto":
+        source = "neutral" if true_joints_key == "world_hand_joints_true" else "group"
+    if source == "neutral":
+        return None, source
+    if "betas" not in group:
+        return None, "missing_group"
+    return np.asarray(group["betas"], dtype=np.float32), source
+
+
 def split_indices(
     group: h5py.Group,
     length: int,
     num_calib: int,
-    seed: int,
+    rng: np.random.Generator,
     split_key: str = "",
+    bad_frame_mask: np.ndarray | None = None,
+    exclude_calib_from_eval: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, str]:
-    rng = np.random.default_rng(seed)
     all_indices = np.arange(length)
+    good_indices = all_indices if bad_frame_mask is None else all_indices[~bad_frame_mask]
+    if len(good_indices) == 0:
+        raise ValueError("No non-bad frames available for calibration")
+
     if split_key and split_key in group:
         labels = np.asarray(group[split_key])
         labels = labels.reshape(-1)
@@ -226,22 +331,28 @@ def split_indices(
             raise ValueError(
                 f"split_key '{split_key}' has length {len(labels)}, expected {length}"
             )
-        unique_labels = np.array(sorted(set(labels.tolist())))
+        unique_labels = np.array(sorted(set(labels[good_indices].tolist())))
         if len(unique_labels) <= num_calib:
             calib_labels = unique_labels
         else:
             calib_labels = rng.choice(unique_labels, size=num_calib, replace=False)
         calib_mask = np.isin(labels, calib_labels)
-        eval_mask = ~calib_mask
-        if not eval_mask.any():
-            eval_mask = np.ones_like(calib_mask, dtype=bool)
+        if bad_frame_mask is not None:
+            calib_mask &= ~bad_frame_mask
+        eval_mask = np.ones_like(calib_mask, dtype=bool)
+        if exclude_calib_from_eval:
+            eval_mask = ~calib_mask
+            if not eval_mask.any():
+                eval_mask = np.ones_like(calib_mask, dtype=bool)
         return all_indices[calib_mask], all_indices[eval_mask], "label"
 
-    if length <= num_calib:
-        return all_indices, all_indices, "frame_all"
-    calib_indices = rng.choice(all_indices, size=num_calib, replace=False)
+    if len(good_indices) <= num_calib:
+        calib_indices = good_indices
+        return calib_indices, all_indices, "frame_all_good"
+    calib_indices = rng.choice(good_indices, size=num_calib, replace=False)
     eval_mask = np.ones(length, dtype=bool)
-    eval_mask[calib_indices] = False
+    if exclude_calib_from_eval:
+        eval_mask[calib_indices] = False
     return np.sort(calib_indices), all_indices[eval_mask], "frame"
 
 
@@ -275,6 +386,7 @@ def reconstruction_metrics(
     side: str,
     model: torch.nn.Module | None = None,
     betas: np.ndarray | None = None,
+    valid_joint_mask: np.ndarray | None = None,
 ) -> dict[str, float]:
     with torch.no_grad():
         try:
@@ -334,20 +446,36 @@ def reconstruction_metrics(
             gt_dists = compute_relative_distances(target_local)
             pred_np = pred_local.detach().cpu().numpy()
             target_np = target_local.detach().cpu().numpy()
-            pa_pred_np = batch_similarity_align(pred_np, target_np)
-
-            recon_mse = float(np.mean((pred_np - target_np) ** 2))
-            recon_mae = float(np.mean(np.abs(pred_np - target_np)))
-            mpjpe = float(np.mean(np.linalg.norm(pred_np - target_np, axis=-1)))
-            pa_mpjpe = float(np.mean(np.linalg.norm(pa_pred_np - target_np, axis=-1)))
-            tip_mpjpe = float(
-                np.mean(
-                    np.linalg.norm(
-                        pred_np[:, TIP_JOINT_INDICES] - target_np[:, TIP_JOINT_INDICES],
-                        axis=-1,
+            if valid_joint_mask is not None:
+                valid_joint_mask = np.asarray(valid_joint_mask, dtype=bool)
+                if valid_joint_mask.shape != pred_np.shape[:2]:
+                    raise ValueError(
+                        f"valid_joint_mask shape {valid_joint_mask.shape} "
+                        f"does not match joints shape {pred_np.shape[:2]}"
                     )
-                )
+            pa_pred_np = batch_similarity_align_masked(pred_np, target_np, valid_joint_mask)
+            valid = (
+                np.ones(pred_np.shape[:2], dtype=bool)
+                if valid_joint_mask is None
+                else valid_joint_mask
             )
+            if not np.any(valid):
+                raise ValueError("No valid joints left for reconstruction metrics")
+            tip_valid = valid[:, TIP_JOINT_INDICES]
+            if not np.any(tip_valid):
+                tip_valid = valid
+
+            joint_err = np.linalg.norm(pred_np - target_np, axis=-1)
+            pa_joint_err = np.linalg.norm(pa_pred_np - target_np, axis=-1)
+            recon_mse = float(np.mean(((pred_np - target_np) ** 2)[valid[..., None].repeat(3, axis=-1)]))
+            recon_mae = float(np.mean(np.abs(pred_np - target_np)[valid[..., None].repeat(3, axis=-1)]))
+            mpjpe = float(np.mean(joint_err[valid]))
+            pa_mpjpe = float(np.mean(pa_joint_err[valid]))
+            tip_err = np.linalg.norm(
+                pred_np[:, TIP_JOINT_INDICES] - target_np[:, TIP_JOINT_INDICES],
+                axis=-1,
+            )
+            tip_mpjpe = float(np.mean(tip_err[tip_valid]))
 
             metrics = {
                 "mse": recon_mse,
@@ -369,6 +497,8 @@ def reconstruction_metrics(
                 "mean_abs_tip_distance_error": float(
                     torch.mean(torch.abs(pred_dists - gt_dists)).cpu()
                 ),
+                "num_metric_joints": int(np.sum(valid)),
+                "num_masked_bad_joints": int(valid.size - np.sum(valid)),
             }
             if raw_true_local is not None:
                 metrics["hdf5_true_mpjpe"] = mpjpe
@@ -480,6 +610,7 @@ def run_session(
     cfg: dict[str, Any],
     norm_stats: dict[str, Any],
     device: torch.device,
+    rng: np.random.Generator,
     num_calib_actions: int,
     sample_idx: int,
     output_dir: Path,
@@ -508,6 +639,8 @@ def run_session(
         norm_stats,
     )
     x_proc = np.asarray(process_x(x_raw), dtype=np.float32)
+    bad_frame_mask = read_bad_frame_mask(group, len(x_proc))
+    valid_joint_mask_all = read_valid_joint_mask(group, len(x_proc))
 
     if args.target_source == "clean_model":
         clean_raw = read_array(group, args.clean_input_key, sample_idx=sample_idx)
@@ -536,8 +669,10 @@ def run_session(
         group,
         len(x_proc),
         num_calib_actions,
-        args.seed,
+        rng,
         split_key=args.split_key,
+        bad_frame_mask=bad_frame_mask,
+        exclude_calib_from_eval=args.exclude_calib_from_eval,
     )
 
     baseline = BaselineConfig(
@@ -551,6 +686,8 @@ def run_session(
         lora_rank=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        lora_use_gates=args.lora_use_gates,
+        lora_gate_init=args.lora_gate_init,
     )
 
     torch.manual_seed(args.seed)
@@ -563,6 +700,8 @@ def run_session(
         lora_rank=baseline.lora_rank,
         lora_alpha=baseline.lora_alpha,
         lora_dropout=baseline.lora_dropout,
+        lora_use_gates=baseline.lora_use_gates,
+        lora_gate_init=baseline.lora_gate_init,
     ).to(device)
 
     x_calib = to_tensor(x_proc[calib_idx], device)
@@ -603,6 +742,12 @@ def run_session(
         "steps": int(args.steps),
         "lr": float(args.lr),
         "weight_decay": float(args.weight_decay),
+        "lora_rank": int(args.lora_rank),
+        "lora_alpha": float(args.lora_alpha),
+        "lora_dropout": float(args.lora_dropout),
+        "lora_use_gates": bool(args.lora_use_gates),
+        "lora_gate_init": float(args.lora_gate_init),
+        "target_modules": " ".join(args.target_modules),
         "trainable_params": int(trainable_parameter_count(adapted_model)),
         "adaptation_time_sec": float(adaptation_time),
         "inference_time_sec": float(inference_time),
@@ -618,11 +763,14 @@ def run_session(
 
     if not args.no_reconstruction:
         true_joints = None
+        true_key = None
         if args.target_source == "dataset":
             true_key = resolve_true_joints_key(group, args.true_joints_key)
             if true_key is not None:
                 true_joints = read_array(group, true_key, sample_idx=sample_idx)[eval_idx]
-        betas = np.asarray(group["betas"], dtype=np.float32) if "betas" in group else None
+        betas, beta_source = select_mano_betas(group, true_key, args.pred_beta_source)
+        metrics["true_joints_key"] = true_key
+        metrics["pred_beta_source"] = beta_source
         metrics.update(
             reconstruction_metrics(
                 pred_theta,
@@ -631,6 +779,11 @@ def run_session(
                 side,
                 model=adapted_model,
                 betas=betas,
+                valid_joint_mask=(
+                    valid_joint_mask_all[eval_idx]
+                    if valid_joint_mask_all is not None and true_joints is not None
+                    else None
+                ),
             )
         )
 
@@ -638,7 +791,8 @@ def run_session(
         side = "right"
         if "mano_side" in group:
             side = decode_side(np.asarray(group["mano_side"]))
-        betas = np.asarray(group["betas"], dtype=np.float32) if "betas" in group else None
+        true_key = resolve_true_joints_key(group, args.true_joints_key)
+        betas, beta_source = select_mano_betas(group, true_key, args.pred_beta_source)
         with torch.no_grad():
             x_all = to_tensor(x_proc, device)
             pred_all_proc = predict(adapted_model, x_all)
@@ -674,6 +828,7 @@ def main() -> None:
 
     _, norm_stats, cfg = load_model(args.model_dir, device="cpu")
     input_key_for_samples = args.input_key
+    rng = np.random.default_rng(args.seed)
 
     with h5py.File(os.path.expanduser(args.data_path), "r") as f:
         session_names = list(f.keys())
@@ -691,6 +846,9 @@ def main() -> None:
             total_units = 0
             for session_name in session_names:
                 group = f[session_name]
+                side = decode_side(np.asarray(group["mano_side"])) if "mano_side" in group else "right"
+                if args.side_filter != "all" and side != args.side_filter:
+                    continue
                 resolved_input_key = (
                     input_key_for_samples
                     if input_key_for_samples in group
@@ -708,6 +866,9 @@ def main() -> None:
             )
             for session_name in session_iter:
                 group = f[session_name]
+                side = decode_side(np.asarray(group["mano_side"])) if "mano_side" in group else "right"
+                if args.side_filter != "all" and side != args.side_filter:
+                    continue
                 resolved_input_key = (
                     input_key_for_samples
                     if input_key_for_samples in group
@@ -738,6 +899,7 @@ def main() -> None:
                         cfg,
                         norm_stats,
                         device,
+                        rng,
                         num_calib_actions=num_calib_actions,
                         sample_idx=sample_idx,
                         output_dir=output_dir,

@@ -68,10 +68,10 @@ model:
   hypernet_cfg:
     input_size: 256  # Will match preference_extractor output_dim
     max_modules: -1  # -1 = inject into all Linear layers
-    rank: 4
+    rank: 8
     alpha: 8.0
     hidden_layers: [256, 256]
-    name_filter: ["mano_regressor", "fusion_attention"]  # Target modules for LoRA injection
+    name_filter: []  # Empty = target all Linear layers, matching Franklin HyperLoRA
     drop_out: 0.1
     
     # Stability improvements (NEW)
@@ -79,11 +79,11 @@ model:
     init_method: "xavier"  # 'xavier' (recommended) | 'wasserstein'
     use_tanh: true  # Bound LoRA outputs with tanh for stability
     scale_A: 0.1  # Scale for A matrix (after tanh) - controls adaptation magnitude
-    scale_B: 0.1  # Scale for B matrix (after tanh) - controls adaptation magnitude
+    scale_B: 0.2  # Scale for B matrix (after tanh) - controls adaptation magnitude
     use_gates: true  # Per-module learnable gates (start near-identity)
     gate_init: 0.0  # Initial gate value: sigmoid(0) = 0.5
     max_norm: null  # Optional: max Frobenius norm for delta weights (null = disabled)
-    reg_weight: 0.01  # Weight for regularization loss (penalize large deltas)
+    reg_weight: 0.001  # Weight for regularization loss (penalize large deltas)
     reg_type: "frobenius"  # 'frobenius' (recommended) | 'b_only' | 'nuclear'
     head_type: "dit_flow"  # 'mlp' | 'dit_flow'
     dit_hidden_dim: 128

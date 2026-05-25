@@ -6,8 +6,8 @@ cd "$ROOT_DIR"
 
 PYTHON_BIN="${PYTHON:-python}"
 MODEL_DIR="${MODEL_DIR:-$ROOT_DIR/combined_cnn_mlp_leaky_global_mixer_scheduler_composite_20260308_205854/best}"
-DATA_PATH="${DATA_PATH:-$ROOT_DIR/hand_keypoint_data/Interhand_val/InterHand_retargeted_30fps_biased_super_shapedir_fix_bone50_only_filtered.hdf5}"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/expdata_annie/finetune_baselines_mac_bone50_filtered}"
+DATA_PATH="${DATA_PATH:-$ROOT_DIR/hand_keypoint_data/Interhand_val/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/expdata_annie/current_export_franklin_aligned_joint20cm_marked_right}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-$OUTPUT_DIR/hypernet_checkpoints}"
 EXPNAME="${EXPNAME:-hypernet_k4}"
 DEVICE="${DEVICE:-cpu}"
@@ -19,7 +19,15 @@ SAMPLE_IDX="${SAMPLE_IDX:--1}"
 MAX_SESSIONS="${MAX_SESSIONS:-0}"
 TRAIN="${TRAIN:-0}"
 EXPORT="${EXPORT:-1}"
-HYPERNET_MODEL_DIR="${HYPERNET_MODEL_DIR:-$ROOT_DIR/hand_keypoint_data/ckpts/fair_ditflow_5ds_biasmix_round6_gttrue_no_canon_20260521_134310_20260521_134356/best}"
+HYPERNET_MODEL_DIR="${HYPERNET_MODEL_DIR:-$ROOT_DIR/hand_keypoint_data/ckpts/fair_ditflow_5ds_biasmix_round6_4pair_lr1e5_all_lora_worldgt_reject005_glvnd_20260524_104940/best}"
+TRUE_KEY="${TRUE_KEY:-world_hand_joints_true}"
+PAIRED_TARGET_KEY="${PAIRED_TARGET_KEY:-world_hand_joints}"
+METRIC_GT_KEY="${METRIC_GT_KEY:-world_hand_joints}"
+CALIB_SELECTION="${CALIB_SELECTION:-random}"
+SIDE_FILTER="${SIDE_FILTER:-right}"
+VARIANTS="${VARIANTS:-hypernet}"
+EXCLUDE_CALIB_FROM_EVAL="${EXCLUDE_CALIB_FROM_EVAL:-0}"
+PRED_BETA_SOURCE="${PRED_BETA_SOURCE:-auto}"
 
 echo "Root: $ROOT_DIR"
 echo "Python: $PYTHON_BIN"
@@ -29,6 +37,13 @@ echo "Output: $OUTPUT_DIR"
 echo "Device: $DEVICE"
 echo "K: $K"
 echo "Sample idx: $SAMPLE_IDX (-1 means all biased variants)"
+echo "True key: $TRUE_KEY"
+echo "Paired target key: $PAIRED_TARGET_KEY"
+echo "Metric GT key: $METRIC_GT_KEY"
+echo "Calibration selection: $CALIB_SELECTION"
+echo "Side filter: $SIDE_FILTER"
+echo "Variants: $VARIANTS"
+echo "Pred beta source: $PRED_BETA_SOURCE"
 
 if [[ "$TRAIN" == "1" ]]; then
   mkdir -p "$CHECKPOINT_ROOT"
@@ -59,7 +74,20 @@ if [[ "$TRAIN" == "1" ]]; then
     model.iknet_cfg.enabled=False \
     model.type=Combined_CNN_MLP_MIXER \
     model.hypernet_cfg.rank=8 \
-    model.hypernet_cfg.name_filter=["mano_regressor","fusion_attention","encoder"] \
+    model.hypernet_cfg.alpha=8.0 \
+    'model.hypernet_cfg.name_filter=[]' \
+    model.hypernet_cfg.drop_out=0.1 \
+    model.hypernet_cfg.train_init=false \
+    model.hypernet_cfg.init_method=xavier \
+    model.hypernet_cfg.use_tanh=true \
+    model.hypernet_cfg.scale_A=0.1 \
+    model.hypernet_cfg.scale_B=0.2 \
+    model.hypernet_cfg.use_gates=true \
+    model.hypernet_cfg.gate_init=0.0 \
+    model.hypernet_cfg.max_norm=null \
+    model.hypernet_cfg.reg_weight=0.001 \
+    model.hypernet_cfg.reg_type=frobenius \
+    model.hypernet_cfg.head_type=dit_flow \
     trainer.logger.type=[terminal,file]
 fi
 
@@ -76,19 +104,48 @@ echo "HyperNet model: $HYPERNET_MODEL_DIR"
 
 if [[ "$EXPORT" == "1" ]]; then
   echo "=== Export HyperNet predictions ==="
-  "$PYTHON_BIN" scripts/export_hypernet_finetune_predictions.py \
-    --model-dir "$HYPERNET_MODEL_DIR" \
-    --data-path "$DATA_PATH" \
-    --output-dir "$OUTPUT_DIR" \
-    --num-calib-actions "$K" \
-    --sample-idx "$SAMPLE_IDX" \
-    --device "$DEVICE" \
-    --max-sessions "$MAX_SESSIONS" \
-    --variants hypernet hypernet_lora_ft
+  # shellcheck disable=SC2206
+  variant_args=($VARIANTS)
+  if [[ "$EXCLUDE_CALIB_FROM_EVAL" == "1" ]]; then
+    "$PYTHON_BIN" scripts/export_hypernet_finetune_predictions.py \
+      --model-dir "$HYPERNET_MODEL_DIR" \
+      --data-path "$DATA_PATH" \
+      --output-dir "$OUTPUT_DIR" \
+      --num-calib-actions "$K" \
+      --sample-idx "$SAMPLE_IDX" \
+      --device "$DEVICE" \
+      --max-sessions "$MAX_SESSIONS" \
+      --true-key "$TRUE_KEY" \
+      --paired-target-key "$PAIRED_TARGET_KEY" \
+      --metric-gt-key "$METRIC_GT_KEY" \
+      --pred-beta-source "$PRED_BETA_SOURCE" \
+      --calib-selection "$CALIB_SELECTION" \
+      --side-filter "$SIDE_FILTER" \
+      --exclude-calib-from-eval \
+      --variants "${variant_args[@]}"
+  else
+    "$PYTHON_BIN" scripts/export_hypernet_finetune_predictions.py \
+      --model-dir "$HYPERNET_MODEL_DIR" \
+      --data-path "$DATA_PATH" \
+      --output-dir "$OUTPUT_DIR" \
+      --num-calib-actions "$K" \
+      --sample-idx "$SAMPLE_IDX" \
+      --device "$DEVICE" \
+      --max-sessions "$MAX_SESSIONS" \
+      --true-key "$TRUE_KEY" \
+      --paired-target-key "$PAIRED_TARGET_KEY" \
+      --metric-gt-key "$METRIC_GT_KEY" \
+      --pred-beta-source "$PRED_BETA_SOURCE" \
+      --calib-selection "$CALIB_SELECTION" \
+      --side-filter "$SIDE_FILTER" \
+      --variants "${variant_args[@]}"
+  fi
 
   "$PYTHON_BIN" scripts/summarize_finetune_times.py \
     --output-dir "$OUTPUT_DIR" \
-    --k "$K"
+    --k "$K" \
+    --data-path "$DATA_PATH" \
+    --methods "${variant_args[@]}"
 fi
 
 echo "Done."

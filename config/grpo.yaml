@@ -28,9 +28,9 @@ trainer:
   lora:
     enabled: false  # Set to true to enable LoRA fine-tuning
     rank: 8  # LoRA rank (lower = fewer parameters)
-    alpha: 16.0  # LoRA scaling factor
+    alpha: 8.0  # LoRA scaling factor
     dropout: 0.1  # LoRA dropout
-    target_modules: ["mano_regressor", "fusion_attention"]  # Modules to apply LoRA to
+    target_modules: []  # Empty = apply LoRA to all Linear layers
     train_finger_scaling: true  # Also train finger_scaling parameter
 
   logger:

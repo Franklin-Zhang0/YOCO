@@ -5,7 +5,9 @@ baseline:
   lr: 1.0e-4
   weight_decay: 0.0
   seed: 42
-  target_modules: ["mano_regressor", "fusion_attention"]
-  lora_rank: 4
+  target_modules: []
+  lora_rank: 8
   lora_alpha: 8.0
-  lora_dropout: 0.0
+  lora_dropout: 0.1
+  lora_use_gates: true
+  lora_gate_init: 0.0
