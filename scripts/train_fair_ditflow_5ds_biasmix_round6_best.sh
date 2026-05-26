@@ -11,14 +11,25 @@ PYTHON_BIN="${PYTHON_BIN:-/data/250010203/franklin/envs/teleop/bin/python}"
 BASE_MODEL_PATH="${BASE_MODEL_PATH:-expdata/fair_hyperlora_rounds/fair_ditflow_glovelike_sliced_round2_4pair_20260518_200916/best}"
 SAVE_ROOT="${SAVE_ROOT:-expdata/fair_hyperlora_rounds}"
 EXP_NAME="${EXP_NAME:-fair_ditflow_5ds_biasmix_round6_4pair_lr1e5}"
+GLVND_RUNTIME_LIB="${GLVND_RUNTIME_LIB:-/data/250010203/franklin/drivers/glvnd-runtime/lib}"
 
-DATA_PATHS="${DATA_PATHS:-/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced_biased_glovelike.hdf5,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_biased_glovelike.hdf5,/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced_biased_complexer.hdf5,/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced_biased_super.hdf5,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_biased_complexer.hdf5}"
+if [[ -d "$GLVND_RUNTIME_LIB" ]]; then
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="$GLVND_RUNTIME_LIB:$LD_LIBRARY_PATH"
+  else
+    export LD_LIBRARY_PATH="$GLVND_RUNTIME_LIB"
+  fi
+fi
+
+DATA_PATHS="${DATA_PATHS:-/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced_biased_glovelike.hdf5,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_biased_glovelike.hdf5,/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced_biased_complexer.hdf5,/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_sliced_biased_super.hdf5,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_biased_complexer.hdf5,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_concat3_900_biased_super.hdf5}"
 
 EVAL_DATASET_PATH="${EVAL_DATASET_PATH:-/data/250010203/franklin/data/hand_keypoint_data/InterHand/val/hdf5/avp_glove_aligned/aligned_avp_glove.hdf5}"
 EVAL_OUTPUT_DIR="${EVAL_OUTPUT_DIR:-eval/results/interhand_val_biased_glove_like_fair_ditflow_round6_5ds_biasmix_lr1e5_cuda_theta_baselines}"
 CONFIRM_OUTPUT_DIR="${CONFIRM_OUTPUT_DIR:-eval/results/interhand_val_biased_glove_like_fair_ditflow_round6_5ds_biasmix_lr1e5_cuda_theta_baselines_confirm}"
 RUN_EVAL="${RUN_EVAL:-1}"
 RUN_CONFIRM_EVAL="${RUN_CONFIRM_EVAL:-1}"
+GLOBAL_KEYPOINT_GT_SOURCE="${GLOBAL_KEYPOINT_GT_SOURCE:-mano_recon}"
+GLOBAL_KEYPOINT_BAD_ANNOTATION_THRESHOLD_M="${GLOBAL_KEYPOINT_BAD_ANNOTATION_THRESHOLD_M:-0.05}"
 
 "$PYTHON_BIN" -m calibration_net.policy.train \
   config="$BASE_MODEL_PATH/config.yaml" \
@@ -32,6 +43,8 @@ RUN_CONFIRM_EVAL="${RUN_CONFIRM_EVAL:-1}"
   trainer.lr_scheduler.final_lr=1e-6 \
   trainer.save_interval=1 \
   trainer.save_path="$SAVE_ROOT" \
+  trainer.global_keypoint_gt_source="$GLOBAL_KEYPOINT_GT_SOURCE" \
+  trainer.global_keypoint_bad_annotation_threshold_m="$GLOBAL_KEYPOINT_BAD_ANNOTATION_THRESHOLD_M" \
   trainer.logger.type='[terminal,file]'
 
 RUN_DIR="$(find "$SAVE_ROOT" -maxdepth 1 -type d -name "${EXP_NAME}_*" | sort | tail -n 1)"

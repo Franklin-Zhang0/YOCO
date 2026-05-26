@@ -300,7 +300,7 @@ def main(args: Args) -> None:
         paired_poses = None
         if has_preference_extractor:
             biased_key = 'world_hand_joints_biased'
-            true_key_candidates = ['world_hand_joints', 'world_hand_joints_true']
+            true_key_candidates = ['world_hand_joints_true', 'world_hand_joints']
             true_key = next((k for k in true_key_candidates if k in data[traj_id].keys()), None)
             
             if biased_key in data[traj_id].keys() and true_key is not None:

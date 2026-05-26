@@ -10,6 +10,7 @@ Example
   --bias-cfg config/hyperlora_calib.yaml \
   --device cuda \
   --chunk-size 512 \
+  --apply_shapedir_fix \
   --overwrite
 """
 
@@ -58,6 +59,25 @@ def main() -> None:
     ap.add_argument("--device", default="cuda", help="Torch device for MANO forward (default: cuda if available)")
     ap.add_argument("--chunk-size", type=int, default=1024, help="Frames per GPU forward chunk")
     ap.add_argument("--num-samples", type=int, default=1, help="Number of biased samples to generate per sequence")
+    shapedir_fix_group = ap.add_mutually_exclusive_group()
+    shapedir_fix_group.add_argument(
+        "--apply_shapedir_fix",
+        "--apply-shapedir-fix",
+        dest="apply_shapedir_fix",
+        action="store_true",
+        help=(
+            "Apply the MANO left-hand shapedirs fix when reconstructing "
+            "generated true and biased keypoints."
+        ),
+    )
+    shapedir_fix_group.add_argument(
+        "--no-apply_shapedir_fix",
+        "--no-apply-shapedir-fix",
+        dest="apply_shapedir_fix",
+        action="store_false",
+        help="Disable the MANO left-hand shapedirs fix. This is the default.",
+    )
+    ap.set_defaults(apply_shapedir_fix=False)
     ap.add_argument("--overwrite", action="store_true", help="Overwrite output file if it exists")
     ap.add_argument("--no-copy", action="store_true", help="Do not copy original datasets (only write new bias outputs)")
 
@@ -75,6 +95,7 @@ def main() -> None:
         copy_all_keys=not args.no_copy,
         overwrite=args.overwrite,
         num_samples=args.num_samples,
+        apply_shapedir_fix=args.apply_shapedir_fix,
     )
 
 

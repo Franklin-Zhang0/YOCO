@@ -408,6 +408,51 @@ def pa_mpjpe_loss(pred_joints, gt_joints):
     return torch.linalg.norm(aligned_pred - gt_joints, dim=-1).mean()
 
 
+def _coerce_world_hand_joints(world_hand_joints, pred_joints):
+    world_hand_joints = world_hand_joints.to(
+        device=pred_joints.device,
+        dtype=pred_joints.dtype,
+    )
+    if world_hand_joints.ndim == 2 and world_hand_joints.shape[-1] == 63:
+        world_hand_joints = world_hand_joints.reshape(-1, 21, 3)
+    elif world_hand_joints.ndim == 2 and world_hand_joints.shape == (21, 3):
+        world_hand_joints = world_hand_joints.unsqueeze(0)
+
+    if world_hand_joints.shape != pred_joints.shape:
+        raise ValueError(
+            "world_hand_joints must have shape matching pred_joints "
+            f"{tuple(pred_joints.shape)} or flattened [B, 63], got "
+            f"{tuple(world_hand_joints.shape)}"
+        )
+    return world_hand_joints
+
+
+def world_hand_joints_keypoint_loss(
+    pred_joints,
+    world_hand_joints,
+    mano_gt_joints,
+    bad_annotation_threshold_m=0.05,
+):
+    from calibration_net.utils import transform_joint3d
+
+    gt_joints = _coerce_world_hand_joints(world_hand_joints, pred_joints)
+    pred_local = transform_joint3d(pred_joints)
+    gt_local = transform_joint3d(gt_joints)
+    mano_gt_local = transform_joint3d(mano_gt_joints)
+
+    annotation_sq_error = ((gt_local - mano_gt_local) ** 2).sum(dim=-1)
+    threshold_sq = float(bad_annotation_threshold_m) ** 2
+    valid_mask = annotation_sq_error <= threshold_sq
+    if not valid_mask.any():
+        return pred_local.sum() * 0.0, pred_local.new_zeros(())
+
+    squared_error = (pred_local - gt_local) ** 2
+    masked_error = squared_error * valid_mask.unsqueeze(-1)
+    loss = masked_error.sum() / (valid_mask.sum() * pred_local.shape[-1])
+    valid_ratio = valid_mask.float().mean()
+    return loss, valid_ratio
+
+
 def get_refine_composite_loss(
     pred_theta,
     gt_theta,
@@ -415,6 +460,9 @@ def get_refine_composite_loss(
     side,
     loss_weights,
     betas=None,
+    global_keypoint_gt_source='mano_recon',
+    world_hand_joints=None,
+    bad_annotation_threshold_m=0.05,
 ):
     """Compute refine_composite loss: MSE + geometric MANO-joint losses.
     
@@ -425,13 +473,23 @@ def get_refine_composite_loss(
         side: (B,) hand side tensor (1=left, -1=right)
         loss_weights: dict with keys like 'mse', 'rel_distance', 'rel_vector',
             'global_keypoint', and 'pinch' and their weights
-        loss_weights: dict with keys like 'mse', 'rel_distance', 'rel_vector',
-            'global_keypoint', and 'pinch' and their weights
+        global_keypoint_gt_source: 'mano_recon' uses the current on-the-fly
+            GT joints from gt_theta; 'world_hand_joints' uses the raw HDF5
+            world_hand_joints batch transformed to the local hand frame.
+        bad_annotation_threshold_m: when using world_hand_joints, reject GT
+            points whose local-frame distance from the MANO-reconstructed GT
+            is above this meter threshold.
         
     Returns:
         loss: dict with keys 'loss' and the unweighted component losses
     """
     from calibration_net.utils import mano_recon
+
+    if global_keypoint_gt_source not in {'mano_recon', 'world_hand_joints'}:
+        raise ValueError(
+            "global_keypoint_gt_source must be 'mano_recon' or "
+            f"'world_hand_joints', got {global_keypoint_gt_source!r}"
+        )
     
     loss = {}
     loss['mse'] = mse_loss
@@ -504,7 +562,22 @@ def get_refine_composite_loss(
     # Compute relative losses
     loss['rel_distance'] = relative_distance_loss(pred_joints, gt_joints)
     loss['rel_vector'] = relative_vector_loss(pred_joints, gt_joints)
-    loss['global_keypoint'] = F.mse_loss(pred_joints, gt_joints)
+    if global_keypoint_gt_source == 'mano_recon':
+        loss['global_keypoint'] = F.mse_loss(pred_joints, gt_joints)
+    else:
+        if world_hand_joints is None:
+            raise ValueError(
+                "global_keypoint_gt_source='world_hand_joints' requires "
+                "the batch to include data['world_hand_joints']."
+            )
+        global_keypoint, valid_ratio = world_hand_joints_keypoint_loss(
+            pred_joints,
+            world_hand_joints,
+            gt_joints,
+            bad_annotation_threshold_m=bad_annotation_threshold_m,
+        )
+        loss['global_keypoint'] = global_keypoint
+        loss['global_keypoint_valid_ratio'] = valid_ratio
     loss['pa_keypoint'] = pa_keypoint_loss(pred_joints, gt_joints)
     loss['pa_mpjpe'] = pa_mpjpe_loss(pred_joints, gt_joints)
     loss['pinch'] = pinch_l1_loss(pred_joints, gt_joints)

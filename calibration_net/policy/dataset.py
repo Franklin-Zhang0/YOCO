@@ -108,6 +108,7 @@ class SequenceDataset(Dataset):
                  num_hypernet_pairs: int = 4,
                  pair_subsample: bool = False,
                  reference_poses_path: str = '',
+                 include_world_hand_joints_gt: bool = False,
                  frozen_mano_canonicalizer: Optional[dict] = None,
                  ):
         if ',' in path:
@@ -128,6 +129,7 @@ class SequenceDataset(Dataset):
         self.preference_cfg = preference_cfg
         self.num_hypernet_pairs = num_hypernet_pairs
         self.pair_subsample = pair_subsample
+        self.include_world_hand_joints_gt = include_world_hand_joints_gt
 
         self.input_keys = input_keys
         self.cat_side = cat_side
@@ -247,10 +249,9 @@ class SequenceDataset(Dataset):
     def _get_canonicalizable_input_keys(self) -> list[str]:
         keys = [self.input_keys]
         if self.bias_generator is not None and self.bias_generator.config.enabled:
-            keys.extend([
-                f'{self.input_keys}_true',
-                f'{self.input_keys}_biased',
-            ])
+            # The *_true key is generated from GT MANO theta during offline
+            # preprocessing, so do not run it through the learned canonicalizer.
+            keys.append(f'{self.input_keys}_biased')
         return list(dict.fromkeys(keys))
 
     def _get_precanonicalized_input(self, demo_id: int, key: str) -> np.ndarray | None:
@@ -338,8 +339,10 @@ class SequenceDataset(Dataset):
         normalize: bool = True,
         demo_id: Optional[int] = None,
         key: Optional[str] = None,
+        canonicalize: bool = True,
     ):
-        joints = self._canonicalize_input(joints, side, demo_id=demo_id, key=key)
+        if canonicalize:
+            joints = self._canonicalize_input(joints, side, demo_id=demo_id, key=key)
         preprocess = self.preprocessing_x if normalize else self.preprocessing_x_raw
         return preprocess(joints, normalize=normalize)
 
@@ -360,7 +363,8 @@ class SequenceDataset(Dataset):
 
             for key in keys:
                 group = f[key]
-                gt = np.array(group['world_hand_joints'])
+                gt_key = 'world_hand_joints_true' if 'world_hand_joints_true' in group else 'world_hand_joints'
+                gt = np.array(group[gt_key])
                 side = None
                 if 'mano_side' in group:
                     side = self._decode_side(np.array(group['mano_side']))
@@ -373,7 +377,12 @@ class SequenceDataset(Dataset):
                     )
 
                 if side is not None:
-                    gt = self._apply_input_preprocessing(gt, side, normalize=True)
+                    gt = self._apply_input_preprocessing(
+                        gt,
+                        side,
+                        normalize=True,
+                        canonicalize=False,
+                    )
                 else:
                     gt = self.preprocessing_x(gt)
                 all_gt.append(gt)
@@ -536,6 +545,14 @@ class SequenceDataset(Dataset):
             data = dict(self._load_raw_demo(demo_id))
 
             side = self._decode_side(index_dict(dict(data), 'mano_side'))
+            raw_world_hand_joints = None
+            if self.include_world_hand_joints_gt:
+                if 'world_hand_joints' not in data:
+                    raise KeyError(
+                        "trainer.global_keypoint_gt_source=world_hand_joints "
+                        f"requires 'world_hand_joints' in HDF5 demo {demo_id}."
+                    )
+                raw_world_hand_joints = np.array(data['world_hand_joints'])
             raw_input = np.array(data[self.input_keys])
             raw_output = np.array(data[self.output_keys])
             data[self.input_keys] = self._apply_input_preprocessing(
@@ -545,6 +562,8 @@ class SequenceDataset(Dataset):
                 key=self.input_keys,
             )
             data[self.output_keys] = self._apply_output_preprocessing(raw_output)
+            if raw_world_hand_joints is not None:
+                data['_global_keypoint_world_hand_joints'] = raw_world_hand_joints
 
             if self.bias_generator is not None and self.bias_generator.config.enabled:
                 true_key = f'{self.input_keys}_true'
@@ -562,6 +581,7 @@ class SequenceDataset(Dataset):
                     side,
                     demo_id=demo_id,
                     key=true_key,
+                    canonicalize=False,
                 )
                 data[biased_key] = self._apply_input_preprocessing(
                     np.array(data[biased_key]),
@@ -633,6 +653,11 @@ class SequenceDataset(Dataset):
             'side': enc_side,
             'betas': torch.tensor(frame_betas, dtype=torch.float32),
         }
+        if self.include_world_hand_joints_gt:
+            item['world_hand_joints'] = torch.tensor(
+                data['_global_keypoint_world_hand_joints'][idx_in_demo],
+                dtype=torch.float32,
+            )
 
         if use_bias:
             item['original_data'] = torch.tensor(x_true[idx_in_demo], dtype=torch.float32)

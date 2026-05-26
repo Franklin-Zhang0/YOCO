@@ -19,6 +19,7 @@ class DatasetConfig:
     num_hypernet_pairs: int = 4
     pair_subsample: bool = False
     reference_poses_path: str = field(default_factory=str)
+    include_world_hand_joints_gt: bool = False
     frozen_mano_canonicalizer: Dict[str, Any] = field(
         default_factory=lambda: {
             'enabled': False,
@@ -129,10 +130,15 @@ class TrainerConfig:
     val_split: float = 0.2
     device: str = 'cuda'  # 'cpu', 'cuda', or 'xpu'
     loss_type: str = 'composite'  # 'qpos', 'geort', 'composite'
+    global_keypoint_gt_source: str = 'mano_recon'  # 'mano_recon' or 'world_hand_joints'
+    global_keypoint_bad_annotation_threshold_m: float = 0.05
     loss_weights: Dict[str, float] = field(default_factory=lambda: {'qpos':1.0, 'geort': 0.01, 'alignment':0.1})
     loss_weights_decay: Dict[str, Any] = field(default_factory=lambda: {'qpos': 0.00, 'geort': 0.02, 'alignment': 0.02})
     save_path: Optional[str] = None
     load_path: Optional[str] = None
+    load_ignore_mismatched_shapes: bool = False
+    load_exclude_prefixes: list[str] = field(default_factory=list)
+    save_legacy_torch_serialization: bool = False
     fk_model_path: Optional[str] = "expdata/fk/model/omni.pth"
     fk_ds_path: Optional[str] = "expdata/fk/dataset/omni.npz"
     save_interval: int = 5  # Save model every n epochs

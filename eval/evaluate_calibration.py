@@ -82,6 +82,9 @@ class Args:
     # when those columns exist.
     input_key: str = "auto"
     target_key: str = "auto"
+    # Target key for the paired calibration poses consumed by the hypernetwork.
+    # "target" preserves the old behavior and reuses target_key/gt_pose_source.
+    conditioning_target_key: str = "target"
     gt_pose_source: str = "keypoint"
     baseline_space: str = "keypoint"
     baseline_theta_source: str = "predicted"
@@ -96,6 +99,9 @@ class Args:
 
     # Calibration frame selection: uniform, first, or random.
     calib_selection: str = "random"
+    # 0 preserves the old behavior. When >0, sample calibration poses only
+    # from frame indices [0, calib_pose_index_range) and evaluate on the suffix.
+    calib_pose_index_range: int = 0
     seed: int = 42
     device: Optional[str] = None
     side_filter: str = "all"
@@ -112,6 +118,9 @@ class Args:
     pinch_pairs: list[str] = field(default_factory=lambda: DEFAULT_PINCH_PAIRS.copy())
     aucj_max_threshold_m: float = 0.05
     aucj_num_thresholds: int = 101
+    # Applies only when the resolved keypoint GT is raw world_hand_joints.
+    # Set <= 0 to disable point-level rejection.
+    bad_annotation_threshold_m: float = 0.05
 
     exclude_calib_from_eval: bool = False
     write_predictions: bool = False
@@ -396,14 +405,15 @@ def _eval_mask(
     frame_count: int,
     calib_indices: np.ndarray,
     exclude: bool,
+    eval_start_index: int = 0,
 ) -> np.ndarray:
     mask = np.ones(frame_count, dtype=bool)
+    if eval_start_index > 0:
+        mask[:eval_start_index] = False
     if exclude:
         mask[calib_indices] = False
-        if not mask.any():
-            raise ValueError(
-                "exclude_calib_from_eval=True leaves no frames to evaluate."
-            )
+    if not mask.any():
+        raise ValueError("Selected calibration/evaluation split leaves no frames.")
     return mask
 
 
@@ -683,6 +693,8 @@ class OursPredictor:
         self,
         input_seq: np.ndarray,
         target_seq: np.ndarray,
+        conditioning_target_seq: np.ndarray,
+        conditioning_target_key: str,
         calib_indices: np.ndarray,
         group: h5py.Group,
         side: str,
@@ -695,9 +707,14 @@ class OursPredictor:
             )
 
         inferencer = self._ensure_inferencer(side)
+        paired_target_key = (
+            "world_hand_joints_true"
+            if conditioning_target_key == "world_hand_joints_true"
+            else "world_hand_joints"
+        )
         paired_poses = {
             "world_hand_joints_biased": input_seq[calib_indices],
-            "world_hand_joints": target_seq[calib_indices],
+            paired_target_key: conditioning_target_seq[calib_indices],
         }
 
         start = time.perf_counter()
@@ -772,7 +789,11 @@ class OursPredictor:
         )
 
 
-def _batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+def _batch_similarity_align(
+    source: np.ndarray,
+    target: np.ndarray,
+    valid_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
     source = np.asarray(source, dtype=np.float64)
     target = np.asarray(target, dtype=np.float64)
     if source.shape != target.shape:
@@ -783,12 +804,33 @@ def _batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarra
     if source.ndim != 3 or source.shape[-1] != 3:
         raise ValueError(f"Expected shape (B, N, 3), got {source.shape}.")
 
-    src_mean = source.mean(axis=1, keepdims=True)
-    tgt_mean = target.mean(axis=1, keepdims=True)
+    if valid_mask is None:
+        weights = np.ones(source.shape[:2], dtype=np.float64)
+    else:
+        valid_mask = np.asarray(valid_mask, dtype=bool)
+        if valid_mask.shape != source.shape[:2]:
+            raise ValueError(
+                f"valid_mask must have shape {source.shape[:2]}, "
+                f"got {valid_mask.shape}."
+            )
+        weights = valid_mask.astype(np.float64)
+    weight_sum = weights.sum(axis=1, keepdims=True)
+    safe_weight_sum = np.maximum(weight_sum, 1.0)
+    weights_expanded = weights[..., None]
+
+    src_mean = (source * weights_expanded).sum(axis=1, keepdims=True)
+    src_mean /= safe_weight_sum[..., None]
+    tgt_mean = (target * weights_expanded).sum(axis=1, keepdims=True)
+    tgt_mean /= safe_weight_sum[..., None]
     src_centered = source - src_mean
     tgt_centered = target - tgt_mean
 
-    covariance = np.einsum("bni,bnj->bij", src_centered, tgt_centered)
+    covariance = np.einsum(
+        "bn,bni,bnj->bij",
+        weights,
+        src_centered,
+        tgt_centered,
+    )
     u_mat, singular_values, vt_mat = np.linalg.svd(covariance)
     rotation = np.matmul(vt_mat.transpose(0, 2, 1), u_mat.transpose(0, 2, 1))
 
@@ -801,7 +843,7 @@ def _batch_similarity_align(source: np.ndarray, target: np.ndarray) -> np.ndarra
         singular_values[reflection_mask, -1] *= -1.0
         rotation = np.matmul(vt_mat.transpose(0, 2, 1), u_mat.transpose(0, 2, 1))
 
-    denom = np.sum(src_centered**2, axis=(1, 2))
+    denom = np.sum(weights_expanded * src_centered**2, axis=(1, 2))
     scale = np.divide(
         singular_values.sum(axis=1),
         denom,
@@ -821,6 +863,8 @@ def _auc_from_errors(
     max_threshold_m: float,
     num_thresholds: int,
 ) -> float:
+    if errors_m.size == 0:
+        return math.nan
     thresholds = np.linspace(0.0, max_threshold_m, max(num_thresholds, 2))
     pck = (errors_m[..., None] <= thresholds).mean(axis=tuple(range(errors_m.ndim)))
     try:
@@ -831,6 +875,8 @@ def _auc_from_errors(
 
 
 def _f_score_from_errors(errors_m: np.ndarray, threshold_m: float) -> float:
+    if errors_m.size == 0:
+        return math.nan
     inlier_rate = float((errors_m <= threshold_m).mean())
     precision = inlier_rate
     recall = inlier_rate
@@ -843,16 +889,21 @@ def _pinch_metrics(
     target: np.ndarray,
     pinch_pairs: list[tuple[str, int, int]],
     threshold_m: float,
+    valid_mask: Optional[np.ndarray] = None,
 ) -> dict[str, float]:
     l1_values = []
     l2_values = []
     distance_error_values = []
     per_pair_counts = {}
+    if valid_mask is not None:
+        valid_mask = np.asarray(valid_mask, dtype=bool)
 
     for pair_name, left_idx, right_idx in pinch_pairs:
         gt_delta = target[:, left_idx] - target[:, right_idx]
         gt_l2 = np.linalg.norm(gt_delta, axis=-1)
         mask = gt_l2 < threshold_m
+        if valid_mask is not None:
+            mask &= valid_mask[:, left_idx] & valid_mask[:, right_idx]
         per_pair_counts[f"pinch_count_{pair_name}"] = int(mask.sum())
         if not mask.any():
             continue
@@ -903,36 +954,77 @@ def _compute_metrics(
     threshold_m: float,
     aucj_max_threshold_m: float,
     aucj_num_thresholds: int,
+    valid_mask: Optional[np.ndarray] = None,
 ) -> dict[str, float]:
+    if valid_mask is None:
+        valid_mask = np.ones(pred.shape[:2], dtype=bool)
+    else:
+        valid_mask = np.asarray(valid_mask, dtype=bool)
+        if valid_mask.shape != pred.shape[:2]:
+            raise ValueError(
+                f"valid_mask must have shape {pred.shape[:2]}, "
+                f"got {valid_mask.shape}."
+            )
+
     diff = pred - target
     joint_l2 = np.linalg.norm(diff, axis=-1)
+    valid_joint_l2 = joint_l2[valid_mask]
+    valid_diff = diff[valid_mask]
     tip_l2 = joint_l2[:, TIP_INDICES]
-    pa_pred = _batch_similarity_align(pred, target)
+    tip_valid_mask = valid_mask[:, TIP_INDICES]
+    valid_tip_l2 = tip_l2[tip_valid_mask]
+    pa_pred = _batch_similarity_align(pred, target, valid_mask)
     pa_joint_l2 = np.linalg.norm(pa_pred - target, axis=-1)
+    valid_pa_joint_l2 = pa_joint_l2[valid_mask]
     pa_tip_pred = _batch_similarity_align(
         pred[:, TIP_INDICES],
         target[:, TIP_INDICES],
+        tip_valid_mask,
     )
     pa_tip_l2 = np.linalg.norm(pa_tip_pred - target[:, TIP_INDICES], axis=-1)
+    valid_pa_tip_l2 = pa_tip_l2[tip_valid_mask]
+
+    if valid_joint_l2.size == 0:
+        joint_mean = math.nan
+        joint_mae = math.nan
+        joint_mse = math.nan
+        pa_joint_mean = math.nan
+    else:
+        joint_mean = float(valid_joint_l2.mean())
+        joint_mae = float(np.abs(valid_diff).mean())
+        joint_mse = float((valid_diff**2).mean())
+        pa_joint_mean = float(valid_pa_joint_l2.mean())
+
+    tip_mean = float(valid_tip_l2.mean()) if valid_tip_l2.size else math.nan
+    pa_tip_mean = (
+        float(valid_pa_tip_l2.mean()) if valid_pa_tip_l2.size else math.nan
+    )
 
     metrics = {
-        "mpjpe_m": float(joint_l2.mean()),
-        "mpjpe_mm": float(joint_l2.mean() * 1000.0),
-        "pa_mpjpe_m": float(pa_joint_l2.mean()),
-        "pa_mpjpe_mm": float(pa_joint_l2.mean() * 1000.0),
+        "mpjpe_m": joint_mean,
+        "mpjpe_mm": joint_mean * 1000.0 if not math.isnan(joint_mean) else math.nan,
+        "pa_mpjpe_m": pa_joint_mean,
+        "pa_mpjpe_mm": (
+            pa_joint_mean * 1000.0 if not math.isnan(pa_joint_mean) else math.nan
+        ),
         "aucj": _auc_from_errors(
-            joint_l2,
+            valid_joint_l2,
             aucj_max_threshold_m,
             aucj_num_thresholds,
         ),
-        "joint_mae_m": float(np.abs(diff).mean()),
-        "joint_mse_m2": float((diff**2).mean()),
-        "tip_mpjpe_m": float(tip_l2.mean()),
-        "tip_mpjpe_mm": float(tip_l2.mean() * 1000.0),
-        "tip_pa_mpjpe_m": float(pa_tip_l2.mean()),
-        "tip_pa_mpjpe_mm": float(pa_tip_l2.mean() * 1000.0),
+        "joint_mae_m": joint_mae,
+        "joint_mse_m2": joint_mse,
+        "tip_mpjpe_m": tip_mean,
+        "tip_mpjpe_mm": tip_mean * 1000.0 if not math.isnan(tip_mean) else math.nan,
+        "tip_pa_mpjpe_m": pa_tip_mean,
+        "tip_pa_mpjpe_mm": (
+            pa_tip_mean * 1000.0 if not math.isnan(pa_tip_mean) else math.nan
+        ),
+        "annotation_valid_ratio": float(valid_mask.mean()),
+        "num_eval_points": int(valid_mask.sum()),
+        "num_eval_tip_points": int(tip_valid_mask.sum()),
     }
-    metrics.update(_pinch_metrics(pred, target, pinch_pairs, threshold_m))
+    metrics.update(_pinch_metrics(pred, target, pinch_pairs, threshold_m, valid_mask))
     return metrics
 
 
@@ -1035,6 +1127,18 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for method in methods:
         method_rows = [row for row in rows if row["method"] == method]
         total_frames = int(sum(int(row["num_eval_frames"]) for row in method_rows))
+        total_points = int(
+            sum(
+                int(row.get("num_eval_points", int(row["num_eval_frames"]) * 21))
+                for row in method_rows
+            )
+        )
+        total_tip_points = int(
+            sum(
+                int(row.get("num_eval_tip_points", int(row["num_eval_frames"]) * 5))
+                for row in method_rows
+            )
+        )
         total_pinch_pairs = int(
             sum(int(row.get("pinch_frame_pairs", 0)) for row in method_rows)
         )
@@ -1044,24 +1148,29 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "method": method,
             "num_units": len(method_rows),
             "num_eval_frames": total_frames,
+            "num_eval_points": total_points,
+            "num_eval_tip_points": total_tip_points,
+            "annotation_valid_ratio": (
+                total_points / (total_frames * 21.0) if total_frames else math.nan
+            ),
             "pinch_frame_pairs": total_pinch_pairs,
-            "mpjpe_m": _weighted_mean(method_rows, "mpjpe_m", "num_eval_frames"),
-            "mpjpe_mm": _weighted_mean(method_rows, "mpjpe_mm", "num_eval_frames"),
+            "mpjpe_m": _weighted_mean(method_rows, "mpjpe_m", "num_eval_points"),
+            "mpjpe_mm": _weighted_mean(method_rows, "mpjpe_mm", "num_eval_points"),
             "pa_mpjpe_mm": _weighted_mean(
                 method_rows,
                 "pa_mpjpe_mm",
-                "num_eval_frames",
+                "num_eval_points",
             ),
-            "aucj": _weighted_mean(method_rows, "aucj", "num_eval_frames"),
+            "aucj": _weighted_mean(method_rows, "aucj", "num_eval_points"),
             "tip_mpjpe_mm": _weighted_mean(
                 method_rows,
                 "tip_mpjpe_mm",
-                "num_eval_frames",
+                "num_eval_tip_points",
             ),
             "tip_pa_mpjpe_mm": _weighted_mean(
                 method_rows,
                 "tip_pa_mpjpe_mm",
-                "num_eval_frames",
+                "num_eval_tip_points",
             ),
             "pa_mpvpe_mm": _weighted_mean(
                 method_rows,
@@ -1169,6 +1278,10 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         raise ValueError("side_filter must be 'all', 'left', or 'right'.")
     if args.baseline_theta_source not in {"predicted", "hdf5"}:
         raise ValueError("baseline_theta_source must be 'predicted' or 'hdf5'.")
+    if args.bad_annotation_threshold_m < 0:
+        raise ValueError("bad_annotation_threshold_m must be non-negative.")
+    if args.calib_pose_index_range < 0:
+        raise ValueError("calib_pose_index_range must be non-negative.")
     if (
         args.baseline_space == "mano_theta"
         and baseline_methods
@@ -1218,6 +1331,15 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                 ["world_hand_joints_true", "world_hand_joints"],
                 allow_missing=True,
             )
+            conditioning_target_key: Optional[str]
+            if "ours" in args.methods and args.conditioning_target_key != "target":
+                conditioning_target_key = _resolve_key(
+                    group,
+                    args.conditioning_target_key,
+                    ["world_hand_joints_true", "world_hand_joints"],
+                )
+            else:
+                conditioning_target_key = None
 
             input_raw = _read_array(group, input_key)
             if args.gt_pose_source == "mano":
@@ -1228,6 +1350,11 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                 # Shape is needed only for sample counting; exact reconstruction
                 # happens per sample after max-frame truncation is known.
                 target_raw = np.asarray(group["mano_angles"])
+            conditioning_target_raw = (
+                _read_array(group, conditioning_target_key)
+                if conditioning_target_key is not None
+                else None
+            )
 
             input_theta_raw = None
             target_theta_raw = None
@@ -1249,6 +1376,8 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                 target_theta_raw = _read_array(group, args.target_theta_key)
 
             sample_arrays = [input_raw, target_raw]
+            if conditioning_target_raw is not None:
+                sample_arrays.append(conditioning_target_raw)
             if input_theta_raw is not None:
                 sample_arrays.append(input_theta_raw)
             if target_theta_raw is not None:
@@ -1308,6 +1437,27 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                     )
 
                 frame_count = input_seq.shape[0]
+                if conditioning_target_raw is None:
+                    conditioning_target_seq = target_seq
+                    effective_conditioning_target_key = (
+                        "mano_angles_reconstructed"
+                        if args.gt_pose_source == "mano"
+                        else target_key or "mano_angles"
+                    )
+                else:
+                    conditioning_target_seq = _select_aug_sample(
+                        conditioning_target_raw,
+                        sample_idx,
+                        name=f"{demo_id}/{conditioning_target_key}",
+                    )
+                    frame_count = min(frame_count, conditioning_target_seq.shape[0])
+                    input_seq = input_seq[:frame_count]
+                    target_seq = target_seq[:frame_count]
+                    conditioning_target_seq = conditioning_target_seq[:frame_count]
+                    if target_vertices is not None:
+                        target_vertices = target_vertices[:frame_count]
+                    effective_conditioning_target_key = conditioning_target_key
+
                 input_theta = None
                 target_theta = None
                 if (
@@ -1327,8 +1477,28 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                     input_theta = input_theta[:frame_count]
                     target_theta = target_theta[:frame_count]
 
+                if (
+                    args.calib_pose_index_range > 0
+                    and args.calib_pose_index_range >= frame_count
+                ):
+                    raise ValueError(
+                        f"calib_pose_index_range={args.calib_pose_index_range} "
+                        f"leaves no evaluation frames for {demo_id} sample "
+                        f"{sample_idx} with {frame_count} frames."
+                    )
+                calib_candidate_frame_count = (
+                    args.calib_pose_index_range
+                    if args.calib_pose_index_range > 0
+                    else frame_count
+                )
+                eval_start_index = (
+                    args.calib_pose_index_range
+                    if args.calib_pose_index_range > 0
+                    else 0
+                )
+
                 calib_indices = _select_calibration_indices(
-                    frame_count,
+                    calib_candidate_frame_count,
                     args.num_calib_poses,
                     args.calib_selection,
                     rng,
@@ -1337,7 +1507,43 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                     frame_count,
                     calib_indices,
                     args.exclude_calib_from_eval,
+                    eval_start_index,
                 )
+                annotation_valid_mask = np.ones(target_seq.shape[:2], dtype=bool)
+                annotation_rejection_applied = False
+                annotation_reference_key = ""
+                if (
+                    args.gt_pose_source == "keypoint"
+                    and target_key == "world_hand_joints"
+                    and args.bad_annotation_threshold_m > 0
+                ):
+                    if target_vertices is None:
+                        target_vertices, annotation_reference_seq = (
+                            _reconstruct_mano_from_group(
+                                group,
+                                side,
+                                sample_idx,
+                                frame_count,
+                                device,
+                                args.apply_left_shapedirs_fix,
+                            )
+                        )
+                    else:
+                        annotation_reference_seq = target_seq
+                    target_for_mask = _metric_frame(target_seq, args.metric_frame)
+                    reference_for_mask = _metric_frame(
+                        annotation_reference_seq,
+                        args.metric_frame,
+                    )
+                    annotation_error_sq = (
+                        (target_for_mask - reference_for_mask) ** 2
+                    ).sum(axis=-1)
+                    annotation_valid_mask = (
+                        annotation_error_sq
+                        <= args.bad_annotation_threshold_m**2
+                    )
+                    annotation_rejection_applied = True
+                    annotation_reference_key = "mano_angles_reconstructed"
 
                 downstream = _downstream_fields(group)
                 theta_baseline_inputs = None
@@ -1384,6 +1590,8 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                             ours_predictor.predict(
                                 input_seq,
                                 target_seq,
+                                conditioning_target_seq,
+                                effective_conditioning_target_key,
                                 calib_indices,
                                 group,
                                 side,
@@ -1447,6 +1655,7 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                         args.pinch_threshold_m,
                         args.aucj_max_threshold_m,
                         args.aucj_num_thresholds,
+                        annotation_valid_mask[eval_mask],
                     )
                     if pred_output.vertices is not None:
                         if target_vertices is None:
@@ -1478,6 +1687,9 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                             if args.gt_pose_source == "mano"
                             else target_key or "mano_angles"
                         ),
+                        "conditioning_target_key": (
+                            effective_conditioning_target_key
+                        ),
                         "gt_pose_source": args.gt_pose_source,
                         "baseline_space": args.baseline_space,
                         "baseline_theta_source": args.baseline_theta_source,
@@ -1485,8 +1697,18 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                         "target_theta_key": args.target_theta_key,
                         "ridge_alpha": args.ridge_alpha,
                         "metric_frame": args.metric_frame,
+                        "bad_annotation_threshold_m": (
+                            args.bad_annotation_threshold_m
+                        ),
+                        "bad_annotation_rejection": annotation_rejection_applied,
+                        "bad_annotation_reference_key": annotation_reference_key,
                         "num_calib_poses": int(len(calib_indices)),
                         "calib_indices": " ".join(str(int(i)) for i in calib_indices),
+                        "calib_pose_index_range": args.calib_pose_index_range,
+                        "calib_candidate_frame_count": int(
+                            calib_candidate_frame_count
+                        ),
+                        "eval_start_index": int(eval_start_index),
                         "num_eval_frames": int(eval_mask.sum()),
                         "calibration_time_s": float(calibration_time),
                         "inference_time_s": float(inference_time),
@@ -1519,6 +1741,7 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         "methods": args.methods,
         "num_calib_poses": args.num_calib_poses,
         "side_filter": args.side_filter,
+        "conditioning_target_key": args.conditioning_target_key,
         "gt_pose_source": args.gt_pose_source,
         "baseline_space": args.baseline_space,
         "baseline_theta_source": args.baseline_theta_source,
@@ -1530,7 +1753,9 @@ def evaluate(args: Args) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         "pinch_pairs": args.pinch_pairs,
         "aucj_max_threshold_m": args.aucj_max_threshold_m,
         "aucj_num_thresholds": args.aucj_num_thresholds,
+        "bad_annotation_threshold_m": args.bad_annotation_threshold_m,
         "calib_selection": args.calib_selection,
+        "calib_pose_index_range": args.calib_pose_index_range,
         "exclude_calib_from_eval": args.exclude_calib_from_eval,
     }
     if ours_predictor is not None:

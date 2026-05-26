@@ -352,6 +352,7 @@ class BiasGenerator:
         betas: Optional[torch.Tensor] = None,
         global_orient: Optional[torch.Tensor] = None,
         transl: Optional[torch.Tensor] = None,
+        apply_left_shapedirs_fix: bool = False,
     ) -> torch.Tensor:
         """Convert MANO `hand_pose` (45D) to 21x3 joints using MANO forward.
 
@@ -361,6 +362,7 @@ class BiasGenerator:
             betas: (10,) or (T,10) or None.
             global_orient: (3,) or (T,3) or None. If None, uses zeros.
             transl: (3,) or (T,3) or None. If None, uses zeros.
+            apply_left_shapedirs_fix: apply MANO's left-hand shapedirs fix.
 
         Returns:
             joints: (T,21,3)
@@ -398,6 +400,7 @@ class BiasGenerator:
             transl=transl,
             side=side,
             betas=betas,
+            apply_left_shapedirs_fix=apply_left_shapedirs_fix,
         )
         return joints  # (T,21,3)
 
@@ -412,6 +415,7 @@ class BiasGenerator:
         global_orient: Optional[np.ndarray] = None,
         transl: Optional[np.ndarray] = None,
         device: str | torch.device = "cpu",
+        apply_left_shapedirs_fix: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Convenience: (hand_pose_true -> joints_true) and (hand_pose_biased -> joints_biased)."""
 
@@ -425,8 +429,22 @@ class BiasGenerator:
         go_t = None if global_orient is None else torch.tensor(np.asarray(global_orient, dtype=np.float32), device=device)
         tr_t = None if transl is None else torch.tensor(np.asarray(transl, dtype=np.float32), device=device)
 
-        joints_true = self.mano_hand_pose_to_joints(hp_true, side=side, betas=betas_t, global_orient=go_t, transl=tr_t)
-        joints_biased = self.mano_hand_pose_to_joints(hp_biased, side=side, betas=betas_t, global_orient=go_t, transl=tr_t)
+        joints_true = self.mano_hand_pose_to_joints(
+            hp_true,
+            side=side,
+            betas=betas_t,
+            global_orient=go_t,
+            transl=tr_t,
+            apply_left_shapedirs_fix=apply_left_shapedirs_fix,
+        )
+        joints_biased = self.mano_hand_pose_to_joints(
+            hp_biased,
+            side=side,
+            betas=betas_t,
+            global_orient=go_t,
+            transl=tr_t,
+            apply_left_shapedirs_fix=apply_left_shapedirs_fix,
+        )
 
         return (
             joints_true.detach().cpu().numpy(),

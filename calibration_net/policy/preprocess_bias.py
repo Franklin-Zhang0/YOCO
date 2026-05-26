@@ -60,6 +60,7 @@ def _mano_forward_in_chunks(
     betas: Optional[np.ndarray] = None,
     global_orient: Optional[np.ndarray] = None,
     transl: Optional[np.ndarray] = None,
+    apply_left_shapedirs_fix: bool = False,
 ) -> np.ndarray:
     """Run MANO forward in time chunks to limit GPU memory.
 
@@ -68,6 +69,7 @@ def _mano_forward_in_chunks(
         global_orient: (T,3) or None
         transl: (T,3) or None
         betas: (10,) or (T,10) or None
+        apply_left_shapedirs_fix: apply MANO's left-hand shapedirs fix.
 
     Returns:
         joints: (T,21,3) float32
@@ -114,6 +116,7 @@ def _mano_forward_in_chunks(
             betas=betas_t,
             global_orient=go_t,
             transl=tr_t,
+            apply_left_shapedirs_fix=apply_left_shapedirs_fix,
         )
         out[s:e] = joints.detach().cpu().numpy().astype(np.float32)
 
@@ -131,6 +134,7 @@ def precompute_bias_hdf5(
     copy_all_keys: bool = True,
     overwrite: bool = False,
     num_samples: int = 1,
+    apply_shapedir_fix: bool = False,
 ) -> None:
     """Precompute MANO-angle-space bias columns for an HDF5 dataset.
 
@@ -147,6 +151,8 @@ def precompute_bias_hdf5(
         chunk_size: time chunk size for MANO forward
         copy_all_keys: if True, copy all existing datasets from input to output
         overwrite: if True, overwrite out_path if it exists
+        apply_shapedir_fix: if True, apply the left-hand MANO shapedirs fix
+            when reconstructing generated true and biased keypoints.
     """
 
     if os.path.exists(out_path):
@@ -220,6 +226,7 @@ def precompute_bias_hdf5(
                 transl=transl,
                 device=torch_device,
                 chunk_size=chunk_size,
+                apply_left_shapedirs_fix=apply_shapedir_fix,
             )
 
             mano_angles_biased_list = []
@@ -240,6 +247,7 @@ def precompute_bias_hdf5(
                     transl=transl,
                     device=torch_device,
                     chunk_size=chunk_size,
+                    apply_left_shapedirs_fix=apply_shapedir_fix,
                 )
                 
                 mano_angles_biased_list.append(mano_angles_biased)
@@ -259,3 +267,4 @@ def precompute_bias_hdf5(
             g_out.attrs["bias_device"] = str(torch_device)
             g_out.attrs["bias_chunk_size"] = int(chunk_size)
             g_out.attrs["bias_num_samples"] = int(num_samples)
+            g_out.attrs["apply_shapedir_fix"] = bool(apply_shapedir_fix)

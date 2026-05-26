@@ -23,6 +23,14 @@ class Trainer():
         self.create_logger()
 
         self.trainer_args = args.trainer
+        self.global_keypoint_gt_source = self.trainer_args.global_keypoint_gt_source
+        if self.global_keypoint_gt_source not in {'mano_recon', 'world_hand_joints'}:
+            raise ValueError(
+                "trainer.global_keypoint_gt_source must be 'mano_recon' "
+                f"or 'world_hand_joints', got {self.global_keypoint_gt_source!r}"
+            )
+        if self.global_keypoint_gt_source == 'world_hand_joints':
+            self.args.dataset.include_world_hand_joints_gt = True
         
         self.device = self.trainer_args.device
         
@@ -76,7 +84,41 @@ class Trainer():
             self.args.model.hypernet_cfg = hypernet_cfg # switch the hypernet cfg in case of finetuning
             self.args.model.preference_extractor_cfg = preference_extractor_cfg
             self.model = Model(**self.args.model)
-            self.model.load_state_dict(model.state_dict(), strict=False)
+            loaded_state = model.state_dict()
+            exclude_prefixes = list(
+                getattr(self.trainer_args, 'load_exclude_prefixes', []) or []
+            )
+            ignore_mismatched = bool(
+                getattr(self.trainer_args, 'load_ignore_mismatched_shapes', False)
+            )
+            if exclude_prefixes or ignore_mismatched:
+                current_state = self.model.state_dict()
+                filtered_state = {}
+                skipped_keys = []
+                for key, value in loaded_state.items():
+                    if any(key.startswith(prefix) for prefix in exclude_prefixes):
+                        skipped_keys.append(key)
+                        continue
+                    if key in current_state and current_state[key].shape != value.shape:
+                        if ignore_mismatched:
+                            skipped_keys.append(key)
+                            continue
+                    filtered_state[key] = value
+                load_result = self.model.load_state_dict(filtered_state, strict=False)
+                if skipped_keys:
+                    print(
+                        'Skipped '
+                        f'{len(skipped_keys)} checkpoint tensors during model load '
+                        'because of load_exclude_prefixes or shape mismatch.'
+                    )
+                if load_result.missing_keys:
+                    print(f'Missing keys after partial load: {len(load_result.missing_keys)}')
+                if load_result.unexpected_keys:
+                    print(
+                        f'Unexpected keys after partial load: {len(load_result.unexpected_keys)}'
+                    )
+            else:
+                self.model.load_state_dict(loaded_state, strict=False)
         else:
             self.model = Model(**self.args.model)
             
@@ -295,6 +337,11 @@ class Trainer():
                 side=data['side'].to(self.device),
                 loss_weights=self.loss_weights,
                 betas=data.get('betas', None),
+                global_keypoint_gt_source=self.global_keypoint_gt_source,
+                world_hand_joints=data.get('world_hand_joints', None),
+                bad_annotation_threshold_m=(
+                    self.trainer_args.global_keypoint_bad_annotation_threshold_m
+                ),
             )
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
@@ -552,7 +599,17 @@ class Trainer():
         os.makedirs(save_dir, exist_ok=True)
         model_path = os.path.join(save_dir, 'model.pth')
         stats_path = os.path.join(save_dir, 'norm_stats.pkl')
-        torch.save(self.model.state_dict(), model_path)
+        torch.save(
+            self.model.state_dict(),
+            model_path,
+            _use_new_zipfile_serialization=not bool(
+                getattr(
+                    self.trainer_args,
+                    'save_legacy_torch_serialization',
+                    False,
+                )
+            ),
+        )
         
         with open(stats_path, 'wb') as f:
             norm_stats = {k: v.tolist() for k,v in walk_dict(self.dataset.normalization_stats)}  # convert to list for better backward compatibility for numpy versions

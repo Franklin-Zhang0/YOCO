@@ -110,7 +110,13 @@ class RefineModelInferencer():
 
             if biased_key in paired_poses and true_key is not None:
                 biased_seq = self._canonicalize_raw_joints(paired_poses[biased_key])
-                true_seq = self._canonicalize_raw_joints(paired_poses[true_key])
+                # Precomputed *_true joints were generated in the canonical MANO
+                # space during bias preprocessing. Match training and do not run
+                # that branch through the learned canonicalizer again.
+                if true_key == 'world_hand_joints_true':
+                    true_seq = paired_poses[true_key]
+                else:
+                    true_seq = self._canonicalize_raw_joints(paired_poses[true_key])
                 biased_seq = self.process_x_fn(biased_seq)
                 true_seq = self.process_x_fn(true_seq)
 
