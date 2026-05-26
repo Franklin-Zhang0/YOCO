@@ -47,7 +47,21 @@ python -m calibration_net.policy.train \
     trainer.loss_weights.global_keypoint=10.0 \
     model.iknet_cfg.enabled=False \
     model.type=Combined_CNN_MLP_MIXER \
-    model.hypernet_cfg.rank=4 \
+    model.hypernet_cfg.rank=8 \
+    model.hypernet_cfg.alpha=8.0 \
+    'model.hypernet_cfg.name_filter=[]' \
+    model.hypernet_cfg.drop_out=0.1 \
+    model.hypernet_cfg.train_init=false \
+    model.hypernet_cfg.init_method=xavier \
+    model.hypernet_cfg.use_tanh=true \
+    model.hypernet_cfg.scale_A=0.1 \
+    model.hypernet_cfg.scale_B=0.2 \
+    model.hypernet_cfg.use_gates=true \
+    model.hypernet_cfg.gate_init=0.0 \
+    model.hypernet_cfg.max_norm=null \
+    model.hypernet_cfg.reg_weight=0.001 \
+    model.hypernet_cfg.reg_type=frobenius \
+    model.hypernet_cfg.head_type=dit_flow \
     trainer.logger.type=[terminal,file,wandb]
 
 # Usage examples:

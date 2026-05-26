@@ -26,6 +26,7 @@ SAMPLE_IDX="${SAMPLE_IDX:--1}"
 SIDE_FILTER="${SIDE_FILTER:-right}"
 TRUE_JOINTS_KEY="${TRUE_JOINTS_KEY:-world_hand_joints}"
 EXCLUDE_CALIB_FROM_EVAL="${EXCLUDE_CALIB_FROM_EVAL:-0}"
+CALIBRATION_NUM="${CALIBRATION_NUM:-0}"
 PRED_BETA_SOURCE="${PRED_BETA_SOURCE:-auto}"
 
 METHODS=(lora full_ft residual_linear last_layer)
@@ -50,6 +51,7 @@ echo "Max sessions: $MAX_SESSIONS (0 means all)"
 echo "Sample idx: $SAMPLE_IDX (-1 means all biased variants)"
 echo "Side filter: $SIDE_FILTER"
 echo "True joints key: $TRUE_JOINTS_KEY"
+echo "Calibration split num: $CALIBRATION_NUM"
 echo "Pred beta source: $PRED_BETA_SOURCE"
 
 run_one() {
@@ -61,6 +63,10 @@ run_one() {
     lora_gate_args=(--lora-use-gates)
   else
     lora_gate_args=(--no-lora-use-gates)
+  fi
+  local calibrate_args=()
+  if [[ "$CALIBRATION_NUM" != "0" ]]; then
+    calibrate_args=(--calibration-num "$CALIBRATION_NUM")
   fi
 
   echo "[start] method=$method k=$k log=$log_file"
@@ -86,6 +92,7 @@ run_one() {
       --side-filter "$SIDE_FILTER" \
       --true-joints-key "$TRUE_JOINTS_KEY" \
       --pred-beta-source "$PRED_BETA_SOURCE" \
+      "${calibrate_args[@]}" \
       --exclude-calib-from-eval \
       2>&1 | tee "$log_file"
   else
@@ -110,6 +117,7 @@ run_one() {
       --side-filter "$SIDE_FILTER" \
       --true-joints-key "$TRUE_JOINTS_KEY" \
       --pred-beta-source "$PRED_BETA_SOURCE" \
+      "${calibrate_args[@]}" \
       2>&1 | tee "$log_file"
   fi
   echo "[done] method=$method k=$k"

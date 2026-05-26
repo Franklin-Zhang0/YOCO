@@ -27,6 +27,7 @@ CALIB_SELECTION="${CALIB_SELECTION:-random}"
 SIDE_FILTER="${SIDE_FILTER:-right}"
 VARIANTS="${VARIANTS:-hypernet}"
 EXCLUDE_CALIB_FROM_EVAL="${EXCLUDE_CALIB_FROM_EVAL:-0}"
+CALIBRATION_NUM="${CALIBRATION_NUM:-0}"
 PRED_BETA_SOURCE="${PRED_BETA_SOURCE:-auto}"
 
 echo "Root: $ROOT_DIR"
@@ -43,6 +44,7 @@ echo "Metric GT key: $METRIC_GT_KEY"
 echo "Calibration selection: $CALIB_SELECTION"
 echo "Side filter: $SIDE_FILTER"
 echo "Variants: $VARIANTS"
+echo "Calibration split num: $CALIBRATION_NUM"
 echo "Pred beta source: $PRED_BETA_SOURCE"
 
 if [[ "$TRAIN" == "1" ]]; then
@@ -106,6 +108,10 @@ if [[ "$EXPORT" == "1" ]]; then
   echo "=== Export HyperNet predictions ==="
   # shellcheck disable=SC2206
   variant_args=($VARIANTS)
+  extra_export_args=()
+  if [[ "$CALIBRATION_NUM" != "0" ]]; then
+    extra_export_args+=(--calibration-num "$CALIBRATION_NUM")
+  fi
   if [[ "$EXCLUDE_CALIB_FROM_EVAL" == "1" ]]; then
     "$PYTHON_BIN" scripts/export_hypernet_finetune_predictions.py \
       --model-dir "$HYPERNET_MODEL_DIR" \
@@ -121,6 +127,7 @@ if [[ "$EXPORT" == "1" ]]; then
       --pred-beta-source "$PRED_BETA_SOURCE" \
       --calib-selection "$CALIB_SELECTION" \
       --side-filter "$SIDE_FILTER" \
+      "${extra_export_args[@]}" \
       --exclude-calib-from-eval \
       --variants "${variant_args[@]}"
   else
@@ -138,6 +145,7 @@ if [[ "$EXPORT" == "1" ]]; then
       --pred-beta-source "$PRED_BETA_SOURCE" \
       --calib-selection "$CALIB_SELECTION" \
       --side-filter "$SIDE_FILTER" \
+      "${extra_export_args[@]}" \
       --variants "${variant_args[@]}"
   fi
 

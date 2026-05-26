@@ -164,6 +164,14 @@ def _decode_hdf5_string(value) -> str:
         return value.decode('utf-8')
     return str(value)
 
+def _read_valid_joint_mask(group: h5py.Group, length: int) -> np.ndarray | None:
+    if "gt_joint_mask" not in group:
+        return None
+    bad = np.asarray(group["gt_joint_mask"], dtype=bool)
+    if bad.shape != (length, 21):
+        raise ValueError(f"gt_joint_mask shape {bad.shape} does not match expected {(length, 21)}")
+    return ~bad
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize paired poses HDF5")
     parser.add_argument('hdf5_path', type=str, help='Path to paired poses HDF5 file (e.g., paired_poses.hdf5)')
@@ -223,6 +231,13 @@ def parse_args():
     parser.add_argument('--device', type=str, default=None, help='Device to use for model inference')
     parser.add_argument('--port', type=int, default=8087, help='Viser server port')
     parser.add_argument('--fps', type=float, default=30.0, help='Playback FPS')
+    parser.add_argument(
+        '--calibration-num',
+        '--calibration_num',
+        type=int,
+        default=0,
+        help='If >0, mark frames [0,N) as calibration and frames [N,T) as evaluation.',
+    )
     parser.add_argument('--point_size', type=float, default=0.002, help='Point size for visualization')
     parser.add_argument('--line_width', type=float, default=1.0, help='Line width for visualization')
     return parser.parse_args()
@@ -348,6 +363,11 @@ def main():
 
         metric_gt_raw = np.array(grp[metric_gt_key]) if metric_gt_key in grp else world_hand_joints_raw
         metric_gt_vis = _to_numpy(transform_joint3d(metric_gt_raw)) if metric_gt_raw is not None else None
+        valid_joint_mask = (
+            _read_valid_joint_mask(grp, len(metric_gt_raw))
+            if metric_gt_raw is not None
+            else None
+        )
 
         true_key = args.true_key if args.true_key in grp else None
         if true_key is not None:
@@ -409,6 +429,7 @@ def main():
             'side': side,
             'metric_gt_key': metric_gt_key,
             'metric_gt': metric_gt_vis,
+            'valid_joint_mask': valid_joint_mask,
             'world_hand_joints': world_hand_joints_vis,
             'world_hand_joints_true': world_hand_joints_true_vis,
             'world_hand_joints_biased': world_hand_joints_biased_vis,
@@ -448,6 +469,7 @@ def main():
     is_playing = {"value": False}
     
     info_markdown = server.gui.add_markdown("info", "")
+    split_markdown = server.gui.add_markdown("calibration split", "")
     metrics_markdown = server.gui.add_markdown("frame MPJPE", "")
     layer_names = [
         "world_hand_joints",
@@ -465,7 +487,12 @@ def main():
     def layer_is_visible(name: str) -> bool:
         return name not in layer_visible or bool(layer_visible[name].value)
 
-    def frame_mpjpe_mm(joints: np.ndarray | None, gt_joints: np.ndarray | None, frame_idx: int) -> float | None:
+    def frame_mpjpe_mm(
+        joints: np.ndarray | None,
+        gt_joints: np.ndarray | None,
+        frame_idx: int,
+        valid_joint_mask: np.ndarray | None,
+    ) -> tuple[float, int, int] | None:
         if joints is None or gt_joints is None:
             return None
         if frame_idx >= _num_frames(joints) or frame_idx >= _num_frames(gt_joints):
@@ -474,32 +501,87 @@ def main():
         gt_frame = _frame_joints(gt_joints, frame_idx)
         if pred_frame.shape != gt_frame.shape:
             return None
-        return float(np.mean(np.linalg.norm(pred_frame - gt_frame, axis=-1)) * 1000.0)
+        err = np.linalg.norm(pred_frame - gt_frame, axis=-1)
+        if valid_joint_mask is None:
+            valid = np.ones(err.shape, dtype=bool)
+        else:
+            if frame_idx >= valid_joint_mask.shape[0]:
+                return None
+            valid = np.asarray(valid_joint_mask[frame_idx], dtype=bool)
+            if valid.shape != err.shape:
+                return None
+        valid_count = int(np.sum(valid))
+        if valid_count == 0:
+            return None
+        masked_count = int(valid.size - valid_count)
+        return float(np.mean(err[valid]) * 1000.0), valid_count, masked_count
 
     def update_metrics_panel(
         layer_data: dict[str, np.ndarray | None],
         gt_joints: np.ndarray | None,
         frame_idx: int,
         metric_gt_key: str,
+        valid_joint_mask: np.ndarray | None,
     ) -> None:
         visible_metrics = []
         for name, joints in layer_data.items():
             if name == metric_gt_key or not layer_is_visible(name):
                 continue
-            mpjpe = frame_mpjpe_mm(joints, gt_joints, frame_idx)
-            if mpjpe is None:
+            metric = frame_mpjpe_mm(joints, gt_joints, frame_idx, valid_joint_mask)
+            if metric is None:
                 continue
-            visible_metrics.append((name, mpjpe))
+            visible_metrics.append((name, *metric))
 
         if not visible_metrics:
-            metrics_markdown.content = f"**Frame MPJPE vs `{metric_gt_key}`**\n\nNo visible comparable layers."
+            metrics_markdown.content = (
+                f"**Frame MPJPE vs `{metric_gt_key}`**\n\n"
+                "No visible comparable layers or no valid joints in this frame."
+            )
             return
 
-        lines = [f"**Frame MPJPE vs `{metric_gt_key}`**", ""]
-        for name, mpjpe in visible_metrics:
+        first_valid_count = visible_metrics[0][2]
+        first_masked_count = visible_metrics[0][3]
+        lines = [
+            f"**Frame MPJPE vs `{metric_gt_key}`**",
+            f"`valid joints: {first_valid_count}/21, masked bad joints: {first_masked_count}`",
+            "",
+        ]
+        for name, mpjpe, _valid_count, _masked_count in visible_metrics:
             label_name = name.removeprefix("finetuned_")
             lines.append(f"- `{label_name}`: `{mpjpe:.2f} mm`")
         metrics_markdown.content = "\n".join(lines)
+
+    def update_split_panel(frame_idx: int, num_frames: int) -> str:
+        split_at = int(args.calibration_num)
+        if split_at <= 0:
+            split_markdown.content = "**Calibration split**: `off`"
+            return "unsplit"
+
+        if split_at >= num_frames:
+            split_markdown.content = "\n".join([
+                f"**Calibration split**: `{split_at}`",
+                f"**calibration frames**: `0-{num_frames - 1}`",
+                "**evaluation frames**: `none in this episode`",
+                "**boundary**: `after last frame`",
+                "**current phase**: `calibration`",
+            ])
+            return "calibration"
+
+        phase = "calibration" if frame_idx < split_at else "evaluation"
+        boundary_note = f"between `{split_at - 1}` and `{split_at}`"
+        if frame_idx == split_at - 1:
+            boundary_note += " (last calibration frame)"
+        elif frame_idx == split_at:
+            boundary_note += " (first evaluation frame)"
+
+        split_markdown.content = "\n".join([
+            f"**Calibration split**: `{split_at}`",
+            f"**calibration frames**: `0-{split_at - 1}`",
+            f"**evaluation frames**: `{split_at}-{num_frames - 1}`",
+            f"**boundary**: {boundary_note}",
+            f"**current phase**: `{phase}`",
+        ])
+        return phase
 
     def draw_joint_layer(name: str, joints: np.ndarray | None, frame_idx: int, color: np.ndarray) -> None:
         if not layer_is_visible(name):
@@ -554,6 +636,7 @@ def main():
         jt_true = ep_data['world_hand_joints_true']
         metric_gt = ep_data['metric_gt']
         metric_gt_key = ep_data['metric_gt_key']
+        valid_joint_mask = ep_data['valid_joint_mask']
         jb = ep_data['world_hand_joints_biased']
         gt_mano_fk = ep_data['gt_mano_fk']
         jt_model = ep_data['model_world_hand_joints']
@@ -580,6 +663,7 @@ def main():
             frame_slider.value = frame_idx
             
         frame_slider.max = max(1, T - 1)
+        split_phase = update_split_panel(frame_idx, T)
 
         layer_data = {
             "world_hand_joints": jt,
@@ -602,7 +686,7 @@ def main():
             for method, joints in finetuned.items():
                 color = LAYER_COLORS.get(method, np.array([0.8, 0.8, 0.8]))
                 draw_joint_layer(f"finetuned_{method}", joints, frame_idx, color)
-            update_metrics_panel(layer_data, metric_gt, frame_idx, metric_gt_key)
+            update_metrics_panel(layer_data, metric_gt, frame_idx, metric_gt_key, valid_joint_mask)
 
         loaded_methods = [method for method, joints in finetuned.items() if joints is not None]
         missing_methods = [method for method, joints in finetuned.items() if joints is None]
@@ -613,6 +697,7 @@ def main():
             f"**current frame**: `{frame_idx}`\n"
             f"**sample**: `{sample_idx}` / `{num_samples - 1}`\n"
             f"**metric_gt_key**: `{metric_gt_key}`\n"
+            f"**split phase**: `{split_phase}`\n"
             f"**finetune_k**: `{args.finetune_k}`\n"
             f"**loaded_finetune_methods**: `{', '.join(loaded_methods) if loaded_methods else 'none'}`\n"
             f"**missing_finetune_methods**: `{', '.join(missing_methods) if missing_methods else 'none'}`"

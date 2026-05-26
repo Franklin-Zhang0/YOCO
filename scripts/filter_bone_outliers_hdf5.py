@@ -27,7 +27,7 @@ HAND_BONES_21 = [
 ROOT = 0
 MCP_ANCHORS = [5, 9, 13, 17]
 MCP_ANCHORS_WITH_WRIST = [0, 5, 9, 13, 17]
-JOINT_KEYS = ("world_hand_joints", "world_hand_joints_true", "world_hand_joints_biased")
+DEFAULT_JOINT_KEYS = ("world_hand_joints",)
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +43,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-root-bones", action="store_true")
     parser.add_argument("--use-wrist-for-alignment", action="store_true")
     parser.add_argument("--min-valid-joints", type=int, default=10)
+    parser.add_argument(
+        "--joint-keys",
+        nargs="+",
+        default=list(DEFAULT_JOINT_KEYS),
+        help=(
+            "Joint dataset keys used only for outlier detection. Frames removed "
+            "from the output are still removed from every time-aligned dataset. "
+            "Default: world_hand_joints."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Only write reports, do not create filtered HDF5")
     return parser.parse_args()
 
@@ -209,7 +219,7 @@ def scan_joints(P: np.ndarray, args: argparse.Namespace) -> tuple[set[int], dict
 
 
 def sequence_views(group: h5py.Group, args: argparse.Namespace):
-    for key in JOINT_KEYS:
+    for key in args.joint_keys:
         if key not in group:
             continue
         data = group[key]
@@ -290,6 +300,7 @@ def main() -> None:
         include_root_bones=args.include_root_bones,
         use_wrist_for_alignment=args.use_wrist_for_alignment,
         min_valid_joints=args.min_valid_joints,
+        joint_keys=args.joint_keys,
     )
 
     with h5py.File(input_path, "r") as f:

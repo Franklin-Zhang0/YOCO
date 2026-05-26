@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,19 @@ from calibration_net.utils import mano_recon, scale_hand_fingers, transform_join
 
 
 TIP_JOINT_INDICES = [4, 8, 12, 16, 20]
+
+
+def make_calibration_rng(
+    seed: int,
+    session_name: str,
+    sample_idx: int,
+    num_calib_actions: int,
+) -> np.random.Generator:
+    payload = f"calibration|{int(seed)}|{session_name}|{int(sample_idx)}|{int(num_calib_actions)}".encode(
+        "utf-8"
+    )
+    child_seed = int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "little")
+    return np.random.default_rng(child_seed)
 
 
 def _similarity_align_one(
@@ -170,6 +184,16 @@ def parse_args() -> argparse.Namespace:
         "--exclude-calib-from-eval",
         action="store_true",
         help="Exclude calibration frames from metrics. Default matches Franklin eval: include them.",
+    )
+    parser.add_argument(
+        "--calibration-num",
+        "--calibration_num",
+        type=int,
+        default=0,
+        help=(
+            "If >0, use frames [0,N) only for calibration selection and "
+            "frames [N,T) only for evaluation. Example: --calibration-num 300."
+        ),
     )
     parser.add_argument(
         "--split-key",
@@ -318,11 +342,24 @@ def split_indices(
     split_key: str = "",
     bad_frame_mask: np.ndarray | None = None,
     exclude_calib_from_eval: bool = False,
+    calibration_num: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, str]:
     all_indices = np.arange(length)
     good_indices = all_indices if bad_frame_mask is None else all_indices[~bad_frame_mask]
     if len(good_indices) == 0:
         raise ValueError("No non-bad frames available for calibration")
+
+    if calibration_num > 0:
+        split_at = int(calibration_num)
+        calib_candidates = good_indices[good_indices < split_at]
+        eval_indices = all_indices[all_indices >= split_at]
+        if len(calib_candidates) == 0:
+            raise ValueError(f"No non-bad frames in [0,{split_at}) for calibration")
+        if len(eval_indices) == 0:
+            raise ValueError(f"No frames in [{split_at},T) for evaluation")
+        count = min(int(num_calib), len(calib_candidates))
+        calib_indices = np.sort(rng.choice(calib_candidates, size=count, replace=False))
+        return calib_indices, eval_indices, f"calibration_num_{split_at}"
 
     if split_key and split_key in group:
         labels = np.asarray(group[split_key])
@@ -610,7 +647,6 @@ def run_session(
     cfg: dict[str, Any],
     norm_stats: dict[str, Any],
     device: torch.device,
-    rng: np.random.Generator,
     num_calib_actions: int,
     sample_idx: int,
     output_dir: Path,
@@ -665,14 +701,21 @@ def run_session(
             f"{len(x_proc)} vs {len(y_proc)}"
         )
 
+    calib_rng = make_calibration_rng(
+        args.seed,
+        session_name.split("/", 1)[0],
+        sample_idx,
+        num_calib_actions,
+    )
     calib_idx, eval_idx, split_mode = split_indices(
         group,
         len(x_proc),
         num_calib_actions,
-        rng,
+        calib_rng,
         split_key=args.split_key,
         bad_frame_mask=bad_frame_mask,
         exclude_calib_from_eval=args.exclude_calib_from_eval,
+        calibration_num=args.calibration_num,
     )
 
     baseline = BaselineConfig(
@@ -736,6 +779,8 @@ def run_session(
         "method": args.method,
         "target_source": args.target_source,
         "split_mode": split_mode,
+        "calibration_num": int(args.calibration_num),
+        "calib_idx": " ".join(str(int(i)) for i in calib_idx),
         "num_calib_requested": num_calib_actions,
         "num_calib_samples": int(len(calib_idx)),
         "num_eval_samples": int(len(eval_idx)),
@@ -828,8 +873,6 @@ def main() -> None:
 
     _, norm_stats, cfg = load_model(args.model_dir, device="cpu")
     input_key_for_samples = args.input_key
-    rng = np.random.default_rng(args.seed)
-
     with h5py.File(os.path.expanduser(args.data_path), "r") as f:
         session_names = list(f.keys())
         try:
@@ -899,7 +942,6 @@ def main() -> None:
                         cfg,
                         norm_stats,
                         device,
-                        rng,
                         num_calib_actions=num_calib_actions,
                         sample_idx=sample_idx,
                         output_dir=output_dir,

@@ -34,6 +34,7 @@ METRIC_GT_KEY="${METRIC_GT_KEY:-world_hand_joints}"
 BASELINE_TRUE_JOINTS_KEY="${BASELINE_TRUE_JOINTS_KEY:-}"
 PAIRED_TARGET_KEY="${PAIRED_TARGET_KEY:-world_hand_joints}"
 EXCLUDE_CALIB_FROM_EVAL="${EXCLUDE_CALIB_FROM_EVAL:-0}"
+CALIBRATION_NUM="${CALIBRATION_NUM:-0}"
 PRED_BETA_SOURCE="${PRED_BETA_SOURCE:-auto}"
 
 RUN_BEST="${RUN_BEST:-1}"
@@ -53,6 +54,7 @@ Options:
                                  Applies to best exports, baseline finetune metrics, HyperNet metrics,
                                  and Viser frame MPJPE. Default: $METRIC_GT_KEY
   --baseline-metric-gt-key KEY   Override baseline finetune metric target only. Default: follows --metric-gt-key
+  --calibration-num N            Select calibration frames only from [0,N), evaluate only on [N,T).
   -h, --help                     Show this help.
 
 Environment variables like RUN_BEST, RUN_BASELINES, RUN_HYPERNET, RUN_SUMMARY,
@@ -76,6 +78,14 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       BASELINE_TRUE_JOINTS_KEY="$2"
+      shift 2
+      ;;
+    --calibration-num|--calibration_num)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: $1 requires a value" >&2
+        exit 2
+      fi
+      CALIBRATION_NUM="$2"
       shift 2
       ;;
     -h|--help)
@@ -126,10 +136,16 @@ echo "HyperNet calibration world_hand_joints_true key: $HYPERNET_TRUE_KEY"
 echo "Baseline metric GT key: $BASELINE_TRUE_JOINTS_KEY"
 echo "Metric GT key: $METRIC_GT_KEY"
 echo "Pred beta source: $PRED_BETA_SOURCE"
+echo "Calibration split num: $CALIBRATION_NUM"
 echo "Baseline LoRA rank/alpha/dropout: $LORA_RANK / $LORA_ALPHA / $LORA_DROPOUT"
 echo "Baseline LoRA use gates/gate init: $LORA_USE_GATES / $LORA_GATE_INIT"
 
 mkdir -p "$OUTPUT_DIR/logs"
+
+calibrate_args=()
+if [[ "$CALIBRATION_NUM" != "0" ]]; then
+  calibrate_args=(--calibration-num "$CALIBRATION_NUM")
+fi
 
 if [[ "$RUN_BEST" == "1" ]]; then
   echo "=== Export no-finetune baselines and GT MANO FK ==="
@@ -146,6 +162,7 @@ if [[ "$RUN_BEST" == "1" ]]; then
       --gt-key "$METRIC_GT_KEY" \
       --pred-beta-source "$PRED_BETA_SOURCE" \
       --side-filter "$SIDE_FILTER" \
+      "${calibrate_args[@]}" \
       --exclude-calib-from-eval \
       --variants best_world_hand_joints_biased best_world_hand_joints best_world_hand_joints_true gt_mano_fk \
       2>&1 | tee "$OUTPUT_DIR/logs/export_best_model_k${K}.log"
@@ -162,6 +179,7 @@ if [[ "$RUN_BEST" == "1" ]]; then
       --gt-key "$METRIC_GT_KEY" \
       --pred-beta-source "$PRED_BETA_SOURCE" \
       --side-filter "$SIDE_FILTER" \
+      "${calibrate_args[@]}" \
       --variants best_world_hand_joints_biased best_world_hand_joints best_world_hand_joints_true gt_mano_fk \
       2>&1 | tee "$OUTPUT_DIR/logs/export_best_model_k${K}.log"
   fi
@@ -189,6 +207,7 @@ if [[ "$RUN_BASELINES" == "1" ]]; then
   SIDE_FILTER="$SIDE_FILTER" \
   TRUE_JOINTS_KEY="$BASELINE_TRUE_JOINTS_KEY" \
   EXCLUDE_CALIB_FROM_EVAL="$EXCLUDE_CALIB_FROM_EVAL" \
+  CALIBRATION_NUM="$CALIBRATION_NUM" \
   PRED_BETA_SOURCE="$PRED_BETA_SOURCE" \
     scripts/run_all_finetune_baselines_mac.sh
 fi
@@ -210,6 +229,7 @@ if [[ "$RUN_HYPERNET" == "1" ]]; then
     --metric-gt-key "$METRIC_GT_KEY" \
     --pred-beta-source "$PRED_BETA_SOURCE" \
     --variants hypernet \
+    "${calibrate_args[@]}" \
     --canonicalizer-extractor-path "$CANONICALIZER_EXTRACTOR_PATH" \
     2>&1 | tee "$OUTPUT_DIR/logs/export_hypernet_k${K}.log"
 
@@ -229,6 +249,7 @@ if [[ "$RUN_HYPERNET" == "1" ]]; then
     --metric-gt-key "$METRIC_GT_KEY" \
     --pred-beta-source "$PRED_BETA_SOURCE" \
     --variants hypernet_lora_ft \
+    "${calibrate_args[@]}" \
     --ft-steps "$STEPS" \
     --ft-lr "$LR" \
     --ft-weight-decay "$WEIGHT_DECAY" \
@@ -255,7 +276,8 @@ if [[ "$RUN_VISUALIZE" == "1" ]]; then
     --finetune-methods "${METHODS[@]}" \
     --gt-key "$METRIC_GT_KEY" \
     --device "$DEVICE" \
-    --port "$PORT"
+    --port "$PORT" \
+    "${calibrate_args[@]}"
 fi
 
 echo "Done."

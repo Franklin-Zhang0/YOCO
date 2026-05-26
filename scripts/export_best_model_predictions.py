@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -23,6 +24,19 @@ from calibration_net.utils import mano_recon, scale_hand_fingers, transform_join
 
 
 TIP_JOINT_INDICES = [4, 8, 12, 16, 20]
+
+
+def make_calibration_rng(
+    seed: int,
+    session_name: str,
+    sample_idx: int,
+    num_calib_actions: int,
+) -> np.random.Generator:
+    payload = f"calibration|{int(seed)}|{session_name}|{int(sample_idx)}|{int(num_calib_actions)}".encode(
+        "utf-8"
+    )
+    child_seed = int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "little")
+    return np.random.default_rng(child_seed)
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +71,16 @@ def parse_args() -> argparse.Namespace:
         "--exclude-calib-from-eval",
         action="store_true",
         help="Exclude calibration frames from metrics. Default matches Franklin eval: include them.",
+    )
+    parser.add_argument(
+        "--calibration-num",
+        "--calibration_num",
+        type=int,
+        default=0,
+        help=(
+            "If >0, use frames [0,N) only for calibration-index selection and "
+            "frames [N,T) only for evaluation. Example: --calibration-num 300."
+        ),
     )
     parser.add_argument(
         "--variants",
@@ -126,11 +150,23 @@ def choose_calib_indices_with_mask(
     rng: np.random.Generator,
     bad_frame_mask: np.ndarray | None,
     exclude_calib_from_eval: bool,
+    calibration_num: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     all_indices = np.arange(length)
     good_indices = all_indices if bad_frame_mask is None else all_indices[~bad_frame_mask]
     if len(good_indices) == 0:
         raise ValueError("No non-bad frames available for calibration")
+    if calibration_num > 0:
+        split_at = int(calibration_num)
+        calib_candidates = good_indices[good_indices < split_at]
+        eval_indices = all_indices[all_indices >= split_at]
+        if len(calib_candidates) == 0:
+            raise ValueError(f"No non-bad frames in [0,{split_at}) for calibration")
+        if len(eval_indices) == 0:
+            raise ValueError(f"No frames in [{split_at},T) for evaluation")
+        count = min(int(num_calib), len(calib_candidates))
+        calib_idx = np.sort(rng.choice(calib_candidates, size=count, replace=False))
+        return calib_idx, eval_indices
     if len(good_indices) <= num_calib:
         return good_indices, all_indices
     calib_idx = np.sort(rng.choice(good_indices, size=num_calib, replace=False))
@@ -398,8 +434,6 @@ def main() -> None:
 
     rows_by_variant: dict[str, list[dict[str, Any]]] = {variant: [] for variant in args.variants}
     run_start_by_variant = {variant: perf_counter() for variant in args.variants}
-    rng = np.random.default_rng(args.seed)
-
     with h5py.File(args.data_path, "r") as f:
         session_names = sorted(f.keys(), key=lambda item: int(item) if item.isdigit() else item)
         if args.max_sessions > 0:
@@ -420,12 +454,19 @@ def main() -> None:
             gt_theta_all = read_array(group, "mano_angles", sample_idx=0)
             sample_indices = biased_sample_indices(group, args.sample_idx)
             for sample_idx in tqdm(sample_indices, desc=f"{session_name} samples", leave=False, disable=len(sample_indices) <= 1):
+                calib_rng = make_calibration_rng(
+                    args.seed,
+                    session_name,
+                    sample_idx,
+                    args.num_calib_actions,
+                )
                 calib_idx, eval_idx = choose_calib_indices_with_mask(
                     len(gt_all),
                     args.num_calib_actions,
-                    rng,
+                    calib_rng,
                     bad_frame_mask,
                     args.exclude_calib_from_eval,
+                    args.calibration_num,
                 )
                 for variant in args.variants:
                     if variant in {"best_world_hand_joints_biased", "best_biased"}:
@@ -495,6 +536,8 @@ def main() -> None:
                             "pred_beta_source": beta_source,
                             "side_filter": args.side_filter,
                             "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
+                            "calibration_num": int(args.calibration_num),
+                            "calib_idx": " ".join(str(int(i)) for i in calib_idx),
                             "num_calib_actions": int(args.num_calib_actions),
                             "model_dir": str(args.model_dir),
                         },
@@ -511,6 +554,7 @@ def main() -> None:
                             "pred_beta_source": beta_source,
                             "side_filter": args.side_filter,
                             "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
+                            "calibration_num": int(args.calibration_num),
                             "num_calib_actions": int(args.num_calib_actions),
                             "num_calib_samples": int(len(calib_idx)),
                             "num_eval_samples": int(len(eval_idx)),

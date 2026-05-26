@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -29,6 +30,19 @@ DEFAULT_CANONICALIZER_EXTRACTOR = (
     "combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best"
 )
 TIP_JOINT_INDICES = [4, 8, 12, 16, 20]
+
+
+def make_calibration_rng(
+    seed: int,
+    session_name: str,
+    sample_idx: int,
+    num_calib_actions: int,
+) -> np.random.Generator:
+    payload = f"calibration|{int(seed)}|{session_name}|{int(sample_idx)}|{int(num_calib_actions)}".encode(
+        "utf-8"
+    )
+    child_seed = int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "little")
+    return np.random.default_rng(child_seed)
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,6 +84,16 @@ def parse_args() -> argparse.Namespace:
         "--exclude-calib-from-eval",
         action="store_true",
         help="Exclude calibration frames from metrics. Default matches Franklin eval: include them.",
+    )
+    parser.add_argument(
+        "--calibration-num",
+        "--calibration_num",
+        type=int,
+        default=0,
+        help=(
+            "If >0, use frames [0,N) only for calibration selection and "
+            "frames [N,T) only for evaluation. Example: --calibration-num 300."
+        ),
     )
     parser.add_argument("--input-key", default="world_hand_joints_biased")
     parser.add_argument(
@@ -205,25 +229,40 @@ def choose_calib_indices(
     mode: str,
     exclude_calib_from_eval: bool,
     bad_frame_mask: np.ndarray | None = None,
+    calibration_num: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     all_indices = np.arange(length)
     good_indices = all_indices if bad_frame_mask is None else all_indices[~bad_frame_mask]
     if len(good_indices) == 0:
         raise ValueError("No non-bad frames available for HyperLoRA calibration/eval")
-    count = min(max(int(num_calib), 1), len(good_indices))
+    eval_indices = None
+    if calibration_num > 0:
+        split_at = int(calibration_num)
+        calib_candidates = good_indices[good_indices < split_at]
+        eval_indices = all_indices[all_indices >= split_at]
+        if len(calib_candidates) == 0:
+            raise ValueError(f"No non-bad frames in [0,{split_at}) for HyperLoRA calibration")
+        if len(eval_indices) == 0:
+            raise ValueError(f"No frames in [{split_at},T) for HyperLoRA evaluation")
+    else:
+        calib_candidates = good_indices
+    count = min(max(int(num_calib), 1), len(calib_candidates))
 
     if mode == "first":
-        calib_idx = good_indices[:count]
+        calib_idx = calib_candidates[:count]
     elif mode == "random":
-        calib_idx = np.sort(rng.choice(good_indices, size=count, replace=False))
+        calib_idx = np.sort(rng.choice(calib_candidates, size=count, replace=False))
     elif mode == "uniform":
         if count == 1:
-            calib_idx = good_indices[[0]]
+            calib_idx = calib_candidates[[0]]
         else:
-            uniform_idx = np.linspace(0, len(good_indices) - 1, num=count).round().astype(np.int64)
-            calib_idx = good_indices[uniform_idx]
+            uniform_idx = np.linspace(0, len(calib_candidates) - 1, num=count).round().astype(np.int64)
+            calib_idx = calib_candidates[uniform_idx]
     else:
         raise ValueError("calib-selection must be 'random', 'first', or 'uniform'")
+
+    if calibration_num > 0:
+        return calib_idx, eval_indices
 
     eval_mask = np.ones(length, dtype=bool)
     if exclude_calib_from_eval:
@@ -566,7 +605,6 @@ def main() -> None:
     device = resolve_torch_device(args.device)
     rows_by_variant: dict[str, list[dict[str, Any]]] = {variant: [] for variant in args.variants}
     run_start_by_variant: dict[str, float] = {variant: perf_counter() for variant in args.variants}
-    rng = np.random.default_rng(args.seed)
 
     def fresh_loaded_model():
         loaded = load_model(args.model_dir, device=str(device))
@@ -652,13 +690,20 @@ def main() -> None:
                 bad_frame_mask = read_bad_frame_mask(group, len(biased_seq))
                 valid_joint_mask_all = read_valid_joint_mask(group, len(biased_seq))
 
+                calib_rng = make_calibration_rng(
+                    args.seed,
+                    session_name,
+                    sample_idx,
+                    args.num_calib_actions,
+                )
                 calib_idx, eval_idx = choose_calib_indices(
                     len(biased_seq),
                     args.num_calib_actions,
-                    rng,
+                    calib_rng,
                     args.calib_selection,
                     args.exclude_calib_from_eval,
                     bad_frame_mask=bad_frame_mask,
+                    calibration_num=args.calibration_num,
                 )
                 paired_poses = {
                     "world_hand_joints_biased": biased_seq[calib_idx],
@@ -774,6 +819,7 @@ def main() -> None:
                             "model_dir": str(args.model_dir),
                             "calib_selection": args.calib_selection,
                             "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
+                            "calibration_num": int(args.calibration_num),
                             "input_key": args.input_key,
                             "true_key": args.true_key,
                             "paired_target_key": args.paired_target_key,
@@ -793,6 +839,7 @@ def main() -> None:
                             "num_eval_samples": int(len(eval_idx)),
                             "calib_selection": args.calib_selection,
                             "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
+                            "calibration_num": int(args.calibration_num),
                             "input_key": args.input_key,
                             "true_key": args.true_key,
                             "paired_target_key": args.paired_target_key,
