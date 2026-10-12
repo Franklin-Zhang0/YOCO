@@ -4,7 +4,7 @@
 ```bash
 python \
   visualization/visualize_keypoint_recon.py \
-  --dataset_path ./visualization/example_data_interhand_val.hdf5 \
+  --dataset_path /path/to/your/validation.hdf5 \
   --model_path MODEL_DIR(e.g. ./best)
 ```
 

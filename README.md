@@ -1,16 +1,30 @@
+# YOCO: You Only Calibrate Once!
+
+**Fast Mocap Calibration for Dexterous Teleoperation · CoRL 2026**
+
+Yu Zhang, Yunqi Li, Yushi Du, Yi Ma, Yanchao Yang
+
+The University of Hong Kong · Shenzhen Loop Area Institute · TranscEngram
+
+[Paper](https://arxiv.org/abs/2610.11657) · [Project website source](docs/index.html) · [Website preview and publishing](docs/README.md)
+
+YOCO calibrates derived 3D hand-keypoint streams from a small set of paired raw and target poses. A calibration HyperNet generates session-specific LoRA updates for a frozen MANO estimator without per-session gradient fine-tuning.
+
+This release branch contains the research implementation and a self-contained GitHub Pages website in `docs/`. See [RELEASE.md](RELEASE.md) for its source commit and cleanup scope.
+
 ### Installation Guide
 On ROS2 kilted, you can run:
 ```
 git clone https://github.com/Franklin-Zhang0/Calibration_net.git
 cd Calibration_net
-conda creeate -n teleop python=3.11
+conda create -n teleop python=3.11
 pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 ```
 If you are running on older ROS2 versions, and need the ROS2 node, run:
 ```
 git clone https://github.com/Franklin-Zhang0/Calibration_net.git
 cd Calibration_net
-conda creeate -n teleop python=3.8
+conda create -n teleop python=3.8
 pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 ```
 
@@ -33,7 +47,7 @@ ls /dev/ttyUSB*
 
 To set the permission of the glove port:
 ```
-sudo chmot +777 /dev/ttyUSBx
+sudo chmod +777 /dev/ttyUSBx
 ```
 
 ```
@@ -50,7 +64,7 @@ python -m calibration_net.teleop.teleop \
 This will ask you to wear glove and do severl poses to train a fintuned, calibrated model.
 The model will be saved in calibrate/{TAG}/calib_model/best
 ```
-bash ./script/calibration.sh {TAG} {GLOVE_PORT}
+bash ./scripts/calibrate.sh {TAG} {GLOVE_PORT}
 ```
 
 

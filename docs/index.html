@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOCO: You Only Calibrate Once! | CoRL 2026</title>
+  <meta name="description" content="YOCO calibrates biased hand-pose streams from a few paired poses. A session-conditioned HyperNet generates LoRA updates for a frozen MANO estimator, without test-time fine-tuning.">
+  <meta name="theme-color" content="#ffffff">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="YOCO: You Only Calibrate Once!">
+  <meta property="og:description" content="Fast Mocap Calibration for Dexterous Teleoperation. Conference on Robot Learning, 2026.">
+  <meta property="og:url" content="https://franklin-zhang0.github.io/Calibration_net/">
+  <meta property="og:image" content="https://franklin-zhang0.github.io/Calibration_net/assets/images/overview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://franklin-zhang0.github.io/Calibration_net/">
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="assets/js/main.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#abstract">Skip to the paper</a>
+  <header class="hero" id="top">
+    <div class="container">
+      <h1><span class="title-line">YOCO: You Only Calibrate Once!</span><span class="title-subtitle">Fast Mocap Calibration for<br class="desktop-break"> Dexterous Teleoperation</span></h1>
+      <div class="authors" aria-label="Paper authors">
+        <span><a href="https://franklin-zhang0.github.io/" target="_blank" rel="noopener noreferrer">Yu Zhang</a><sup>1,2,3</sup></span><span class="author-comma">,</span>
+        <span>Yunqi Li<sup>1,3</sup></span><span class="author-comma">,</span>
+        <span>Yushi Du<sup>1</sup></span><span class="author-comma">,</span>
+        <span>Yi Ma<sup>1,2,3</sup></span><span class="author-comma">,</span>
+        <span>Yanchao Yang<sup>1,2,3</sup></span>
+      </div>
+      <div class="affiliations">
+        <span><sup>1</sup> The University of Hong Kong</span>
+        <span><sup>2</sup> Shenzhen Loop Area Institute</span>
+        <span><sup>3</sup> TranscEngram</span>
+      </div>
+      <p class="venue">Conference on Robot Learning (CoRL) 2026</p>
+      <div class="resource-links" aria-label="Paper resources">
+        <a class="button" href="assets/papers/yoco.pdf" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6zM14 2v5h4M9 12h6M9 16h6"/></svg>Paper</a>
+        <a class="button" href="https://arxiv.org/abs/2610.11657" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 4 14 16M19 4 5 20M9 4l10 12M5 8l10 12"/></svg>arXiv</a>
+        <a class="button" href="https://github.com/Franklin-Zhang0/Calibration_net/tree/release/yoco-website" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 20"/></svg>Code</a>
+        <a class="button" href="#video"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 8 6 4-6 4z"/></svg>Video</a>
+      </div>
+      <p class="hero-summary">A few paired poses. One calibration pass.<br class="mobile-break"> More reliable dexterous teleoperation.</p>
+      <figure class="teaser">
+        <a class="figure-link" href="assets/images/overview.png" target="_blank" rel="noopener noreferrer" aria-label="Open the full-resolution YOCO overview figure"><img src="assets/images/overview.png" alt="YOCO corrects biased motion-capture hand poses and improves hand-state estimation, pinch fidelity, and downstream dexterous teleoperation." fetchpriority="high" width="1980" height="770"></a>
+        <figcaption>Calibrate the hand-pose stream once for the current session, then apply the adapted estimator to new poses.</figcaption>
+      </figure>
+      <nav class="section-nav" aria-label="On this page">
+        <a href="#abstract">Abstract</a><a href="#method">Method</a><a href="#results">Results</a><a href="#demos">Demos</a><a href="#bibtex">BibTeX</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="section soft-background" id="abstract" aria-labelledby="abstract-heading">
+      <div class="container reading-width">
+        <h2 id="abstract-heading">Abstract</h2>
+        <p>Dexterous teleoperation requires reliable human-hand state estimations. However, common low-cost motion-capture gloves and markerless trackers often exhibit biases that vary across users, glove fit, and recording sessions, degrading retargeting and demonstration quality. We present <strong>YOCO</strong>, a fast few-shot, fine-tuning-free calibration framework that corrects biased hand-pose streams from a small set of paired raw and target poses.</p>
+        <p>Instead of optimizing a separate model for every operator or session, YOCO conditions a calibration HyperNet on the paired examples and predicts LoRA-style updates for a frozen MANO hand-estimation module, turning per-user calibration into a lightweight feed-forward adaptation step while preserving the geometric prior of MANO and the efficiency of a compact estimator. We train YOCO with synthetic drift augmentations on InterHand2.6M and evaluate on augmented InterHand sequences, offline real glove data, and dexterous teleoperation tasks. Across these settings, YOCO improves calibration efficiency, hand-state estimation quality and teleoperation performance compared with uncalibrated input and standard calibration baselines.</p>
+      </div>
+    </section>
+
+    <section class="section" id="method" aria-labelledby="method-heading">
+      <div class="container">
+        <h2 id="method-heading">From a few pose pairs to a calibrated hand</h2>
+        <p class="section-intro">YOCO operates on the <strong>21-joint 3D hand-pose stream</strong> produced by a tracker. A HyperNet uses a small set of paired raw and target poses to generate session-specific LoRA weights for a frozen MANO estimator.</p>
+        <figure class="wide-figure">
+          <a class="figure-link" href="assets/images/method.png" target="_blank" rel="noopener noreferrer" aria-label="Open the full-resolution YOCO architecture figure"><img src="assets/images/method.png" alt="Paired raw and target poses pass through a shared pose encoder, a Transformer calibration mapper, and a LoRA parameter decoder. Generated weights adapt a frozen MANO estimator, which corrects future raw poses." loading="lazy" width="2005" height="800"></a>
+          <figcaption>The calibration set determines the weight update. Subsequent poses use the adapted estimator without per-session gradient optimization.</figcaption>
+        </figure>
+        <div class="method-columns">
+          <div><h3>1. Capture the session’s bias</h3><p>Each raw pose is paired with a target pose. The shared pose encoder and Transformer calibration mapper summarize the relationship between the two pose streams.</p></div>
+          <div><h3>2. Generate the adaptation</h3><p>The HyperNet predicts low-rank weight updates for the frozen MANO estimator. The adapted estimator maps new raw observations to calibrated hand geometry.</p></div>
+        </div>
+        <h3 class="centered-heading">Four prompts to get started</h3>
+        <p class="section-intro">The physical teleoperation protocol uses <strong>K = 4</strong> paired poses. Target poses are recorded once with Apple Vision Pro and stored in a reusable library. At runtime, the operator only needs the low-cost glove.</p>
+        <div class="pose-grid">
+          <figure><img src="assets/images/pose-pinch.png" alt="Gloved hand performing an index-finger pinch." loading="lazy"><figcaption>Index pinch</figcaption></figure>
+          <figure><img src="assets/images/pose-open.png" alt="Gloved hand held fully open." loading="lazy"><figcaption>Fully open</figcaption></figure>
+          <figure><img src="assets/images/pose-claw.png" alt="Gloved hand in a claw or half-closed pose." loading="lazy"><figcaption>Claw / half-close</figcaption></figure>
+          <figure><img src="assets/images/pose-thumb-in.png" alt="Four fingers straight with the thumb near the palm." loading="lazy"><figcaption>Four fingers straight</figcaption></figure>
+        </div>
+        <p class="figure-note">A calibration applies to the current user and session while the bias remains approximately stable.</p>
+      </div>
+    </section>
+
+    <section class="section soft-background" id="video" aria-labelledby="video-heading">
+      <div class="container video-width">
+        <h2 id="video-heading">YOCO in action</h2>
+        <p class="section-intro">A walkthrough of the calibration problem, the method, and physical teleoperation.</p>
+        <video class="overview-video" controls playsinline preload="none" poster="assets/images/overview-poster.jpg" aria-label="YOCO supplementary overview video, without audio" width="1440" height="936">
+          <source src="assets/videos/overview.mp4" type="video/mp4">
+          Your browser does not support embedded video. <a href="assets/videos/overview.mp4">Download the overview video.</a>
+        </video>
+        <p class="figure-note"><a href="assets/videos/overview.mp4" download>Download video</a> <span aria-hidden="true">·</span> 1 min 33 s <span aria-hidden="true">·</span> Silent video</p>
+      </div>
+    </section>
+
+    <section class="section" id="results" aria-labelledby="results-heading">
+      <div class="container">
+        <h2 id="results-heading">Better hand-state estimates</h2>
+        <p class="section-intro">With four calibration pairs, YOCO reduces PA-MPJPE on augmented InterHand2.6M from <strong>16.55 to 10.45 mm</strong>. It also improves hand-pose accuracy on paired real-glove / AVP data.</p>
+        <div class="dataset-tabs" role="tablist" aria-label="Choose the evaluation dataset" hidden>
+          <button type="button" role="tab" id="interhand-tab" aria-controls="interhand-panel" aria-selected="true" tabindex="0">Augmented InterHand2.6M</button>
+          <button type="button" role="tab" id="real-glove-tab" aria-controls="real-glove-panel" aria-selected="false" tabindex="-1">Real glove / AVP</button>
+        </div>
+        <div id="interhand-panel" class="dataset-panel" role="tabpanel" aria-labelledby="interhand-tab" tabindex="0">
+          <h3 class="dataset-heading">Augmented InterHand2.6M</h3>
+          <div class="table-scroll" role="region" aria-label="Augmented InterHand2.6M results; scroll horizontally on small screens" tabindex="0">
+            <table>
+              <caption>Calibration on 20 synthetic drift sets, K = 4. Paper Table 1.</caption>
+              <thead><tr><th scope="col">Method</th><th scope="col">MPJPE ↓<span>mm</span></th><th scope="col">PA-MPJPE ↓<span>mm</span></th><th scope="col">Tip-PA ↓<span>mm</span></th><th scope="col">AUCJ ↑</th><th scope="col">Pinch ↓<span>mm</span></th><th scope="col">Adaptation ↓<span>s, aggregate</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row">No calibration</th><td>21.52</td><td>16.55</td><td>37.15</td><td>0.611</td><td>48.49</td><td>0.00</td></tr>
+                <tr><th scope="row">Ridge</th><td>17.62</td><td>13.00</td><td>28.28</td><td>0.676</td><td>45.35</td><td>1.6</td></tr>
+                <tr><th scope="row">Last-layer-Finetune</th><td>16.62</td><td>12.01</td><td>25.92</td><td>0.692</td><td>39.18</td><td>45.6</td></tr>
+                <tr><th scope="row">Full-Finetune</th><td>18.11</td><td>12.77</td><td>29.21</td><td>0.668</td><td>37.11</td><td>95.4</td></tr>
+                <tr><th scope="row">LoRA-Finetune</th><td>16.38</td><td>11.67</td><td>25.33</td><td>0.694</td><td>37.28</td><td>89.4</td></tr>
+                <tr class="ours"><th scope="row">YOCO (ours)</th><td>15.64</td><td>10.45</td><td>23.29</td><td>0.702</td><td>34.90</td><td>11.2</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="real-glove-panel" class="dataset-panel" role="tabpanel" aria-labelledby="real-glove-tab" tabindex="0">
+          <h3 class="dataset-heading">Real glove / AVP</h3>
+          <div class="table-scroll" role="region" aria-label="Real glove results; scroll horizontally on small screens" tabindex="0">
+            <table>
+              <caption>Real tensile-glove data with synchronized AVP reference poses, K = 4; average over 3 seeds. Paper Table 2.</caption>
+              <thead><tr><th scope="col">Method</th><th scope="col">MPJPE ↓<span>mm</span></th><th scope="col">PA-MPJPE ↓<span>mm</span></th><th scope="col">Tip-PA ↓<span>mm</span></th><th scope="col">AUCJ ↑</th><th scope="col">Pinch ↓<span>mm</span></th><th scope="col">Adaptation ↓<span>s, aggregate</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row">No calibration</th><td>20.49</td><td>14.63</td><td>36.22</td><td>0.610</td><td>51.39</td><td>0.00</td></tr>
+                <tr><th scope="row">Ridge</th><td>24.71</td><td>19.21</td><td>45.50</td><td>0.573</td><td>57.54</td><td>1.49</td></tr>
+                <tr><th scope="row">Last-layer-Finetune</th><td>18.86</td><td>14.67</td><td>33.88</td><td>0.643</td><td>43.63</td><td>5.04</td></tr>
+                <tr><th scope="row">Full-Finetune</th><td>20.00</td><td>15.73</td><td>36.67</td><td>0.630</td><td>49.89</td><td>13.04</td></tr>
+                <tr><th scope="row">LoRA-Finetune</th><td>18.72</td><td>13.94</td><td>33.23</td><td>0.648</td><td>54.01</td><td>14.57</td></tr>
+                <tr class="ours"><th scope="row">YOCO (ours)</th><td>17.75</td><td>13.14</td><td>31.73</td><td>0.657</td><td>42.79</td><td>6.73</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p class="figure-note">Adaptation times are totals for the evaluation sets on one H100, rather than the latency of a single calibration session. ↓ Lower is better. ↑ Higher is better.</p>
+
+        <h3 class="centered-heading results-subheading">More successful dexterous teleoperation</h3>
+        <p class="section-intro">Across four physical tasks, the YOCO pipeline achieves <strong>90% success (36/40 trials)</strong>, compared with 65% for LoRA-Finetune and 35% without calibration.</p>
+        <figure class="results-figure">
+          <img src="assets/images/teleoperation-results.png" alt="Overall task success: no calibration 35%, LoRA-Finetune 65%, YOCO 90%. Overall completion time: no calibration 24.4 seconds, LoRA-Finetune 17.9 seconds, YOCO 14.9 seconds." loading="lazy" width="1320" height="760">
+          <figcaption>Two operators, four tasks, ten trials per method and task. Failed trials are capped at one minute and assigned the longest observed trial time in the overall average.</figcaption>
+        </figure>
+        <p class="figure-note">These results evaluate complete teleoperation pipelines, including separately trained retargeting models for each calibration condition. They do not isolate calibration as the sole cause of the task gains.</p>
+      </div>
+    </section>
+
+    <section class="section soft-background" id="demos" aria-labelledby="demos-heading">
+      <div class="container">
+        <h2 id="demos-heading">Real-world task demonstrations</h2>
+        <p class="section-intro">Contact-sensitive manipulation with a low-cost glove and a dexterous robot hand.</p>
+        <div class="demo-grid">
+          <figure class="demo">
+            <video controls playsinline muted loop preload="none" poster="assets/images/bottle-cap-poster.jpg" aria-label="Bottle-cap opening demonstration, silent" width="1280" height="720"><source src="assets/videos/bottle-cap.mp4" type="video/mp4">Your browser does not support embedded video. <a href="assets/videos/bottle-cap.mp4">Download this demonstration.</a></video>
+            <figcaption><h3>Bottle-cap opening</h3><p>Twist and remove the cap from a fixed bottle.</p><span class="success">YOCO: 10/10 successful trials</span></figcaption>
+          </figure>
+          <figure class="demo">
+            <video controls playsinline muted loop preload="none" poster="assets/images/earbud-pinch-poster.jpg" aria-label="Earbud pinch-grasping demonstration, silent" width="1280" height="720"><source src="assets/videos/earbud-pinch.mp4" type="video/mp4">Your browser does not support embedded video. <a href="assets/videos/earbud-pinch.mp4">Download this demonstration.</a></video>
+            <figcaption><h3>Earbud pinch grasping</h3><p>Lift an earbud with a thumb–middle-finger pinch and hold it for 3 s.</p><span class="success">YOCO: 8/10 successful trials</span></figcaption>
+          </figure>
+          <figure class="demo">
+            <video controls playsinline muted loop preload="none" poster="assets/images/glue-grasp-poster.jpg" aria-label="Three-finger glue-bottle grasping demonstration, silent" width="1280" height="720"><source src="assets/videos/glue-grasp.mp4" type="video/mp4">Your browser does not support embedded video. <a href="assets/videos/glue-grasp.mp4">Download this demonstration.</a></video>
+            <figcaption><h3>Three-finger glue grasping</h3><p>Lift a glue bottle with the thumb, index, and middle fingers; hold for 3 s.</p><span class="success">YOCO: 8/10 successful trials</span></figcaption>
+          </figure>
+          <figure class="demo">
+            <video controls playsinline muted loop preload="none" poster="assets/images/tissue-box-poster.jpg" aria-label="Tissue-box opening demonstration, silent" width="1280" height="720"><source src="assets/videos/tissue-box.mp4" type="video/mp4">Your browser does not support embedded video. <a href="assets/videos/tissue-box.mp4">Download this demonstration.</a></video>
+            <figcaption><h3>Tissue-box opening</h3><p>Stabilize the box with four fingers and pull the lid with the thumb.</p><span class="success">YOCO: 10/10 successful trials</span></figcaption>
+          </figure>
+        </div>
+        <p class="figure-note">The earbud task uses a middle-finger pinch, while the calibration library contains an index-finger pinch.</p>
+      </div>
+    </section>
+
+    <section class="section" id="bibtex" aria-labelledby="bibtex-heading">
+      <div class="container reading-width">
+        <div class="citation-heading"><h2 id="bibtex-heading">BibTeX</h2><button type="button" class="copy-button" id="copy-bibtex" hidden>Copy citation</button></div>
+        <pre class="citation"><code id="bibtex-code">@inproceedings{zhang2026yoco,
+  title     = {YOCO: You Only Calibrate Once! Fast Mocap
+               Calibration for Dexterous Teleoperation},
+  author    = {Zhang, Yu and Li, Yunqi and Du, Yushi
+               and Ma, Yi and Yang, Yanchao},
+  booktitle = {Conference on Robot Learning (CoRL)},
+  year      = {2026},
+  eprint    = {2610.11657},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url       = {https://arxiv.org/abs/2610.11657}
+}</code></pre>
+        <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>YOCO · CoRL 2026</p>
+      <p class="footer-credit">Page design inspired by <a href="https://ut-austin-rpl.github.io/SCIZOR/" target="_blank" rel="noopener noreferrer">SCIZOR</a>. Figures and videos from the YOCO project.</p>
+      <a href="#top" class="back-to-top">Back to top ↑</a>
+    </div>
+  </footer>
+</body>
+</html>
