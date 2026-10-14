@@ -29,6 +29,39 @@ class WebsiteLinks(HTMLParser):
         self.elements.append((tag, dict(attrs)))
 
 
+class AuthorLinks(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+        self.depth = 0
+        self.current = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if not self.depth:
+            if tag == "div" and "authors" in attrs.get("class", "").split():
+                self.depth = 1
+            return
+        if tag not in {"br", "img", "input", "hr"}:
+            self.depth += 1
+        if tag == "a":
+            self.current = (attrs, [])
+
+    def handle_endtag(self, tag):
+        if not self.depth:
+            return
+        if tag == "a" and self.current is not None:
+            attrs, text = self.current
+            self.links.append(("".join(text).strip(), attrs))
+            self.current = None
+        if tag not in {"br", "img", "input", "hr"}:
+            self.depth -= 1
+
+    def handle_data(self, data):
+        if self.current is not None:
+            self.current[1].append(data)
+
+
 class RepositoryPathTests(unittest.TestCase):
     def website_links(self):
         parser = WebsiteLinks()
@@ -153,6 +186,26 @@ class RepositoryPathTests(unittest.TestCase):
                 for _, attrs in elements
             )
         )
+
+    def test_website_author_links(self):
+        parser = AuthorLinks()
+        parser.feed((ROOT / "docs/index.html").read_text())
+        expected = [
+            ("Yu Zhang", "https://franklin-zhang0.github.io/"),
+            ("Yunqi Li", "https://annie-liyunqi.github.io"),
+            ("Yushi Du", "https://yushi-du.github.io"),
+            ("Yi Ma", "https://www.cs.hku.hk/index.php/people/academic-staff/mayi"),
+            ("Yanchao Yang", "https://yanchaoyang.github.io"),
+        ]
+        self.assertEqual(
+            [(name, attrs.get("href")) for name, attrs in parser.links], expected
+        )
+        for name, attrs in parser.links:
+            with self.subTest(author=name):
+                self.assertEqual(attrs.get("target"), "_blank")
+                self.assertEqual(
+                    set(attrs.get("rel", "").split()), {"noopener", "noreferrer"}
+                )
 
     def test_local_assets_resolve_under_yoco_prefix(self):
         checked = 0
