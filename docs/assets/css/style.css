@@ -30,9 +30,9 @@ sup { font-size: 0.68em; position: relative; vertical-align: super; line-height:
 .reading-width { max-width: 920px; }
 .video-width { max-width: 940px; }
 .hero { padding: 70px 0 0; text-align: center; }
-h1 { margin: 0 auto 28px; font-size: 42px; font-weight: 600; letter-spacing: -1.05px; max-width: 1080px; }
+h1 { margin: 0 auto 28px; font-size: 42px; font-weight: 600; letter-spacing: 0; max-width: 1080px; }
 .title-line, .title-subtitle { display: block; }
-.title-subtitle { margin-top: 9px; }
+.title-subtitle { margin-top: 9px; font-size: 34px; }
 .authors { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 8px; color: var(--blue); font-size: 21px; line-height: 1.8; }
 .authors > span:not(.author-comma) { white-space: nowrap; }
 .author-comma { margin-left: -7px; }
@@ -124,9 +124,8 @@ footer p { margin-bottom: 7px; }
   .container { width: calc(100% - 32px); }
   body { font-size: 17px; line-height: 1.65; }
   .hero { padding-top: 37px; }
-  h1 { font-size: 29px; line-height: 1.23; letter-spacing: -0.7px; margin-bottom: 23px; }
+  h1 { font-size: 29px; line-height: 1.23; letter-spacing: 0; margin-bottom: 23px; }
   .title-subtitle { font-size: 26px; margin-top: 11px; }
-  .desktop-break { display: none; }
   .authors { font-size: 18px; gap: 0 7px; line-height: 1.95; }
   .affiliations { display: block; margin-top: 11px; font-size: 15px; line-height: 1.75; }
   .affiliations span { display: block; white-space: normal; }

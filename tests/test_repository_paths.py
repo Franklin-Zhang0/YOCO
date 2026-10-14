@@ -1,4 +1,5 @@
 import ast
+import json
 import os
 import re
 import shutil
@@ -24,9 +25,28 @@ class WebsiteLinks(HTMLParser):
     def __init__(self):
         super().__init__()
         self.elements = []
+        self.subtitle = []
+        self.subtitle_depth = 0
+        self.subtitle_breaks = 0
 
     def handle_starttag(self, tag, attrs):
-        self.elements.append((tag, dict(attrs)))
+        attrs = dict(attrs)
+        self.elements.append((tag, attrs))
+        if self.subtitle_depth:
+            if tag not in {"br", "img", "input", "hr"}:
+                self.subtitle_depth += 1
+            if tag == "br":
+                self.subtitle_breaks += 1
+        elif tag == "span" and "title-subtitle" in attrs.get("class", "").split():
+            self.subtitle_depth = 1
+
+    def handle_endtag(self, tag):
+        if self.subtitle_depth and tag not in {"br", "img", "input", "hr"}:
+            self.subtitle_depth -= 1
+
+    def handle_data(self, data):
+        if self.subtitle_depth:
+            self.subtitle.append(data)
 
 
 class AuthorLinks(HTMLParser):
@@ -206,6 +226,30 @@ class RepositoryPathTests(unittest.TestCase):
                 self.assertEqual(
                     set(attrs.get("rel", "").split()), {"noopener", "noreferrer"}
                 )
+
+    def test_website_subtitle_has_no_forced_line_break(self):
+        parser = WebsiteLinks()
+        parser.feed((ROOT / "docs/index.html").read_text())
+        self.assertEqual(
+            "".join(parser.subtitle),
+            "Fast Mocap Calibration for Dexterous Teleoperation",
+        )
+        self.assertEqual(parser.subtitle_breaks, 0)
+
+    def test_website_huggingface_link_follows_code(self):
+        links = [attrs for tag, attrs in self.website_links() if tag == "a"]
+        code_index = next(
+            index
+            for index, attrs in enumerate(links)
+            if attrs.get("href") == REPOSITORY_URL + "/tree/release/yoco-website"
+        )
+        manifest = json.loads(
+            (ROOT / "reproduction/huggingface_release.json").read_text()
+        )
+        link = links[code_index + 1]
+        self.assertEqual(link["href"], manifest["collection"]["url"])
+        self.assertEqual(link["target"], "_blank")
+        self.assertEqual(set(link["rel"].split()), {"noopener", "noreferrer"})
 
     def test_local_assets_resolve_under_yoco_prefix(self):
         checked = 0
