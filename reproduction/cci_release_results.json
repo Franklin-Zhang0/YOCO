@@ -1,0 +1,4208 @@
+{
+  "schema_version": 1,
+  "status": "passed_declared_release_qualification",
+  "qualification_passed": true,
+  "completed_at_utc": "2026-10-14T17:03:21Z",
+  "description": "Clean CCI setup, frozen CPU/CUDA inference, current-source CPU 8-step and CUDA 49-step accuracy runs, independent raw-GT/saved-coordinate audits, and verified task-instance shutdown passed. Earlier negative controls remain preserved; excluded paper/timing/physical scopes are not qualified.",
+  "qualification_runtime_scope": "Qualification covers the recorded NGC PyTorch 25.06, Ubuntu 24.04, H100 runtime with frozen Python 3.10.12, Torch 2.6.0+cpu or 2.6.0+cu124, and cu124 cuDNN 9.19.0.56. Shared paper exporters retained TF32 override 1/high with matmul/cuDNN TF32 enabled; public CUDA inference used scoped strict FP32 and restored caller settings. This is not a guarantee for every GPU, container, or precision configuration.",
+  "scope": {
+    "clean_cold_setup_passed": true,
+    "public_api_cpu_and_cuda_passed": true,
+    "complete_cpu_legacy_yoco_accuracy_passed": true,
+    "complete_cuda_eval_all_method_accuracy_passed": true,
+    "independent_final_audit_passed": true,
+    "full_original_table2_yoco_row_reproduced": false,
+    "hardware_timing_qualified": false,
+    "physical_robot_trials_qualified": false,
+    "training_from_scratch_qualified": false,
+    "complete_current_source_default_cpu_yoco_accuracy_passed": true,
+    "independent_current_source_cpu_audit_passed": true
+  },
+  "source": {
+    "base_commit": "5d8604603686bd28580815d0fa18470b753fd859",
+    "base_branch": "release/yoco-website",
+    "base_repository": "https://github.com/Franklin-Zhang0/YOCO",
+    "api_patch": {
+      "path": "eval/results/cci-guide-20261014/control/fp32-api.patch",
+      "sha256": "833eb45c07d09002e9cf68622f0d9d029845f3764399e2fad4e03b5261c8cc4d"
+    },
+    "checker_patch": {
+      "path": "eval/results/cci-guide-20261014/control/corrected-verifier.patch",
+      "sha256": "dbc83dce71ce12b08f6382a305ffaec9de6e3252390f88ede20c2b2ef123d389"
+    },
+    "api_sha256": "7978c4e5a5954626376bccac8ff4e21f52b6343492488333b9d1c08998364ae2",
+    "verifier_sha256": "d0a3e501e6e8f56713fe10b029c1a47e1786fdc0e82785a85b47a1488fe93733",
+    "runner_sha256": "40c0f868c636ff2e58e840ed5f106efb75ed16a3ede695360870976686de5fc9",
+    "regression_test": {
+      "path": "tests/test_metric_receipt_consistency.py",
+      "sha256": "7b27ffbd76f9d5ca4d4515ab66302b95b8036fc402b4d19033e40eff7ad579ca"
+    },
+    "api_test_sha256": "3d4a6238e024134061c6e50b07cf4b0068acded0bce11a8012d3cb27ca99d059",
+    "inference_check_sha256": "a9cb26cdef2103df4f74d887504a8b49f07c620c084c00ad9faa5a9d3024c363",
+    "api_validation_control_sha256": "ecb8cc7648003a4289cf0e34ff002da4a86b84274d13aeeb905c4ab78faeeac4",
+    "cuda_reproduction_control_sha256": "03c940e44fcd0912e7777400af55df3f5bb1183935269a0ca7f748c23d2b6e53",
+    "manifest_sha256": "cfea55c20a646eb3c3d7786729da88dc2a661b59ab1336888cb134a47aa23ed9",
+    "release_reference_sha256": "a73eb653aac813e345c94ec7b236cd7bf657d93ee60ed04cab8c4849af4ad7a4",
+    "original_source_and_environment_preserved": true,
+    "source_isolation": "Initial cold CPU reproduction used the unmodified base clone. Earlier API/checker/receipt controls used separate source and environment follow-ups. Final qualification used the explicitly frozen consolidated v4 patch in a fresh source checkout and its own virtual environment, official locked cuDNN 9.19 libraries, all thirteen source/test fingerprints, both inference profiles, and complete CUDA accuracy/audit checks. A separate fresh external CPU-only environment verified the final default CPU guide while preserving the GPU environment byte-for-byte. Verified assets and locked dependency/Python caches were reused; these follow-ups were not second cold setups.",
+    "original_baseline_exporter_sha256": "3c373ca9d37946e42a8cc5e031a6b4e255eea283b3cf1cf94970652e007e0b14",
+    "saved_pose_source_spec": {
+      "path": "eval/results/cci-guide-20261014/control/saved_pose_source_spec.json",
+      "sha256": "bb79d77040cc67025bfff9364524b6f61a6ccc129f7a9c2f44280d59188abba4"
+    },
+    "saved_pose_metrics_patch": {
+      "path": "eval/results/cci-guide-20261014/control/saved-pose-metrics.patch",
+      "sha256": "5059f60ed71b397f50a3098c7b969a3ed0a986b5c28c777fafae3b2e64818aca"
+    },
+    "saved_pose_exporter_files": {
+      "scripts/run_finetune_baselines.py": {
+        "sha256": "fa2d4d4c29afae19f56515922b5e51c5bb60c820db7ba23265e7b956ab3fad30"
+      },
+      "scripts/export_hypernet_finetune_predictions.py": {
+        "sha256": "fd183c554456f81666d3cf18abd6e647d4d35eb6f2c503ab9c0d2e9e2fc4c043"
+      }
+    },
+    "saved_pose_regression_tests": [
+      {
+        "path": "tests/test_saved_prediction_metrics.py",
+        "sha256": "67245ee763407fd32fdd6a9628993513be0c206b441ff0db4fa8ec2fcdf050b3"
+      }
+    ],
+    "saved_pose_correction_scope": "Pose receipts describe the saved prediction coordinates. Training, saved predictions, paper reference values, and accuracy thresholds are unchanged.",
+    "base_provenance": {
+      "uv_lock_sha256": "bd9408282116a11b2400a3dc20677aa0ad66e5afc901a28c377f7cf78c111b0b",
+      "initial_api_patch_tested_inference_docs_sha256": "902861fea32a355bb8cf88179df39d10d660fcc3ef3071c29817b43f503f2954",
+      "scope": "Original cold setup and earlier API/checker/saved-pose controls used the original base lockfile. The final source and installed backend are identified separately below."
+    }
+  },
+  "cold_setup": {
+    "passed": true,
+    "combined_original_manager_passed": false,
+    "started_at_utc": "2026-10-14T13:33:17.127621+00:00",
+    "uv_version": "uv 0.13.1 (x86_64-unknown-linux-gnu)",
+    "platform": "Linux x86_64",
+    "container_image": "nvcr.io/nvidia/pytorch:25.06-py3",
+    "hardware": {
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "memory": "81559 MiB",
+      "driver": "580.95.05",
+      "mig": "Disabled"
+    },
+    "clean_clone": true,
+    "fresh_uv_cache": true,
+    "system_packages_isolated": true,
+    "user_site_enabled": false,
+    "network_and_authentication": "Restricted-host HTTPS connectivity and authenticated repository/Hub access were configured before the successful clone and private downloads. No credentials are included in this artifact.",
+    "native_library_setup": "Inherited system-PyTorch Python 3.12 library paths were removed from LD_LIBRARY_PATH; NVIDIA driver paths were retained for the locked Python 3.10 runtime.",
+    "profile_commands": [
+      "uv sync --frozen --extra cpu",
+      "uv sync --frozen --extra cu124"
+    ],
+    "asset_commands": [
+      "uv run --frozen --extra cpu python scripts/download_reproduction_assets.py --models-only",
+      "uv run --frozen --extra cpu python scripts/download_reproduction_assets.py"
+    ],
+    "receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/guide_run.json",
+      "sha256": "f222bd2b09e71c0a563e8728b4ebe07f589febca1d4ec0df5b8598c1e2831956"
+    }
+  },
+  "assets": {
+    "manifest": "reproduction/huggingface_release.json",
+    "private": true,
+    "repositories": {
+      "models": {
+        "repo_id": "Franklin0/YOCO",
+        "repo_type": "model",
+        "revision": "d564cd5276cd6203c26389a246ac63f736354d9a"
+      },
+      "datasets": {
+        "repo_id": "Franklin0/YOCO-Reproduction",
+        "repo_type": "dataset",
+        "revision": "a73fb4797c165c3755ee03391c730d1b2cfd7af5"
+      }
+    },
+    "required_files": [
+      {
+        "local_path": "models/yoco/model.pth",
+        "bytes": 1158149788,
+        "sha256": "9375fdc446b0db93cce4989c5c2a0598eeff7ea3cbe176821ada305a38ff63a4"
+      },
+      {
+        "local_path": "models/yoco/config.yaml",
+        "bytes": 4960,
+        "sha256": "03a8012de74d7f4489f3b73c8fec984d46d2e1654781ac5e7ca3f8b866438262"
+      },
+      {
+        "local_path": "models/yoco/norm_stats.pkl",
+        "bytes": 938,
+        "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+      },
+      {
+        "local_path": "models/frozen_estimator/model.pth",
+        "bytes": 9521362,
+        "sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2"
+      },
+      {
+        "local_path": "models/frozen_estimator/config.yaml",
+        "bytes": 3279,
+        "sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e"
+      },
+      {
+        "local_path": "models/frozen_estimator/norm_stats.pkl",
+        "bytes": 938,
+        "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+      },
+      {
+        "local_path": "datasets/interhand/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5",
+        "bytes": 209115976,
+        "sha256": "b9dd84f8bdce4caa60c59e7bf070bd55724969069185a0074813887b26b9fa29"
+      },
+      {
+        "local_path": "datasets/avp/aligned_avp_glove_val.hdf5",
+        "bytes": 8148896,
+        "sha256": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937"
+      },
+      {
+        "local_path": "datasets/avp/aligned_avp_glove_train_new.hdf5",
+        "bytes": 8042816,
+        "sha256": "bd2163402dae2fbeb362fea9483f2b7dad576f1f7f8ba5cc32734ce745e480d5"
+      }
+    ],
+    "verified_file_count": 9,
+    "verification_receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/fp32_api_validation.json",
+      "sha256": "48d995c81adb19153b2433e240a80795942b7a214b6e2e9509a4a6122d15912f"
+    },
+    "mano_files_redistributed": false,
+    "mano_requirement": "Separately licensed MANO_LEFT.pkl and MANO_RIGHT.pkl; not fetched from the release Hub repositories.",
+    "observed_mano_fingerprints": {
+      "observed_at_utc": "2026-10-14T14:45:00+00:00",
+      "timestamp_precision": "minute",
+      "scope": "Live fingerprints observed during the qualification work from the separately licensed files at the MANO_PATH used by CCI, cross-checked against the same files locally. Not initial-run hashes, a version assertion, or redistributed MANO payloads.",
+      "files": [
+        {
+          "filename": "MANO_LEFT.pkl",
+          "bytes": 3821391,
+          "sha256": "c4022f7083f2ca7c78b2b3d595abbab52debd32b09d372b16923a801f0ea6a30"
+        },
+        {
+          "filename": "MANO_RIGHT.pkl",
+          "bytes": 3821356,
+          "sha256": "45d60aa3b27ef9107a7afd4e00808f307fd91111e1cfa35afd5c4a62de264767"
+        }
+      ]
+    }
+  },
+  "followup_setup": {
+    "fresh_source_and_venv": true,
+    "fresh_dependency_downloads": false,
+    "verified_hub_assets_reused": true,
+    "locked_python_and_wheel_caches_reused": true,
+    "note": "Corrected API and CUDA reproduction validations are source/environment-isolated followups, not a second cold network or asset-download qualification.",
+    "api_validation_receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/fp32_api_validation.json",
+      "sha256": "48d995c81adb19153b2433e240a80795942b7a214b6e2e9509a4a6122d15912f"
+    },
+    "cuda_reproduction_control_receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/uv_cudnn_v4_run.json",
+      "sha256": "b5d8877790d82caa9ea2634e5d47c645bb9847987e3d395c86554ff9c4ddf6f3"
+    }
+  },
+  "tests": {
+    "base_source_cpu": {
+      "passed": true,
+      "passed_tests": 63,
+      "log": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/09-cpu-tests.log",
+        "sha256": "f87cf779df528a77cceb13de161b1305a2d937eb47536cb42998abeb803696bd"
+      }
+    },
+    "api_patch_source": {
+      "distinct_test_count": 70,
+      "cpu": {
+        "passed": true,
+        "passed_tests": 70,
+        "log": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/fp32-09-tests-cpu.log",
+          "sha256": "9e24b8e5b5e9de7b31dd3f0c29c2c4e2455d67fb66ebe5f9902095377b7d9ee0"
+        }
+      },
+      "cu124": {
+        "passed": true,
+        "passed_tests": 70,
+        "log": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/fp32-05-tests-cu124.log",
+          "sha256": "aea821999a09da94fd2e6ddfbef1164783eb3ed705661603b77d5c6bc144da53"
+        }
+      },
+      "note": "The same 70 tests were executed separately on both profiles, not 140 distinct tests."
+    },
+    "api_and_checker_source_cu124": {
+      "passed": true,
+      "passed_tests": 75,
+      "log": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/corrected-04-tests-cu124.log",
+        "sha256": "fb5fed4ce570c6b130ccc3dd9d35104d9c0657e1f443ef991dc459217898bb6a"
+      }
+    },
+    "saved_pose_source_cu124": {
+      "passed": true,
+      "passed_tests": 81,
+      "log": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/final-v3-03-tests-cu124.log",
+        "sha256": "2d9d69030848a0cc45535047cecf60fbe62b148b5e6b9fd7c3299c496e412fcb"
+      }
+    },
+    "saved_pose_source_local_cpu": {
+      "passed": true,
+      "passed_tests": 81,
+      "collector": "pytest",
+      "returncode": 0,
+      "started_at_utc": "2026-10-14T15:27:35.508293+00:00",
+      "finished_at_utc": "2026-10-14T15:27:42.840766+00:00",
+      "runtime": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cpu"
+      },
+      "captured_output_sha256": "97c9f1646abeaeccabb2e751214c403356e1731f8c2bf069663a3c67a8836198",
+      "scope": "Local locked CPU virtual environment; not a new CCI cold setup or CCI CPU-v3 reproduction run."
+    },
+    "final_frozen_release_source": {
+      "distinct_test_count": 81,
+      "cpu": {
+        "passed": true,
+        "passed_tests": 81,
+        "log": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/release-v4-05-tests-cpu.log",
+          "sha256": "e3f0538490cf0746d0282e74035e5f3164ac7099c00e4c3a47869e339caece17"
+        }
+      },
+      "cu124": {
+        "passed": true,
+        "passed_tests": 81,
+        "log": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/release-v4-09-tests-cu124.log",
+          "sha256": "35e6e61547ee559f3b99e36a9d4048f1d0601ef5f891a32e422a97a553251fca"
+        }
+      },
+      "note": "The same 81 tests passed separately on both final frozen profiles, not 162 distinct tests."
+    },
+    "final_default_cpu_environment": {
+      "distinct_test_count": 81,
+      "passed": true,
+      "passed_tests": 81,
+      "log": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-final-v4-02-tests-cpu.log",
+        "sha256": "c3fccbbaae462035b18f9b29f98e70d5866af578fafa599c317485b3cc78b4c3"
+      },
+      "scope": "The same final 81-test suite ran once more in the separate CPU-only environment, not 81 additional unique tests."
+    }
+  },
+  "precision_environment": {
+    "status": "observed",
+    "observed_at_utc": "2026-10-14T14:59:16.397942+00:00",
+    "receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/precision_environment.json",
+      "sha256": "288eed3d1fb60c682f8161d2fb82c81f6d3cb672ec12266ed8f5eb33aae06b1c"
+    },
+    "observed_values": [
+      {
+        "label": "original",
+        "environment": {
+          "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
+          "NVIDIA_TF32_OVERRIDE": null,
+          "TORCH_F32_MATMUL_PRECISION": null,
+          "CUBLAS_WORKSPACE_CONFIG": null
+        },
+        "python": "3.10.12",
+        "torch": "2.6.0+cu124",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "matmul_precision": "high"
+      },
+      {
+        "label": "corrected",
+        "environment": {
+          "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
+          "NVIDIA_TF32_OVERRIDE": null,
+          "TORCH_F32_MATMUL_PRECISION": null,
+          "CUBLAS_WORKSPACE_CONFIG": null
+        },
+        "python": "3.10.12",
+        "torch": "2.6.0+cu124",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "matmul_precision": "high"
+      }
+    ],
+    "scope": "Fresh subprocess observations before importing Torch, limited to the four named Torch/NVIDIA precision-related variables, plus actual backend flags and precision. Both original and corrected cu124 virtual environments were observed; these values alone do not establish a cause or guarantee behavior outside this NGC 25.06 H100 runtime."
+  },
+  "normal_inference": {
+    "precision": "Public API CUDA calls disable TF32 and autocast only during calibration/prediction and restore caller settings; CPU is unchanged. Shared paper exporters and baselines retain their original precision behavior.",
+    "cpu": {
+      "success": true,
+      "started_at_utc": "2026-10-14T16:16:34.276367+00:00",
+      "finished_at_utc": "2026-10-14T16:17:04.969372+00:00",
+      "runtime": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cpu",
+        "numpy": "1.23.5",
+        "torch_cuda": null,
+        "cuda_available": false,
+        "device": "cpu",
+        "uv_extra": "cpu",
+        "gpu_name": null
+      },
+      "hdf5_prediction": {
+        "theta_shape": [
+          32,
+          45
+        ],
+        "joints_shape": [
+          32,
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "npz_prediction": {
+        "theta_shape": [
+          32,
+          45
+        ],
+        "joints_shape": [
+          32,
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "api_prediction": {
+        "theta_shape": [
+          32,
+          45
+        ],
+        "joints_shape": [
+          32,
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "batch_size_consistency": {
+        "theta": {
+          "bitwise_equal": false,
+          "max_abs_difference": 2.0265579223632812e-06,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": false,
+          "max_abs_difference": 6.705522537231445e-08,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "single_prediction": {
+        "theta_shape": [
+          45
+        ],
+        "joints_shape": [
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "single_matches_batch": {
+        "theta": {
+          "bitwise_equal": false,
+          "max_abs_difference": 6.258487701416016e-07,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": false,
+          "max_abs_difference": 3.725290298461914e-08,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "independent_calibration_A_B_A": {
+        "theta": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0
+        },
+        "joints": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0
+        }
+      },
+      "npz_matches_readme_api": {
+        "theta": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "hdf5_matches_shape_parameter_api": {
+        "theta": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/v4-cpu-inference/receipt.json",
+        "sha256": "706fbe457e53e2820cc05a9a91c10146cbb53b17b22043a94d673ede0d979ca8"
+      },
+      "source_scope": "Final frozen v4 source and own-venv dependencies."
+    },
+    "cu124": {
+      "success": true,
+      "started_at_utc": "2026-10-14T16:19:58.980118+00:00",
+      "finished_at_utc": "2026-10-14T16:20:33.066980+00:00",
+      "runtime": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "1.23.5",
+        "torch_cuda": "12.4",
+        "cuda_available": true,
+        "device": "cuda",
+        "uv_extra": "cu124",
+        "gpu_name": "NVIDIA H100 80GB HBM3"
+      },
+      "hdf5_prediction": {
+        "theta_shape": [
+          32,
+          45
+        ],
+        "joints_shape": [
+          32,
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "npz_prediction": {
+        "theta_shape": [
+          32,
+          45
+        ],
+        "joints_shape": [
+          32,
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "api_prediction": {
+        "theta_shape": [
+          32,
+          45
+        ],
+        "joints_shape": [
+          32,
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "batch_size_consistency": {
+        "theta": {
+          "bitwise_equal": false,
+          "max_abs_difference": 1.2367963790893555e-06,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": false,
+          "max_abs_difference": 5.21540641784668e-08,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "single_prediction": {
+        "theta_shape": [
+          45
+        ],
+        "joints_shape": [
+          21,
+          3
+        ],
+        "finite": true,
+        "wrist_max_m": 0.0
+      },
+      "single_matches_batch": {
+        "theta": {
+          "bitwise_equal": false,
+          "max_abs_difference": 1.218169927597046e-06,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": false,
+          "max_abs_difference": 5.21540641784668e-08,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "independent_calibration_A_B_A": {
+        "theta": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0
+        },
+        "joints": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0
+        }
+      },
+      "npz_matches_readme_api": {
+        "theta": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "hdf5_matches_shape_parameter_api": {
+        "theta": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 0.0001
+        },
+        "joints": {
+          "bitwise_equal": true,
+          "max_abs_difference": 0.0,
+          "absolute_tolerance": 2e-06
+        }
+      },
+      "receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/v4-cuda-inference/receipt.json",
+        "sha256": "d876684995bba87daa17eb566e0f1e43495221f77da97566790df9b20f2f9488"
+      },
+      "source_scope": "Final frozen v4 source and own-venv dependencies."
+    },
+    "earlier_api_patch_profiles": {
+      "cpu": {
+        "success": true,
+        "started_at_utc": "2026-10-14T14:19:41.493434+00:00",
+        "finished_at_utc": "2026-10-14T14:20:11.184964+00:00",
+        "runtime": {
+          "python": "3.10.12",
+          "torch": "2.6.0+cpu",
+          "numpy": "1.23.5",
+          "torch_cuda": null,
+          "cuda_available": false,
+          "device": "cpu",
+          "uv_extra": "cpu",
+          "gpu_name": null
+        },
+        "hdf5_prediction": {
+          "theta_shape": [
+            32,
+            45
+          ],
+          "joints_shape": [
+            32,
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "npz_prediction": {
+          "theta_shape": [
+            32,
+            45
+          ],
+          "joints_shape": [
+            32,
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "api_prediction": {
+          "theta_shape": [
+            32,
+            45
+          ],
+          "joints_shape": [
+            32,
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "batch_size_consistency": {
+          "theta": {
+            "bitwise_equal": false,
+            "max_abs_difference": 2.0265579223632812e-06,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": false,
+            "max_abs_difference": 6.705522537231445e-08,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "single_prediction": {
+          "theta_shape": [
+            45
+          ],
+          "joints_shape": [
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "single_matches_batch": {
+          "theta": {
+            "bitwise_equal": false,
+            "max_abs_difference": 6.258487701416016e-07,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": false,
+            "max_abs_difference": 3.725290298461914e-08,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "independent_calibration_A_B_A": {
+          "theta": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0
+          },
+          "joints": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0
+          }
+        },
+        "npz_matches_readme_api": {
+          "theta": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "hdf5_matches_shape_parameter_api": {
+          "theta": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-inference-fp32/receipt.json",
+          "sha256": "77a9db226fb05d026d6d881209d2879b3c60faa933cbad3c3fedbe72dc0a4d67"
+        }
+      },
+      "cu124": {
+        "success": true,
+        "started_at_utc": "2026-10-14T14:18:45.415595+00:00",
+        "finished_at_utc": "2026-10-14T14:19:21.446113+00:00",
+        "runtime": {
+          "python": "3.10.12",
+          "torch": "2.6.0+cu124",
+          "numpy": "1.23.5",
+          "torch_cuda": "12.4",
+          "cuda_available": true,
+          "device": "cuda",
+          "uv_extra": "cu124",
+          "gpu_name": "NVIDIA H100 80GB HBM3"
+        },
+        "hdf5_prediction": {
+          "theta_shape": [
+            32,
+            45
+          ],
+          "joints_shape": [
+            32,
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "npz_prediction": {
+          "theta_shape": [
+            32,
+            45
+          ],
+          "joints_shape": [
+            32,
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "api_prediction": {
+          "theta_shape": [
+            32,
+            45
+          ],
+          "joints_shape": [
+            32,
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "batch_size_consistency": {
+          "theta": {
+            "bitwise_equal": false,
+            "max_abs_difference": 1.2367963790893555e-06,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": false,
+            "max_abs_difference": 5.21540641784668e-08,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "single_prediction": {
+          "theta_shape": [
+            45
+          ],
+          "joints_shape": [
+            21,
+            3
+          ],
+          "finite": true,
+          "wrist_max_m": 0
+        },
+        "single_matches_batch": {
+          "theta": {
+            "bitwise_equal": false,
+            "max_abs_difference": 1.218169927597046e-06,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": false,
+            "max_abs_difference": 5.21540641784668e-08,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "independent_calibration_A_B_A": {
+          "theta": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0
+          },
+          "joints": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0
+          }
+        },
+        "npz_matches_readme_api": {
+          "theta": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "hdf5_matches_shape_parameter_api": {
+          "theta": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 0.0001
+          },
+          "joints": {
+            "bitwise_equal": true,
+            "max_abs_difference": 0,
+            "absolute_tolerance": 2e-06
+          }
+        },
+        "receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-inference-fp32/receipt.json",
+          "sha256": "bd06a1a926a823ebe9acdec91acb3bbe0b336dad0da568f5f3c3d45a86eddab0"
+        }
+      }
+    }
+  },
+  "reproduction": {
+    "cpu_legacy_yoco": {
+      "accuracy_passed": true,
+      "conditioning_mode": "legacy",
+      "device": "cpu",
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "completed_steps": 8,
+      "planned_steps": 8,
+      "verified_rows": 2,
+      "command": "uv run --frozen --extra cpu python scripts/reproduce_paper.py --table all --methods yoco --device cpu --conditioning-mode legacy --output-dir <fresh-results>",
+      "started_at_utc": "2026-10-14T13:37:19.613061+00:00",
+      "finished_at_utc": "2026-10-14T13:41:18.527126+00:00",
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-yoco/reproduction_run.json",
+        "sha256": "f69f67e6b5e418237920e4d008b7fbf2be35d581b14b2cf3e4ea64c8745ea8a7"
+      },
+      "results": [
+        {
+          "setting": "interhand",
+          "method": "hypernet",
+          "reference_profile": "release",
+          "conditioning_mode": "legacy",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 15.346553611258665,
+            "pa_mpjpe_mm": 10.179063933901489,
+            "tip_mpjpe_mm": 22.583362041041255,
+            "aucj": 0.7065996769037785,
+            "pinch_distance_l2_mm": 34.6303545559446
+          },
+          "reference": {
+            "mpjpe_mm": 15.346553611258665,
+            "pa_mpjpe_mm": 10.179063933901489,
+            "tip_mpjpe_mm": 22.583362041041255,
+            "aucj": 0.7065996769037785,
+            "pinch_distance_l2_mm": 34.6303545559446
+          },
+          "delta": {
+            "mpjpe_mm": 0,
+            "pa_mpjpe_mm": 0,
+            "tip_mpjpe_mm": 0,
+            "aucj": 0,
+            "pinch_distance_l2_mm": 0
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.525792259722948,
+                "pa_mpjpe_mm": 10.298768314532936,
+                "tip_mpjpe_mm": 22.88034954108298,
+                "aucj": 0.7034694613518012,
+                "pinch_distance_l2_mm": 35.67156093195081
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.090490318834782,
+                "pa_mpjpe_mm": 10.005849320441484,
+                "tip_mpjpe_mm": 22.050045616924763,
+                "aucj": 0.7109600712276908,
+                "pinch_distance_l2_mm": 34.51225562021136
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.423378255218267,
+                "pa_mpjpe_mm": 10.232574166730046,
+                "tip_mpjpe_mm": 22.819690965116024,
+                "aucj": 0.705369498131843,
+                "pinch_distance_l2_mm": 33.707247115671635
+              }
+            }
+          ],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-yoco/interhand/verification.json",
+            "sha256": "ace0472b454c7e52ef538e1d071bca24e627c8d6efc151bd3c078fbd9737b75c"
+          }
+        },
+        {
+          "setting": "avp",
+          "method": "hypernet",
+          "reference_profile": "release",
+          "conditioning_mode": "legacy",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 17.75466464459896,
+            "pa_mpjpe_mm": 13.280289558072885,
+            "tip_mpjpe_mm": 31.182868199215992,
+            "aucj": 0.6564640893968315,
+            "pinch_distance_l2_mm": 41.63664682871765
+          },
+          "reference": {
+            "mpjpe_mm": 17.75466464459896,
+            "pa_mpjpe_mm": 13.280289558072885,
+            "tip_mpjpe_mm": 31.182868199215992,
+            "aucj": 0.6564640893968315,
+            "pinch_distance_l2_mm": 41.63664682871765
+          },
+          "delta": {
+            "mpjpe_mm": 0,
+            "pa_mpjpe_mm": 0,
+            "tip_mpjpe_mm": 0,
+            "aucj": 0,
+            "pinch_distance_l2_mm": 0
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.81039995451768,
+                "pa_mpjpe_mm": 13.352587508658567,
+                "tip_mpjpe_mm": 31.45556151866913,
+                "aucj": 0.6564224668961769,
+                "pinch_distance_l2_mm": 46.78217942516009
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.646437510848045,
+                "pa_mpjpe_mm": 13.244017648200193,
+                "tip_mpjpe_mm": 30.644460891683895,
+                "aucj": 0.6582206569234887,
+                "pinch_distance_l2_mm": 39.982023338476814
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.807156468431156,
+                "pa_mpjpe_mm": 13.244263517359892,
+                "tip_mpjpe_mm": 31.44858218729496,
+                "aucj": 0.654749144370829,
+                "pinch_distance_l2_mm": 38.14573772251606
+              }
+            }
+          ],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-yoco/avp/verification.json",
+            "sha256": "a5f04ee95d2f52c809f0dbcf6d4cab866fd3cf7baf1a821951716873283ab4c7"
+          }
+        }
+      ]
+    },
+    "cuda_eval_all_methods": {
+      "status": "passed_with_independent_audit",
+      "accuracy_passed": true,
+      "conditioning_mode": "eval",
+      "device": "cuda",
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "methods": [
+        "yoco",
+        "ridge",
+        "last_layer",
+        "full_ft",
+        "lora",
+        "no_calibration"
+      ],
+      "completed_steps": 49,
+      "planned_steps": 49,
+      "verified_rows": 12,
+      "expected_verified_rows": 12,
+      "command": "uv run --frozen --extra cu124 python scripts/reproduce_paper.py --table all --methods all --device cuda --conditioning-mode eval --output-dir <fresh-results>",
+      "started_at_utc": "2026-10-14T16:20:37.796780+00:00",
+      "finished_at_utc": "2026-10-14T16:47:21.508780+00:00",
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/reproduction_run.json",
+        "sha256": "df8dc0e946d37ed0724d706e5b207d28ab77611af0e4cfb90c45525d3ea2de50"
+      },
+      "results": [
+        {
+          "setting": "interhand",
+          "method": "hypernet",
+          "reference_profile": "release",
+          "conditioning_mode": "eval",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 15.359310759231448,
+            "pa_mpjpe_mm": 10.156129098807773,
+            "tip_mpjpe_mm": 22.535404423251748,
+            "aucj": 0.7064198983764453,
+            "pinch_distance_l2_mm": 34.32775754481554,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 15.359531699990233,
+            "pa_mpjpe_mm": 10.156050301156938,
+            "tip_mpjpe_mm": 22.536284460996587,
+            "aucj": 0.7064148986829456,
+            "pinch_distance_l2_mm": 34.330097089211144
+          },
+          "delta": {
+            "mpjpe_mm": -0.00022094075878520414,
+            "pa_mpjpe_mm": 7.879765083451673e-05,
+            "tip_mpjpe_mm": -0.0008800377448388019,
+            "aucj": 4.999693499652125e-06,
+            "pinch_distance_l2_mm": -0.0023395443956033546
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.506698889657855,
+                "pa_mpjpe_mm": 10.261943633668125,
+                "tip_mpjpe_mm": 22.78018342331052,
+                "aucj": 0.7038386331729065,
+                "pinch_distance_l2_mm": 35.2323985658586,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.085260989144444,
+                "pa_mpjpe_mm": 9.96057870797813,
+                "tip_mpjpe_mm": 21.95407561957836,
+                "aucj": 0.7110725564820339,
+                "pinch_distance_l2_mm": 34.526234958320856,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.485972398892045,
+                "pa_mpjpe_mm": 10.245864954777062,
+                "tip_mpjpe_mm": 22.871954226866364,
+                "aucj": 0.7043485054743953,
+                "pinch_distance_l2_mm": 33.22463911026716,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "yoco",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/interhand/verification.json",
+            "sha256": "2fd344ad76bdbf267cd4a09d0d661bf118b6f9ec557f64e57eaf349c9e410df3"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "ridge",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 17.620384056741994,
+            "pa_mpjpe_mm": 12.999923015013337,
+            "tip_mpjpe_mm": 28.277383651584387,
+            "aucj": 0.6763542930980607,
+            "pinch_distance_l2_mm": 45.35559955984354,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 17.620393276835483,
+            "pa_mpjpe_mm": 13.000382762100722,
+            "tip_mpjpe_mm": 28.277084914346535,
+            "aucj": 0.6763577845855742,
+            "pinch_distance_l2_mm": 45.35369820271929
+          },
+          "delta": {
+            "mpjpe_mm": -9.220093488693237e-06,
+            "pa_mpjpe_mm": -0.000459747087385054,
+            "tip_mpjpe_mm": 0.00029873723785200923,
+            "aucj": -3.4914875134406387e-06,
+            "pinch_distance_l2_mm": 0.001901357124246772
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.907390231266618,
+                "pa_mpjpe_mm": 13.305027084425092,
+                "tip_mpjpe_mm": 28.883462958037853,
+                "aucj": 0.6730039437624189,
+                "pinch_distance_l2_mm": 48.28366683796048,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.270949063822627,
+                "pa_mpjpe_mm": 12.52502934075892,
+                "tip_mpjpe_mm": 27.34284047037363,
+                "aucj": 0.6811674288059494,
+                "pinch_distance_l2_mm": 43.07213639840484,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.682812875136733,
+                "pa_mpjpe_mm": 13.169712619856,
+                "tip_mpjpe_mm": 28.605847526341677,
+                "aucj": 0.6748915067258137,
+                "pinch_distance_l2_mm": 44.7109954431653,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "ridge",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/interhand/verification-ridge.json",
+            "sha256": "12c169c3d6edb481645ae1b7af80949ca85c75ed07f8fe5df80727ce2e409497"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "last_layer",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 16.62172450063129,
+            "pa_mpjpe_mm": 12.01499504968524,
+            "tip_mpjpe_mm": 25.922022977222998,
+            "aucj": 0.6922015927552287,
+            "pinch_distance_l2_mm": 39.17878055945039,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 16.62146127782762,
+            "pa_mpjpe_mm": 12.014720981116929,
+            "tip_mpjpe_mm": 25.921316041300695,
+            "aucj": 0.6922072981470931,
+            "pinch_distance_l2_mm": 39.17637433235844
+          },
+          "delta": {
+            "mpjpe_mm": 0.0002632228036709705,
+            "pa_mpjpe_mm": 0.0002740685683111366,
+            "tip_mpjpe_mm": 0.0007069359223024207,
+            "aucj": -5.7053918643967805e-06,
+            "pinch_distance_l2_mm": 0.002406227091945823
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.633925959467888,
+                "pa_mpjpe_mm": 12.01256331987679,
+                "tip_mpjpe_mm": 25.989971589297056,
+                "aucj": 0.6908207320573948,
+                "pinch_distance_l2_mm": 39.349401369690895,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.4312313310802,
+                "pa_mpjpe_mm": 11.799911363050342,
+                "tip_mpjpe_mm": 25.295968912541866,
+                "aucj": 0.6964194247960277,
+                "pinch_distance_l2_mm": 38.153366558253765,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.800016211345792,
+                "pa_mpjpe_mm": 12.232510466128588,
+                "tip_mpjpe_mm": 26.480128429830074,
+                "aucj": 0.689364621412264,
+                "pinch_distance_l2_mm": 40.033573750406504,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "last_layer",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/interhand/verification-last_layer.json",
+            "sha256": "f56166a91fba91f24361fe31c34c21648e1214e09cdf577388c0571892d02c60"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "full_ft",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 18.108466314151883,
+            "pa_mpjpe_mm": 12.766387096295754,
+            "tip_mpjpe_mm": 29.209113866090775,
+            "aucj": 0.6681712761328926,
+            "pinch_distance_l2_mm": 37.07523619135221,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 18.109690475588042,
+            "pa_mpjpe_mm": 12.76903495917954,
+            "tip_mpjpe_mm": 29.21202201396227,
+            "aucj": 0.6681493015529849,
+            "pinch_distance_l2_mm": 37.11298452690244
+          },
+          "delta": {
+            "mpjpe_mm": -0.0012241614361592212,
+            "pa_mpjpe_mm": -0.0026478628837871554,
+            "tip_mpjpe_mm": -0.002908147871494293,
+            "aucj": 2.197457990771312e-05,
+            "pinch_distance_l2_mm": -0.037748335550226386
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.758377827703953,
+                "pa_mpjpe_mm": 12.59043412283063,
+                "tip_mpjpe_mm": 28.218358382582664,
+                "aucj": 0.6727586287323893,
+                "pinch_distance_l2_mm": 35.8236032538116,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.82234562560916,
+                "pa_mpjpe_mm": 12.507237493991852,
+                "tip_mpjpe_mm": 28.487616684287786,
+                "aucj": 0.6740539264937406,
+                "pinch_distance_l2_mm": 38.84656820446253,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 18.744675489142537,
+                "pa_mpjpe_mm": 13.201489672064781,
+                "tip_mpjpe_mm": 30.921366531401873,
+                "aucj": 0.6577012731725478,
+                "pinch_distance_l2_mm": 36.5555371157825,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "full_ft",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/interhand/verification-full_ft.json",
+            "sha256": "3e9142e48405ce5f2601d2fabfe84e1788775d1db039247e59f8526f3201244c"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "lora",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 16.383707740654547,
+            "pa_mpjpe_mm": 11.674330787112316,
+            "tip_mpjpe_mm": 25.334021635353565,
+            "aucj": 0.694365014629785,
+            "pinch_distance_l2_mm": 37.28303654740254,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 16.3837846989433,
+            "pa_mpjpe_mm": 11.674652803497311,
+            "tip_mpjpe_mm": 25.334295102705557,
+            "aucj": 0.6943662499757043,
+            "pinch_distance_l2_mm": 37.28338532770673
+          },
+          "delta": {
+            "mpjpe_mm": -7.695828875142752e-05,
+            "pa_mpjpe_mm": -0.00032201638499529395,
+            "tip_mpjpe_mm": -0.00027346735199174077,
+            "aucj": -1.2353459193370497e-06,
+            "pinch_distance_l2_mm": -0.0003487803041934967
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.41660165041685,
+                "pa_mpjpe_mm": 11.67241190560162,
+                "tip_mpjpe_mm": 25.451169814914465,
+                "aucj": 0.6925708262501851,
+                "pinch_distance_l2_mm": 37.665311712771654,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.337399324402213,
+                "pa_mpjpe_mm": 11.611769115552306,
+                "tip_mpjpe_mm": 25.071235466748476,
+                "aucj": 0.6965507071187325,
+                "pinch_distance_l2_mm": 37.26087976247072,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.39712224714458,
+                "pa_mpjpe_mm": 11.73881134018302,
+                "tip_mpjpe_mm": 25.479659624397755,
+                "aucj": 0.6939735105204375,
+                "pinch_distance_l2_mm": 36.922918166965246,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "lora",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/interhand/verification-lora.json",
+            "sha256": "863314c90fd7765dacc077934b845ba41549b25f623d7e555b323a9e1999f8be"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "best_world_hand_joints_biased",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 21.52053820900619,
+            "pa_mpjpe_mm": 16.550588980317116,
+            "tip_mpjpe_mm": 37.14782390743494,
+            "aucj": 0.6105279292836414,
+            "pinch_distance_l2_mm": 48.488593846559525,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 21.520181838423014,
+            "pa_mpjpe_mm": 16.55017198063433,
+            "tip_mpjpe_mm": 37.147013656795025,
+            "aucj": 0.6105334799302076,
+            "pinch_distance_l2_mm": 48.49084075540304
+          },
+          "delta": {
+            "mpjpe_mm": 0.00035637058317661285,
+            "pa_mpjpe_mm": 0.0004169996827840805,
+            "tip_mpjpe_mm": 0.0008102506399154663,
+            "aucj": -5.550646566154782e-06,
+            "pinch_distance_l2_mm": -0.0022469088435173035
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 21.52053820900619,
+                "pa_mpjpe_mm": 16.550588980317116,
+                "tip_mpjpe_mm": 37.14782390743494,
+                "aucj": 0.6105279292836414,
+                "pinch_distance_l2_mm": 48.488593846559525,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 21.52053820900619,
+                "pa_mpjpe_mm": 16.550588980317116,
+                "tip_mpjpe_mm": 37.14782390743494,
+                "aucj": 0.6105279292836414,
+                "pinch_distance_l2_mm": 48.488593846559525,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 21.52053820900619,
+                "pa_mpjpe_mm": 16.550588980317116,
+                "tip_mpjpe_mm": 37.14782390743494,
+                "aucj": 0.6105279292836414,
+                "pinch_distance_l2_mm": 48.488593846559525,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "no_calibration",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/interhand/verification-best_world_hand_joints_biased.json",
+            "sha256": "81a2e0c89d4ccb69ea737cdffa1c20af9c04912303d4999916510b8207df8e06"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "hypernet",
+          "reference_profile": "release",
+          "conditioning_mode": "eval",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 17.862598308258587,
+            "pa_mpjpe_mm": 13.240151935153536,
+            "tip_mpjpe_mm": 31.18964636491405,
+            "aucj": 0.6542583845147556,
+            "pinch_distance_l2_mm": 41.14401919974221,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 17.863090460499127,
+            "pa_mpjpe_mm": 13.240556646552351,
+            "tip_mpjpe_mm": 31.19077554179562,
+            "aucj": 0.6542527022221232,
+            "pinch_distance_l2_mm": 41.149383617771996
+          },
+          "delta": {
+            "mpjpe_mm": -0.0004921522405396672,
+            "pa_mpjpe_mm": -0.0004047113988150386,
+            "tip_mpjpe_mm": -0.001129176881569549,
+            "aucj": 5.6822926324251455e-06,
+            "pinch_distance_l2_mm": -0.005364418029785156
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.637642721335094,
+                "pa_mpjpe_mm": 13.156197344263395,
+                "tip_mpjpe_mm": 30.726276338100433,
+                "aucj": 0.6592169814922771,
+                "pinch_distance_l2_mm": 45.01058906316757,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.84376986324787,
+                "pa_mpjpe_mm": 13.308098229269186,
+                "tip_mpjpe_mm": 31.05812023083369,
+                "aucj": 0.6541930597602909,
+                "pinch_distance_l2_mm": 39.29411992430687,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 18.106382340192795,
+                "pa_mpjpe_mm": 13.25616023192803,
+                "tip_mpjpe_mm": 31.784542525808018,
+                "aucj": 0.6493651122916988,
+                "pinch_distance_l2_mm": 39.12734861175219,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "yoco",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/avp/verification.json",
+            "sha256": "62e5d792665bff24756cb4b3871758acd923d356cab62096b6784d3246aa627a"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "ridge",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 24.711753966079815,
+            "pa_mpjpe_mm": 19.208981759018368,
+            "tip_mpjpe_mm": 45.493228981892265,
+            "aucj": 0.5728383440318353,
+            "pinch_distance_l2_mm": 57.53541045729269,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 24.713979206151436,
+            "pa_mpjpe_mm": 19.210771339280246,
+            "tip_mpjpe_mm": 45.49791229267915,
+            "aucj": 0.5729476551997741,
+            "pinch_distance_l2_mm": 57.539183377523585
+          },
+          "delta": {
+            "mpjpe_mm": -0.0022252400716205045,
+            "pa_mpjpe_mm": -0.0017895802618781431,
+            "tip_mpjpe_mm": -0.004683310786887773,
+            "aucj": -0.00010931116793877482,
+            "pinch_distance_l2_mm": -0.003772920230893817
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 21.59601015349229,
+                "pa_mpjpe_mm": 17.50223400692145,
+                "tip_mpjpe_mm": 40.35940021276474,
+                "aucj": 0.6121596911788109,
+                "pinch_distance_l2_mm": 61.92119355509236,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 27.586791043480236,
+                "pa_mpjpe_mm": 20.998125274976093,
+                "tip_mpjpe_mm": 50.51876604557037,
+                "aucj": 0.5336855525613402,
+                "pinch_distance_l2_mm": 47.38223771001123,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 24.952460701266926,
+                "pa_mpjpe_mm": 19.12658599515756,
+                "tip_mpjpe_mm": 45.60152068734169,
+                "aucj": 0.5726697883553546,
+                "pinch_distance_l2_mm": 63.30280010677447,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "ridge",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/avp/verification-ridge.json",
+            "sha256": "1d5ce7e874eef180a2f33e74aeec0ee3d41d0188afda2b4c02b10117218d81b9"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "last_layer",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 18.857359886169434,
+            "pa_mpjpe_mm": 14.672608528700138,
+            "tip_mpjpe_mm": 33.88184391789966,
+            "aucj": 0.6431581274132405,
+            "pinch_distance_l2_mm": 43.6265541600447,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 18.857674673199654,
+            "pa_mpjpe_mm": 14.672527477003177,
+            "tip_mpjpe_mm": 33.88295674489604,
+            "aucj": 0.6432835832679212,
+            "pinch_distance_l2_mm": 43.63226699158391
+          },
+          "delta": {
+            "mpjpe_mm": -0.00031478703022003174,
+            "pa_mpjpe_mm": 8.105169696115411e-05,
+            "tip_mpjpe_mm": -0.001112826996383376,
+            "aucj": -0.00012545585468071163,
+            "pinch_distance_l2_mm": -0.0057128315392134255
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 18.467008446653683,
+                "pa_mpjpe_mm": 14.484703540802002,
+                "tip_mpjpe_mm": 33.64519029855728,
+                "aucj": 0.6506648431670158,
+                "pinch_distance_l2_mm": 48.93193227849948,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 19.41805270810922,
+                "pa_mpjpe_mm": 15.083795102934042,
+                "tip_mpjpe_mm": 35.44404233495394,
+                "aucj": 0.6343813464371343,
+                "pinch_distance_l2_mm": 37.41356794526622,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 18.687018503745396,
+                "pa_mpjpe_mm": 14.449326942364374,
+                "tip_mpjpe_mm": 32.55629912018776,
+                "aucj": 0.6444281926355716,
+                "pinch_distance_l2_mm": 44.534162256368404,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "last_layer",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/avp/verification-last_layer.json",
+            "sha256": "4568d419a545ead09538a229fd7db2f110bfbb5a94df58e38779ca24a9a489ab"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "full_ft",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 19.990286479393642,
+            "pa_mpjpe_mm": 15.732335237165293,
+            "tip_mpjpe_mm": 36.64490787519349,
+            "aucj": 0.6299538334454019,
+            "pinch_distance_l2_mm": 49.89459220074798,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 19.99667742186122,
+            "pa_mpjpe_mm": 15.730948108961284,
+            "tip_mpjpe_mm": 36.67234898441368,
+            "aucj": 0.6299805388065574,
+            "pinch_distance_l2_mm": 49.88756491120454
+          },
+          "delta": {
+            "mpjpe_mm": -0.006390942467579208,
+            "pa_mpjpe_mm": 0.0013871282040085475,
+            "tip_mpjpe_mm": -0.027441109220191606,
+            "aucj": -2.6705361155454632e-05,
+            "pinch_distance_l2_mm": 0.007027289543437121
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 19.007043913006783,
+                "pa_mpjpe_mm": 15.197415215273699,
+                "tip_mpjpe_mm": 35.387309888998665,
+                "aucj": 0.6459763493547376,
+                "pinch_distance_l2_mm": 57.114869617162995,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 21.127189820011456,
+                "pa_mpjpe_mm": 16.523115026454132,
+                "tip_mpjpe_mm": 38.79263624548912,
+                "aucj": 0.6141329846069733,
+                "pinch_distance_l2_mm": 44.76145640679985,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 19.836625705162685,
+                "pa_mpjpe_mm": 15.476475469768047,
+                "tip_mpjpe_mm": 35.75477749109268,
+                "aucj": 0.6297521663744946,
+                "pinch_distance_l2_mm": 47.80745057828108,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "full_ft",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/avp/verification-full_ft.json",
+            "sha256": "7b0c23d09da33c92abef516719a38a6e70f3b6181e8daf77fb2855af81f2bafd"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "lora",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 18.717731970051926,
+            "pa_mpjpe_mm": 13.93696409650147,
+            "tip_mpjpe_mm": 33.232747266689934,
+            "aucj": 0.6480126597150079,
+            "pinch_distance_l2_mm": 53.997087454985056,
+            "pinch_frame_pairs": 173.25
+          },
+          "reference": {
+            "units": 4,
+            "mpjpe_mm": 18.716793972998857,
+            "pa_mpjpe_mm": 13.936204027363408,
+            "tip_mpjpe_mm": 33.22961072747906,
+            "aucj": 0.6481532503579448,
+            "pinch_distance_l2_mm": 54.00893179777725
+          },
+          "delta": {
+            "mpjpe_mm": 0.0009379970530680737,
+            "pa_mpjpe_mm": 0.0007600691380620361,
+            "tip_mpjpe_mm": 0.003136539210871092,
+            "aucj": -0.00014059064293692192,
+            "pinch_distance_l2_mm": -0.011844342792194595
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 19.908148329705,
+                "pa_mpjpe_mm": 14.691013609990478,
+                "tip_mpjpe_mm": 36.20782308280468,
+                "aucj": 0.6289528779194167,
+                "pinch_distance_l2_mm": 56.25716525883902,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 18.153552431613207,
+                "pa_mpjpe_mm": 13.517745770514011,
+                "tip_mpjpe_mm": 31.748306937515736,
+                "aucj": 0.6570303645549108,
+                "pinch_distance_l2_mm": 51.525783438832214,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 18.091495148837566,
+                "pa_mpjpe_mm": 13.60213290899992,
+                "tip_mpjpe_mm": 31.742111779749393,
+                "aucj": 0.658054736670696,
+                "pinch_distance_l2_mm": 54.208313667283946,
+                "pinch_frame_pairs": 173.25
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "lora",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/avp/verification-lora.json",
+            "sha256": "848b79342933d1283358f1be06497eee4069e2fbaddbb44515dc0b95098e10c0"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "best_world_hand_joints_biased",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 20.487140398472548,
+            "pa_mpjpe_mm": 14.630196616053581,
+            "tip_mpjpe_mm": 36.2195260822773,
+            "aucj": 0.6101411029055555,
+            "pinch_distance_l2_mm": 51.382144679238785,
+            "pinch_frame_pairs": 173.25
+          },
+          "reference": {
+            "units": 4,
+            "mpjpe_mm": 20.48727124929428,
+            "pa_mpjpe_mm": 14.629777520895004,
+            "tip_mpjpe_mm": 36.219934932887554,
+            "aucj": 0.6101386594008282,
+            "pinch_distance_l2_mm": 51.38509364161657
+          },
+          "delta": {
+            "mpjpe_mm": -0.00013085082173347473,
+            "pa_mpjpe_mm": 0.00041909515857696533,
+            "tip_mpjpe_mm": -0.00040885061025619507,
+            "aucj": 2.4435047272231003e-06,
+            "pinch_distance_l2_mm": -0.0029489623777863017
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 20.487140398472548,
+                "pa_mpjpe_mm": 14.630196616053581,
+                "tip_mpjpe_mm": 36.2195260822773,
+                "aucj": 0.6101411029055555,
+                "pinch_distance_l2_mm": 51.382144679238785,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 20.487140398472548,
+                "pa_mpjpe_mm": 14.630196616053581,
+                "tip_mpjpe_mm": 36.2195260822773,
+                "aucj": 0.6101411029055555,
+                "pinch_distance_l2_mm": 51.382144679238785,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 20.487140398472548,
+                "pa_mpjpe_mm": 14.630196616053581,
+                "tip_mpjpe_mm": 36.2195260822773,
+                "aucj": 0.6101411029055555,
+                "pinch_distance_l2_mm": 51.382144679238785,
+                "pinch_frame_pairs": 173.25
+              }
+            }
+          ],
+          "issues": [],
+          "public_method_name": "no_calibration",
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v4/avp/verification-best_world_hand_joints_biased.json",
+            "sha256": "1fc063d5e8a05067bea885c55bde88fccbbc898e7f5c8653817c6244531dbcbe"
+          },
+          "execution_scope": "Official verifier executed by the complete frozen v4 runner."
+        }
+      ],
+      "focused_three_seed_ridge_probe": {
+        "status": "passed",
+        "accuracy_passed": true,
+        "completed_steps": 4,
+        "expected_completed_steps": 4,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "units_per_seed": 3,
+        "eval_frames_per_seed": 4128,
+        "receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3-ridge-probe/reproduction_run.json",
+          "sha256": "fa63e1acf2320cb461e19161eaf26a9a3fc7d53fb7ab793c1aaaf6005e85b4d4"
+        },
+        "verification_receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3-ridge-probe/avp/verification-ridge.json",
+          "sha256": "09d6b56614565122590dc927d4249c1ece049c6a60f765237d2b8c371a4454eb"
+        }
+      },
+      "passed_verified_rows": 12,
+      "failed_verified_rows": 0,
+      "control_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/uv_cudnn_v4_run.json",
+        "sha256": "b5d8877790d82caa9ea2634e5d47c645bb9847987e3d395c86554ff9c4ddf6f3"
+      },
+      "row_pass_scope": "All twelve official verifier-reported accuracy rows passed in a complete 49-step run and independent raw-GT/saved-coordinate audit. The final default CPU guide was independently qualified separately."
+    },
+    "aggregation_and_protocol": "Each table/method verifies all seeds and complete recording/variant units; masked pose metrics are unit-averaged, Table 2 baseline pinch is event-weighted, YOCO pinch is unit-averaged. Calibration is K=4 from [0,200), evaluation is all [200,T). No truncation or uniform-cohort substitution.",
+    "table2_cohort_note": "YOCO/Ridge/last-layer/full fine-tuning use three right-hand AVP recordings; no-calibration/LoRA use the historical four-recording mapped cohort. Original paper cohorts remain unchanged.",
+    "accuracy_tolerances": {
+      "millimeters": 0.05,
+      "aucj": 0.0005
+    },
+    "targets_references_checkpoints_unchanged": true,
+    "saved_ridge_payload_preservation": {
+      "scope": "Ridge only: original failed v2 full run versus the corrected v3 three-seed AVP probe. No bitwise claim for other methods.",
+      "receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/ridge_saved_prediction_comparison.json",
+        "sha256": "06d22f70f8628ab11cd853db3af53dde6877f78346c46d20ffc7f034e51f7fc0"
+      },
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "sessions_per_seed": 3,
+      "fields": [
+        "pred_theta",
+        "pred_joints",
+        "calib_idx",
+        "eval_idx"
+      ],
+      "compared_arrays": 36,
+      "all_bitwise_equal": true,
+      "max_abs_difference": 0
+    },
+    "initial_locked_cudnn91_v3": {
+      "status": "failed_complete_suite_accuracy",
+      "accuracy_passed": false,
+      "conditioning_mode": "eval",
+      "device": "cuda",
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "methods": [
+        "yoco",
+        "ridge",
+        "last_layer",
+        "full_ft",
+        "lora",
+        "no_calibration"
+      ],
+      "completed_steps": 46,
+      "planned_steps": 49,
+      "verified_rows": 12,
+      "expected_verified_rows": 12,
+      "command": "uv run --frozen --extra cu124 python scripts/reproduce_paper.py --table all --methods all --device cuda --conditioning-mode eval --output-dir <fresh-results>",
+      "started_at_utc": "2026-10-14T15:23:46.895262+00:00",
+      "finished_at_utc": "2026-10-14T15:53:39.258183+00:00",
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/reproduction_run.json",
+        "sha256": "cb3ccb393481402fec229599f5b33feead769d13cdca207bc4e1f96c2c354679"
+      },
+      "results": [
+        {
+          "setting": "interhand",
+          "method": "hypernet",
+          "public_method_name": "yoco",
+          "reference_profile": "release",
+          "conditioning_mode": "eval",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 15.359270743404826,
+            "pa_mpjpe_mm": 10.15616802033037,
+            "tip_mpjpe_mm": 22.53536124092837,
+            "aucj": 0.7064207191993314,
+            "pinch_distance_l2_mm": 34.327717032283545,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 15.359531699990233,
+            "pa_mpjpe_mm": 10.156050301156938,
+            "tip_mpjpe_mm": 22.536284460996587,
+            "aucj": 0.7064148986829456,
+            "pinch_distance_l2_mm": 34.330097089211144
+          },
+          "delta": {
+            "mpjpe_mm": -0.0002609565854072571,
+            "pa_mpjpe_mm": 0.00011771917343139648,
+            "tip_mpjpe_mm": -0.0009232200682163239,
+            "aucj": 5.820516385757202e-06,
+            "pinch_distance_l2_mm": -0.002380056927599128
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.506741916760802,
+                "pa_mpjpe_mm": 10.261928476393223,
+                "tip_mpjpe_mm": 22.78033047914505,
+                "aucj": 0.7038374501563152,
+                "pinch_distance_l2_mm": 35.23238776251674,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.085331909358501,
+                "pa_mpjpe_mm": 9.960741247050464,
+                "tip_mpjpe_mm": 21.954243816435337,
+                "aucj": 0.7110714205618376,
+                "pinch_distance_l2_mm": 34.52607784420252,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.485738404095173,
+                "pa_mpjpe_mm": 10.245834337547421,
+                "tip_mpjpe_mm": 22.871509427204728,
+                "aucj": 0.7043532868798413,
+                "pinch_distance_l2_mm": 33.22468549013138,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/interhand/verification.json",
+            "sha256": "b60e15ee8118174f66c0d0f99fc0830019aea17444dac2c2e93c16f8688a1d26"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "ridge",
+          "public_method_name": "ridge",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 17.619717478131253,
+            "pa_mpjpe_mm": 12.999472425629696,
+            "tip_mpjpe_mm": 28.27629055827856,
+            "aucj": 0.6763607572651796,
+            "pinch_distance_l2_mm": 45.35517313828071,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 17.620393276835483,
+            "pa_mpjpe_mm": 13.000382762100722,
+            "tip_mpjpe_mm": 28.277084914346535,
+            "aucj": 0.6763577845855742,
+            "pinch_distance_l2_mm": 45.35369820271929
+          },
+          "delta": {
+            "mpjpe_mm": -0.0006757987042291802,
+            "pa_mpjpe_mm": -0.0009103364710263406,
+            "tip_mpjpe_mm": -0.0007943560679741779,
+            "aucj": 2.972679605472983e-06,
+            "pinch_distance_l2_mm": 0.0014749355614185333
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.906390922144055,
+                "pa_mpjpe_mm": 13.304216181859374,
+                "tip_mpjpe_mm": 28.881629090756178,
+                "aucj": 0.6730100416242426,
+                "pinch_distance_l2_mm": 48.28010052442551,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.26946998387575,
+                "pa_mpjpe_mm": 12.524086609482765,
+                "tip_mpjpe_mm": 27.339986246079206,
+                "aucj": 0.681187098278963,
+                "pinch_distance_l2_mm": 43.07337999343872,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.683291528373957,
+                "pa_mpjpe_mm": 13.170114485546947,
+                "tip_mpjpe_mm": 28.607256338000298,
+                "aucj": 0.6748851318923331,
+                "pinch_distance_l2_mm": 44.7120388969779,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/interhand/verification-ridge.json",
+            "sha256": "0819409601c57da40ca5501a65f9d4ce084f5f3af1fabad749ed1a64a52787c7"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "last_layer",
+          "public_method_name": "last_layer",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 16.621555512150127,
+            "pa_mpjpe_mm": 12.014844998096427,
+            "tip_mpjpe_mm": 25.92159550016125,
+            "aucj": 0.6922050935872651,
+            "pinch_distance_l2_mm": 39.178298537929855,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 16.62146127782762,
+            "pa_mpjpe_mm": 12.014720981116929,
+            "tip_mpjpe_mm": 25.921316041300695,
+            "aucj": 0.6922072981470931,
+            "pinch_distance_l2_mm": 39.17637433235844
+          },
+          "delta": {
+            "mpjpe_mm": 9.423432250699193e-05,
+            "pa_mpjpe_mm": 0.00012401697949826485,
+            "tip_mpjpe_mm": 0.0002794588605539161,
+            "aucj": -2.204559828022923e-06,
+            "pinch_distance_l2_mm": 0.0019242055714130402
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.633448284119368,
+                "pa_mpjpe_mm": 12.012248672544956,
+                "tip_mpjpe_mm": 25.988805666565895,
+                "aucj": 0.6908294381624331,
+                "pinch_distance_l2_mm": 39.3482836894691,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.431154450401664,
+                "pa_mpjpe_mm": 11.799778509885073,
+                "tip_mpjpe_mm": 25.29581980779767,
+                "aucj": 0.6964212144590418,
+                "pinch_distance_l2_mm": 38.15409746021032,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.800063801929355,
+                "pa_mpjpe_mm": 12.23250781185925,
+                "tip_mpjpe_mm": 26.480161026120186,
+                "aucj": 0.6893646281403203,
+                "pinch_distance_l2_mm": 40.032514464110136,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/interhand/verification-last_layer.json",
+            "sha256": "848774c4a32cfa2047ddbb8b3666e62ad1c2c7cba53eb8f455d40ae5fa629fc1"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "full_ft",
+          "public_method_name": "full_ft",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 18.106661643832922,
+            "pa_mpjpe_mm": 12.768082522476712,
+            "tip_mpjpe_mm": 29.204902549584705,
+            "aucj": 0.6681968259272383,
+            "pinch_distance_l2_mm": 37.08746712654829,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 18.109690475588042,
+            "pa_mpjpe_mm": 12.76903495917954,
+            "tip_mpjpe_mm": 29.21202201396227,
+            "aucj": 0.6681493015529849,
+            "pinch_distance_l2_mm": 37.11298452690244
+          },
+          "delta": {
+            "mpjpe_mm": -0.0030288317551203647,
+            "pa_mpjpe_mm": -0.0009524367028284075,
+            "tip_mpjpe_mm": -0.007119464377563389,
+            "aucj": 4.7524374253371526e-05,
+            "pinch_distance_l2_mm": -0.025517400354146957
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.75667411275208,
+                "pa_mpjpe_mm": 12.590803718194366,
+                "tip_mpjpe_mm": 28.214493207633495,
+                "aucj": 0.6727733015021509,
+                "pinch_distance_l2_mm": 35.85094679147005,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 17.822747491300106,
+                "pa_mpjpe_mm": 12.511982023715973,
+                "tip_mpjpe_mm": 28.489219583570957,
+                "aucj": 0.6740428689329752,
+                "pinch_distance_l2_mm": 38.87869995087385,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 18.74056332744658,
+                "pa_mpjpe_mm": 13.2014618255198,
+                "tip_mpjpe_mm": 30.910994857549667,
+                "aucj": 0.6577743073465891,
+                "pinch_distance_l2_mm": 36.53275463730097,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/interhand/verification-full_ft.json",
+            "sha256": "c859a4578e01a0c5f68ac9516a6c018b8acaaed29c7a34dbff16f5a1c4d5ec9c"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "lora",
+          "public_method_name": "lora",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 16.383728571236134,
+            "pa_mpjpe_mm": 11.674282094463706,
+            "tip_mpjpe_mm": 25.33389286448558,
+            "aucj": 0.6943643436930452,
+            "pinch_distance_l2_mm": 37.284070843209825,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 16.3837846989433,
+            "pa_mpjpe_mm": 11.674652803497311,
+            "tip_mpjpe_mm": 25.334295102705557,
+            "aucj": 0.6943662499757043,
+            "pinch_distance_l2_mm": 37.28338532770673
+          },
+          "delta": {
+            "mpjpe_mm": -5.6127707164677076e-05,
+            "pa_mpjpe_mm": -0.00037070903360536533,
+            "tip_mpjpe_mm": -0.00040223821997642517,
+            "aucj": -1.906282659058789e-06,
+            "pinch_distance_l2_mm": 0.0006855155030933702
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.416681604459882,
+                "pa_mpjpe_mm": 11.672393465414643,
+                "tip_mpjpe_mm": 25.45099314302206,
+                "aucj": 0.6925693920528196,
+                "pinch_distance_l2_mm": 37.66530193388462,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.33737590163946,
+                "pa_mpjpe_mm": 11.611727252602577,
+                "tip_mpjpe_mm": 25.071237329393625,
+                "aucj": 0.6965509582995062,
+                "pinch_distance_l2_mm": 37.26146714761853,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 16.397128207609057,
+                "pa_mpjpe_mm": 11.738725565373898,
+                "tip_mpjpe_mm": 25.47944812104106,
+                "aucj": 0.6939726807268095,
+                "pinch_distance_l2_mm": 36.925443448126316,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/interhand/verification-lora.json",
+            "sha256": "3600d0c96f7d2b53dc839a48163f3bfd7d4bcb2851386d49f34bf52df6c13ef5"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "interhand",
+          "method": "best_world_hand_joints_biased",
+          "public_method_name": "no_calibration",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 21.520531410351396,
+            "pa_mpjpe_mm": 16.550580319017172,
+            "tip_mpjpe_mm": 37.14780816808343,
+            "aucj": 0.6105278631244196,
+            "pinch_distance_l2_mm": 48.48875440657139,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 21.520181838423014,
+            "pa_mpjpe_mm": 16.55017198063433,
+            "tip_mpjpe_mm": 37.147013656795025,
+            "aucj": 0.6105334799302076,
+            "pinch_distance_l2_mm": 48.49084075540304
+          },
+          "delta": {
+            "mpjpe_mm": 0.00034957192838191986,
+            "pa_mpjpe_mm": 0.00040833838284015656,
+            "tip_mpjpe_mm": 0.0007945112884044647,
+            "aucj": -5.616805787922452e-06,
+            "pinch_distance_l2_mm": -0.002086348831653595
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 21.520531410351396,
+                "pa_mpjpe_mm": 16.550580319017172,
+                "tip_mpjpe_mm": 37.14780816808343,
+                "aucj": 0.6105278631244196,
+                "pinch_distance_l2_mm": 48.48875440657139,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 21.520531410351396,
+                "pa_mpjpe_mm": 16.550580319017172,
+                "tip_mpjpe_mm": 37.14780816808343,
+                "aucj": 0.6105278631244196,
+                "pinch_distance_l2_mm": 48.48875440657139,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 21.520531410351396,
+                "pa_mpjpe_mm": 16.550580319017172,
+                "tip_mpjpe_mm": 37.14780816808343,
+                "aucj": 0.6105278631244196,
+                "pinch_distance_l2_mm": 48.48875440657139,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/interhand/verification-best_world_hand_joints_biased.json",
+            "sha256": "5b4344a9aeaf511939be82feef7ce224d85fd035bd990534273a11940d09a870"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "hypernet",
+          "public_method_name": "yoco",
+          "reference_profile": "release",
+          "conditioning_mode": "eval",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 17.863437326418026,
+            "pa_mpjpe_mm": 13.240801584389475,
+            "tip_mpjpe_mm": 31.19027242064476,
+            "aucj": 0.6542456240655415,
+            "pinch_distance_l2_mm": 41.151076141330925,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 17.863090460499127,
+            "pa_mpjpe_mm": 13.240556646552351,
+            "tip_mpjpe_mm": 31.19077554179562,
+            "aucj": 0.6542527022221232,
+            "pinch_distance_l2_mm": 41.149383617771996
+          },
+          "delta": {
+            "mpjpe_mm": 0.00034686591889965257,
+            "pa_mpjpe_mm": 0.00024493783712387085,
+            "tip_mpjpe_mm": -0.000503121150860153,
+            "aucj": -7.078156581630246e-06,
+            "pinch_distance_l2_mm": 0.0016925235589297927
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.63807175060113,
+                "pa_mpjpe_mm": 13.156368397176266,
+                "tip_mpjpe_mm": 30.726488679647446,
+                "aucj": 0.6592086743255071,
+                "pinch_distance_l2_mm": 45.0178695221742,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.84479183455308,
+                "pa_mpjpe_mm": 13.308769091963768,
+                "tip_mpjpe_mm": 31.059156482418377,
+                "aucj": 0.6541804500722872,
+                "pinch_distance_l2_mm": 39.30204237500826,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 18.107448394099873,
+                "pa_mpjpe_mm": 13.25726726402839,
+                "tip_mpjpe_mm": 31.785172099868458,
+                "aucj": 0.6493477477988306,
+                "pinch_distance_l2_mm": 39.133316526810326,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification.json",
+            "sha256": "57e8946b31d20b53396558ba8b6ea1ee9b8fe17baf958ea36ecf2eb03d9cbbc1"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "ridge",
+          "public_method_name": "ridge",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 24.712614094217617,
+            "pa_mpjpe_mm": 19.209146292673214,
+            "tip_mpjpe_mm": 45.49583047628403,
+            "aucj": 0.5728222031274824,
+            "pinch_distance_l2_mm": 57.544098372102546,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 24.713979206151436,
+            "pa_mpjpe_mm": 19.210771339280246,
+            "tip_mpjpe_mm": 45.49791229267915,
+            "aucj": 0.5729476551997741,
+            "pinch_distance_l2_mm": 57.539183377523585
+          },
+          "delta": {
+            "mpjpe_mm": -0.001365111933818497,
+            "pa_mpjpe_mm": -0.001625046607031777,
+            "tip_mpjpe_mm": -0.002081816395126168,
+            "aucj": -0.000125452072291643,
+            "pinch_distance_l2_mm": 0.00491499457896083
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 21.597671632965405,
+                "pa_mpjpe_mm": 17.502548173069954,
+                "tip_mpjpe_mm": 40.36332294344902,
+                "aucj": 0.612129673435049,
+                "pinch_distance_l2_mm": 61.924845810718594,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 27.587413787841797,
+                "pa_mpjpe_mm": 20.997789998849232,
+                "tip_mpjpe_mm": 50.52090808749199,
+                "aucj": 0.5336663317147033,
+                "pinch_distance_l2_mm": 47.386385073327716,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 24.952756861845653,
+                "pa_mpjpe_mm": 19.127100706100464,
+                "tip_mpjpe_mm": 45.60326039791107,
+                "aucj": 0.5726706042326951,
+                "pinch_distance_l2_mm": 63.32106423226132,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification-ridge.json",
+            "sha256": "09d6b56614565122590dc927d4249c1ece049c6a60f765237d2b8c371a4454eb"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "last_layer",
+          "public_method_name": "last_layer",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 18.85796317623721,
+            "pa_mpjpe_mm": 14.67330577886767,
+            "tip_mpjpe_mm": 33.88268479870425,
+            "aucj": 0.6431525357543086,
+            "pinch_distance_l2_mm": 43.630558578198624,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 18.857674673199654,
+            "pa_mpjpe_mm": 14.672527477003177,
+            "tip_mpjpe_mm": 33.88295674489604,
+            "aucj": 0.6432835832679212,
+            "pinch_distance_l2_mm": 43.63226699158391
+          },
+          "delta": {
+            "mpjpe_mm": 0.00028850303755589835,
+            "pa_mpjpe_mm": 0.000778301864492903,
+            "tip_mpjpe_mm": -0.00027194619179482515,
+            "aucj": -0.00013104751361259215,
+            "pinch_distance_l2_mm": -0.0017084133852875993
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 18.467102199792862,
+                "pa_mpjpe_mm": 14.485207386314869,
+                "tip_mpjpe_mm": 33.64533558487892,
+                "aucj": 0.6506634941471185,
+                "pinch_distance_l2_mm": 48.934365533719394,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 19.419502466917038,
+                "pa_mpjpe_mm": 15.084986574947834,
+                "tip_mpjpe_mm": 35.44615457455317,
+                "aucj": 0.6343694816465163,
+                "pinch_distance_l2_mm": 37.419541507579716,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 18.687284862001736,
+                "pa_mpjpe_mm": 14.449723375340303,
+                "tip_mpjpe_mm": 32.556564236680664,
+                "aucj": 0.6444246314692911,
+                "pinch_distance_l2_mm": 44.53776869329677,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification-last_layer.json",
+            "sha256": "7825b3a2b0fbe339b47823e19d80776d468f34c33d66735871060616a27cac03"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "full_ft",
+          "public_method_name": "full_ft",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": false,
+          "mean": {
+            "mpjpe_mm": 19.942176217834156,
+            "pa_mpjpe_mm": 15.723056573834683,
+            "tip_mpjpe_mm": 36.549730433358086,
+            "aucj": 0.6307687305940987,
+            "pinch_distance_l2_mm": 49.359059131322645,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 19.99667742186122,
+            "pa_mpjpe_mm": 15.730948108961284,
+            "tip_mpjpe_mm": 36.67234898441368,
+            "aucj": 0.6299805388065574,
+            "pinch_distance_l2_mm": 49.88756491120454
+          },
+          "delta": {
+            "mpjpe_mm": -0.0545012040270656,
+            "pa_mpjpe_mm": -0.007891535126601568,
+            "tip_mpjpe_mm": -0.12261855105559505,
+            "aucj": 0.0007881917875413036,
+            "pinch_distance_l2_mm": -0.5285057798818968
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 19.000524654984474,
+                "pa_mpjpe_mm": 15.178112623592218,
+                "tip_mpjpe_mm": 35.36842266718546,
+                "aucj": 0.6460353052296496,
+                "pinch_distance_l2_mm": 57.035584833211956,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 21.1213535318772,
+                "pa_mpjpe_mm": 16.515638989706833,
+                "tip_mpjpe_mm": 38.783129304647446,
+                "aucj": 0.6141401053064,
+                "pinch_distance_l2_mm": 44.97876288784537,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 19.70465046664079,
+                "pa_mpjpe_mm": 15.475418108205,
+                "tip_mpjpe_mm": 35.49763932824135,
+                "aucj": 0.6321307812462466,
+                "pinch_distance_l2_mm": 46.0628296729106,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [
+            "mpjpe_mm: difference -0.054501 exceeds tolerance",
+            "tip_mpjpe_mm: difference -0.122619 exceeds tolerance",
+            "aucj: difference 0.000788 exceeds tolerance",
+            "pinch_distance_l2_mm: difference -0.528506 exceeds tolerance"
+          ],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification-full_ft.json",
+            "sha256": "3e4bb8c1627df1da25eb4869ea7c6974e9d55324aa66460847fd2d1b0ca9ab6b"
+          },
+          "execution_scope": "Official verifier executed by the final v3 runner."
+        },
+        {
+          "setting": "avp",
+          "method": "lora",
+          "public_method_name": "lora",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 18.717507366091013,
+            "pa_mpjpe_mm": 13.937015629683932,
+            "tip_mpjpe_mm": 33.23200702046355,
+            "aucj": 0.6480179630974959,
+            "pinch_distance_l2_mm": 54.00777758135424,
+            "pinch_frame_pairs": 173.25
+          },
+          "reference": {
+            "units": 4,
+            "mpjpe_mm": 18.716793972998857,
+            "pa_mpjpe_mm": 13.936204027363408,
+            "tip_mpjpe_mm": 33.22961072747906,
+            "aucj": 0.6481532503579448,
+            "pinch_distance_l2_mm": 54.00893179777725
+          },
+          "delta": {
+            "mpjpe_mm": 0.0007133930921554565,
+            "pa_mpjpe_mm": 0.0008116023205246847,
+            "tip_mpjpe_mm": 0.0023962929844856262,
+            "aucj": -0.00013528726044886863,
+            "pinch_distance_l2_mm": -0.0011542164230107232
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 19.90877464413643,
+                "pa_mpjpe_mm": 14.691541902720928,
+                "tip_mpjpe_mm": 36.20900586247444,
+                "aucj": 0.6289329665303289,
+                "pinch_distance_l2_mm": 56.288545588394264,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 18.153755459934473,
+                "pa_mpjpe_mm": 13.517935760319233,
+                "tip_mpjpe_mm": 31.74898074939847,
+                "aucj": 0.6570233565976054,
+                "pinch_distance_l2_mm": 51.52828709194154,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 18.089991994202137,
+                "pa_mpjpe_mm": 13.601569226011634,
+                "tip_mpjpe_mm": 31.738034449517727,
+                "aucj": 0.6580975661645534,
+                "pinch_distance_l2_mm": 54.206500063726914,
+                "pinch_frame_pairs": 173.25
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification-lora.json",
+            "sha256": "346ab5dc16c72186383f57cb58cc7c8e5d2e9ce3939fb4ce7eb949262165027d"
+          },
+          "execution_scope": "Diagnostic follow-up of the originally skipped verifier; the failed runner was not relabeled."
+        },
+        {
+          "setting": "avp",
+          "method": "best_world_hand_joints_biased",
+          "public_method_name": "no_calibration",
+          "reference_profile": "paper",
+          "conditioning_mode": null,
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 20.487196277827024,
+            "pa_mpjpe_mm": 14.630404533818364,
+            "tip_mpjpe_mm": 36.219486966729164,
+            "aucj": 0.6101428623101124,
+            "pinch_distance_l2_mm": 51.386007837531885,
+            "pinch_frame_pairs": 173.25
+          },
+          "reference": {
+            "units": 4,
+            "mpjpe_mm": 20.48727124929428,
+            "pa_mpjpe_mm": 14.629777520895004,
+            "tip_mpjpe_mm": 36.219934932887554,
+            "aucj": 0.6101386594008282,
+            "pinch_distance_l2_mm": 51.38509364161657
+          },
+          "delta": {
+            "mpjpe_mm": -7.497146725654602e-05,
+            "pa_mpjpe_mm": 0.0006270129233598709,
+            "tip_mpjpe_mm": -0.00044796615839004517,
+            "aucj": 4.202909284156675e-06,
+            "pinch_distance_l2_mm": 0.0009141959153140533
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 20.487196277827024,
+                "pa_mpjpe_mm": 14.630404533818364,
+                "tip_mpjpe_mm": 36.219486966729164,
+                "aucj": 0.6101428623101124,
+                "pinch_distance_l2_mm": 51.386007837531885,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 20.487196277827024,
+                "pa_mpjpe_mm": 14.630404533818364,
+                "tip_mpjpe_mm": 36.219486966729164,
+                "aucj": 0.6101428623101124,
+                "pinch_distance_l2_mm": 51.386007837531885,
+                "pinch_frame_pairs": 173.25
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 4,
+              "num_eval_frames": 5315,
+              "mean": {
+                "mpjpe_mm": 20.487196277827024,
+                "pa_mpjpe_mm": 14.630404533818364,
+                "tip_mpjpe_mm": 36.219486966729164,
+                "aucj": 0.6101428623101124,
+                "pinch_distance_l2_mm": 51.386007837531885,
+                "pinch_frame_pairs": 173.25
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification-best_world_hand_joints_biased.json",
+            "sha256": "bce1dad8454899c0ca2955b18a821bceb50c0ec8d3d3582290ba58e7f9e16481"
+          },
+          "execution_scope": "Diagnostic follow-up of the originally skipped verifier; the failed runner was not relabeled."
+        }
+      ],
+      "focused_three_seed_ridge_probe": {
+        "status": "passed",
+        "accuracy_passed": true,
+        "completed_steps": 4,
+        "expected_completed_steps": 4,
+        "seeds": [
+          0,
+          1,
+          2
+        ],
+        "units_per_seed": 3,
+        "eval_frames_per_seed": 4128,
+        "receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3-ridge-probe/reproduction_run.json",
+          "sha256": "fa63e1acf2320cb461e19161eaf26a9a3fc7d53fb7ab793c1aaaf6005e85b4d4"
+        },
+        "verification_receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3-ridge-probe/avp/verification-ridge.json",
+          "sha256": "09d6b56614565122590dc927d4249c1ece049c6a60f765237d2b8c371a4454eb"
+        }
+      },
+      "passed_verified_rows": 11,
+      "failed_verified_rows": 1,
+      "control_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda_final_v3_run.json",
+        "sha256": "5a038d349093f268df4dd4075f613fce1c46f7d733b50998f03829ea83947ed2"
+      },
+      "followup_note": "The failed runner stopped at 46/49. Its AVP LoRA and no-calibration verifiers were subsequently executed as explicit diagnostics, yielding 12 total verifier receipts and 11 passing rows; neither the runner nor independent final audit was changed to passing.",
+      "followup_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/final_diagnostics.json",
+        "sha256": "26a99a03b1ce6a45ce083c47712a411f1946e783da9125c125d99ea7ec8b48d7"
+      },
+      "followup_independent_remaining_baselines_audit": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/v3_remaining_baselines_audit.json",
+        "sha256": "71a7503a8d3aa76477ffb801df8ba77e32c43be5ef93f97c201c333664b52a3e"
+      },
+      "row_pass_scope": "Individual verifier-reported aggregate accuracy. The independent complete-suite auditor rejected the incomplete failed runner; these row results are not a substitute for a complete green audit."
+    },
+    "final_default_cpu_legacy_yoco": {
+      "status": "passed_with_independent_audit",
+      "accuracy_passed": true,
+      "expected_completed_steps": 8,
+      "expected_verified_rows": 2,
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-final-v4/reproduction_run.json",
+        "sha256": "39893a7881f022783dd2f4ce173d3c01190f6d3cec693f0d7fe9597e014aa33c"
+      },
+      "control_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu_final_v4_run.json",
+        "sha256": "3830e63132b440d720c2b1d4641a6b39358ae41c1eff2879836be2c865c7cc74"
+      },
+      "scope": "Final frozen v4 source with the documented default CPU profile, separate from the preserved original-base cold CPU proof.",
+      "conditioning_mode": "legacy",
+      "device": "cpu",
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "completed_steps": 8,
+      "planned_steps": 8,
+      "verified_rows": 2,
+      "started_at_utc": "2026-10-14T16:55:36.214984+00:00",
+      "finished_at_utc": "2026-10-14T16:59:55.003038+00:00",
+      "results": [
+        {
+          "setting": "interhand",
+          "method": "hypernet",
+          "reference_profile": "release",
+          "conditioning_mode": "legacy",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 15.346553611258665,
+            "pa_mpjpe_mm": 10.179063933901489,
+            "tip_mpjpe_mm": 22.583362041041255,
+            "aucj": 0.7065996769037785,
+            "pinch_distance_l2_mm": 34.6303545559446,
+            "pinch_frame_pairs": 160.0
+          },
+          "reference": {
+            "units": 20,
+            "mpjpe_mm": 15.346553611258665,
+            "pa_mpjpe_mm": 10.179063933901489,
+            "tip_mpjpe_mm": 22.583362041041255,
+            "aucj": 0.7065996769037785,
+            "pinch_distance_l2_mm": 34.6303545559446
+          },
+          "delta": {
+            "mpjpe_mm": 0.0,
+            "pa_mpjpe_mm": 0.0,
+            "tip_mpjpe_mm": 0.0,
+            "aucj": 0.0,
+            "pinch_distance_l2_mm": 0.0
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.525792259722948,
+                "pa_mpjpe_mm": 10.298768314532936,
+                "tip_mpjpe_mm": 22.88034954108298,
+                "aucj": 0.7034694613518012,
+                "pinch_distance_l2_mm": 35.67156093195081,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.090490318834782,
+                "pa_mpjpe_mm": 10.005849320441484,
+                "tip_mpjpe_mm": 22.050045616924763,
+                "aucj": 0.7109600712276908,
+                "pinch_distance_l2_mm": 34.51225562021136,
+                "pinch_frame_pairs": 160.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 20,
+              "num_eval_frames": 216340,
+              "mean": {
+                "mpjpe_mm": 15.423378255218267,
+                "pa_mpjpe_mm": 10.232574166730046,
+                "tip_mpjpe_mm": 22.819690965116024,
+                "aucj": 0.705369498131843,
+                "pinch_distance_l2_mm": 33.707247115671635,
+                "pinch_frame_pairs": 160.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-final-v4/interhand/verification.json",
+            "sha256": "ff8c6906a7c7af58d767bcd41bf69286721dd3c1d6ed253ff7e7a9d14f8d378e"
+          }
+        },
+        {
+          "setting": "avp",
+          "method": "hypernet",
+          "reference_profile": "release",
+          "conditioning_mode": "legacy",
+          "accuracy_passed": true,
+          "mean": {
+            "mpjpe_mm": 17.75466464459896,
+            "pa_mpjpe_mm": 13.280289558072885,
+            "tip_mpjpe_mm": 31.182868199215992,
+            "aucj": 0.6564640893968315,
+            "pinch_distance_l2_mm": 41.63664682871765,
+            "pinch_frame_pairs": 157.0
+          },
+          "reference": {
+            "units": 3,
+            "mpjpe_mm": 17.75466464459896,
+            "pa_mpjpe_mm": 13.280289558072885,
+            "tip_mpjpe_mm": 31.182868199215992,
+            "aucj": 0.6564640893968315,
+            "pinch_distance_l2_mm": 41.63664682871765
+          },
+          "delta": {
+            "mpjpe_mm": 0.0,
+            "pa_mpjpe_mm": 0.0,
+            "tip_mpjpe_mm": 0.0,
+            "aucj": 0.0,
+            "pinch_distance_l2_mm": 0.0
+          },
+          "per_seed": [
+            {
+              "seed": 0,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.81039995451768,
+                "pa_mpjpe_mm": 13.352587508658567,
+                "tip_mpjpe_mm": 31.45556151866913,
+                "aucj": 0.6564224668961769,
+                "pinch_distance_l2_mm": 46.78217942516009,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 1,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.646437510848045,
+                "pa_mpjpe_mm": 13.244017648200193,
+                "tip_mpjpe_mm": 30.644460891683895,
+                "aucj": 0.6582206569234887,
+                "pinch_distance_l2_mm": 39.982023338476814,
+                "pinch_frame_pairs": 157.0
+              }
+            },
+            {
+              "seed": 2,
+              "num_units": 3,
+              "num_eval_frames": 4128,
+              "mean": {
+                "mpjpe_mm": 17.807156468431156,
+                "pa_mpjpe_mm": 13.244263517359892,
+                "tip_mpjpe_mm": 31.44858218729496,
+                "aucj": 0.654749144370829,
+                "pinch_distance_l2_mm": 38.14573772251606,
+                "pinch_frame_pairs": 157.0
+              }
+            }
+          ],
+          "issues": [],
+          "verification_receipt": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu-final-v4/avp/verification.json",
+            "sha256": "7ceb59c3b8e68aef846b1a60e6456c46e9e421efdfffe2ebfc696224cec87366"
+          }
+        }
+      ],
+      "independent_replay": {
+        "accuracy_passed": true,
+        "verified_rows": 2,
+        "replayed_sessions": 69,
+        "max_abs_saved_receipt_pose_delta_mm": 0,
+        "pose_audit_sha256": "7264249e1b0e2038451033dd77928736eacb0c65e2a23d75a9640f5e2e6143ef",
+        "structural_audit_sha256": "6b203a8d9f4db3ba3f9563edd5c3af6154cb240e5cd50bb4562968471b5a680f"
+      },
+      "runtime": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cpu",
+        "numpy": "1.23.5",
+        "scipy": "1.10.1",
+        "h5py": "3.16.0",
+        "user_site": false,
+        "cuda_available": false,
+        "cuda_version": null,
+        "nvidia_distributions": []
+      },
+      "package_imports_within_own_cpu_environment": true,
+      "separate_cpu_environment_used_to_preserve_gpu_venv": true,
+      "source_and_gpu_environment_unchanged": true,
+      "gpu_environment_inventory": {
+        "file_count": 31389,
+        "before_inventory_sha256": "8692d86450c15f9adc83382ccddd0f2a9dca10855d4e20f834b6445aa0f0ff2f",
+        "after_inventory_sha256": "8692d86450c15f9adc83382ccddd0f2a9dca10855d4e20f834b6445aa0f0ff2f",
+        "before_manifest_file_sha256": "34311038eeea0ddb7531a64558b15aabfb101ef0b866980303f15b4a7c11716e",
+        "after_manifest_file_sha256": "34311038eeea0ddb7531a64558b15aabfb101ef0b866980303f15b4a7c11716e"
+      },
+      "command": "uv run --frozen --extra cpu python scripts/reproduce_paper.py --output-dir <fresh-results>",
+      "command_scope": "The documented default CPU runner was executed against the final frozen v4 source using a fresh external CPU-only UV environment to retain the qualified GPU environment byte-for-byte. Locked wheel/Python caches and verified assets were reused, not a second cold setup."
+    }
+  },
+  "preserved_failures": [
+    {
+      "kind": "network_or_repository_authentication",
+      "original_receipts": [
+        {
+          "path": "eval/results/cci-guide-20261014/run-20261014T131122Z/guide_run.json",
+          "sha256": "653ff2979a1a885bf6fedaedb7cfaab4597cb3cc47a49ea6d5e12ad73e154ffa"
+        },
+        {
+          "path": "eval/results/cci-guide-20261014/run-20261014T132400Z/guide_run.json",
+          "sha256": "f29225e512b3453e120a35d66d3e8e3ea9ccf51585200ae9d2dd2491e37f98f1"
+        }
+      ],
+      "original_passed": false,
+      "resolution": "Configured restricted-host network routing and repository authentication before the successful clean clone; no original receipt was rewritten."
+    },
+    {
+      "kind": "ngc_native_library_conflict",
+      "original_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133000Z/guide_run.json",
+        "sha256": "ecf8f2dd7243522549ebd8b46a301f73cdc0c3d8f3d3ecf4bcfb1ae550a04f98"
+      },
+      "original_passed": false,
+      "resolution": "Removed inherited Python 3.12 system-PyTorch native-library paths while preserving driver paths; frozen lockfile and package targets were unchanged."
+    },
+    {
+      "kind": "public_api_cuda_tf32_batch_drift",
+      "original_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-inference/receipt.json",
+        "sha256": "ac6707ad028ad533bfb9598799be4a94742b09706a9ece68b047ea1c86b98218"
+      },
+      "original_passed": false,
+      "diagnostic_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/gpu_batch_diagnostic.json",
+        "sha256": "d0b9068f31446595c437a3ad20dc0c7f64b3b3e8cfc5de8482c590085d1dd8cd"
+      },
+      "original_settings": {
+        "cudnn_allow_tf32": true,
+        "matmul_allow_tf32": true,
+        "cudnn_benchmark": false,
+        "cudnn_deterministic": false,
+        "deterministic_algorithms": false,
+        "float32_matmul_precision": "high"
+      },
+      "default_max_chunk_theta_difference_radians": 0.000636562705039978,
+      "default_max_chunk_joint_difference_mm": 0.025056302547454834,
+      "default_max_single_joint_difference_mm": 0.048004090785980225,
+      "resolution": "A matched all-TF32-off control passed the original inference tolerances; public API precision is now scoped and restored. cuDNN-TF32-only disabling did not resolve all drift. No checkpoint, shared exporter, or tolerance changes were made."
+    },
+    {
+      "kind": "float32_per_unit_metric_replay",
+      "original_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-all/interhand/verification-ridge.json",
+        "sha256": "e7dcd4e3407209bda8c9f3f095842cfd2c59dd37e6329593a125082ed8eae63f"
+      },
+      "original_passed": false,
+      "original_issues": [
+        "seed 1, 1/sample_9: tip_mpjpe_mm receipt differs"
+      ],
+      "metric_receipt_consistency": {
+        "absolute_floor": 1e-05,
+        "relative_allowance": 9.5367431640625e-07,
+        "finite_values_required": true,
+        "scope": "Only saved per-unit metric receipts versus independent recomputation; both original export pose means and replay use NumPy on CPU. This allowance does not establish a GPU reduction cause or change aggregate accuracy tolerance."
+      },
+      "resolution": "The observed saved/replayed discrepancy was at float32 scale; its InterHand cause was not independently isolated. The first checker correction added a finite eight-float32-epsilon relative comparison allowance with the existing 1e-5 absolute floor. It did not resolve every discrepancy: the later unchanged-source AVP Ridge diagnostic specifically isolated the separate held-out versus saved full-session GPU prediction tuples. Original negative receipts remain negative; aggregate accuracy references and bounds were not changed."
+    },
+    {
+      "kind": "legacy_cuda_yoco_table2_accuracy_mismatch",
+      "original_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-yoco-table2-probe/avp/verification.json",
+        "sha256": "3cfbfd1f6ec871a3af1276a70512048af9e2b63dbf9dda627b4f371fcd373c27"
+      },
+      "original_passed": false,
+      "mean": {
+        "mpjpe_mm": 17.667486228876644,
+        "pa_mpjpe_mm": 13.26342434104946,
+        "tip_mpjpe_mm": 30.973015767004753,
+        "aucj": 0.6581877059699281,
+        "pinch_distance_l2_mm": 41.654945661624275
+      },
+      "reference": {
+        "mpjpe_mm": 17.75466464459896,
+        "pa_mpjpe_mm": 13.280289558072885,
+        "tip_mpjpe_mm": 31.182868199215992,
+        "aucj": 0.6564640893968315,
+        "pinch_distance_l2_mm": 41.63664682871765
+      },
+      "delta": {
+        "mpjpe_mm": -0.08717841572231677,
+        "pa_mpjpe_mm": -0.016865217023426027,
+        "tip_mpjpe_mm": -0.20985243221123895,
+        "aucj": 0.001723616573096609,
+        "pinch_distance_l2_mm": 0.018298832906623375
+      },
+      "original_issues": [
+        "mpjpe_mm: difference -0.087178 exceeds tolerance",
+        "tip_mpjpe_mm: difference -0.209852 exceeds tolerance",
+        "aucj: difference 0.001724 exceeds tolerance"
+      ],
+      "resolution": "The CUDA legacy export did not match the CPU legacy release references and remains a failed comparison. Final CUDA qualification explicitly uses eval conditioning and the pre-existing eval reference, not new targets or relaxed aggregate accuracy tolerances."
+    },
+    {
+      "kind": "first_corrected_cuda_runner_avp_ridge_receipt_discrepancy",
+      "original_passed": false,
+      "completed_steps": 44,
+      "planned_steps": 49,
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-all-corrected/reproduction_run.json",
+        "sha256": "3a96fed9458c4bc0ed08f5520b8b35ed3ebf1a07ab60d6e0827c3d3647f7429a"
+      },
+      "control_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda_corrected_run.json",
+        "sha256": "80b351cf3128b8498c644782cb1e6b7cf62bab5b880e908d84fc6f6740e289b8"
+      },
+      "verifier_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-all-corrected/avp/verification-ridge.json",
+        "sha256": "5db5951ee30dc0e1c9fb76b5d56722a887f02f4f256019b2890b90d255667fcd"
+      },
+      "issues": [
+        "seed 0, 2/sample_0: mpjpe_mm receipt differs",
+        "seed 0, 2/sample_0: tip_mpjpe_mm receipt differs",
+        "seed 1, 2/sample_0: mpjpe_mm receipt differs",
+        "seed 1, 2/sample_0: pa_mpjpe_mm receipt differs",
+        "seed 1, 2/sample_0: tip_mpjpe_mm receipt differs",
+        "seed 2, 2/sample_0: mpjpe_mm receipt differs",
+        "seed 2, 2/sample_0: pa_mpjpe_mm receipt differs",
+        "seed 2, 2/sample_0: tip_mpjpe_mm receipt differs"
+      ],
+      "aggregate_paper_accuracy_deltas_passed": true,
+      "mean": {
+        "mpjpe_mm": 24.712614094217617,
+        "pa_mpjpe_mm": 19.209146292673214,
+        "tip_mpjpe_mm": 45.49583047628403,
+        "aucj": 0.5728222031274824,
+        "pinch_distance_l2_mm": 57.544098372102546
+      },
+      "delta": {
+        "mpjpe_mm": -0.001365111933818497,
+        "pa_mpjpe_mm": -0.001625046607031777,
+        "tip_mpjpe_mm": -0.002081816395126168,
+        "aucj": -0.000125452072291643,
+        "pinch_distance_l2_mm": 0.00491499457896083
+      },
+      "resolution": "Unchanged-source diagnosis showed the separate held-out versus persisted full-session prediction forward dominated the discrepancy; GPU-versus-NumPy target-transform metric effects were at most 1.862645149230957e-6 mm. The receipt correction computes pose metrics from actual saved prediction coordinates and canonical NumPy ground truth without changing training procedures, prediction-saving logic, precision flags, references, or accuracy bounds. Ridge saved payload preservation was proven separately. The subsequent official frozen v4 complete run and independent audit passed; this original negative remains negative.",
+      "observational_proof": {
+        "receipt": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-ridge-replay-diagnostic/receipt.json",
+          "sha256": "1e6b18704f47f6cea26af0b1c4fbbdc0723366a7ad5607090849c409377772c6"
+        },
+        "completed_at_utc": "2026-10-14T15:07:18.899903+00:00",
+        "source_unchanged": true,
+        "baseline_sha256": "3c373ca9d37946e42a8cc5e031a6b4e255eea283b3cf1cf94970652e007e0b14",
+        "runtime": {
+          "torch": "2.6.0+cu124",
+          "matmul_tf32": true,
+          "cudnn_tf32": true
+        },
+        "group": "2",
+        "seed": 1,
+        "eval_frames": 1271,
+        "failed_export_metrics_reproduced_exactly": true,
+        "max_abs_theta_full_vs_heldout_rad": 0.0014233589172363281,
+        "max_abs_joints_full_vs_heldout_mm": 0.12281537055969238,
+        "max_abs_gt_numpy_vs_cuda_mm": 0.00010058283805847168,
+        "decomposition_mm": {
+          "mpjpe_mm": {
+            "gt_transform_effect": 1.862645149230957e-06,
+            "saved_full_batch_effect": 0.00012107193470001221,
+            "total_replay_difference": 0.00012107193470001221
+          },
+          "pa_mpjpe_mm": {
+            "gt_transform_effect": 0,
+            "saved_full_batch_effect": 0.00010803341865539551,
+            "total_replay_difference": 0.00010797510598692384
+          },
+          "tip_mpjpe_mm": {
+            "gt_transform_effect": 0,
+            "saved_full_batch_effect": 0.0001341104507446289,
+            "total_replay_difference": 0.000130385160446167
+          }
+        }
+      }
+    },
+    {
+      "kind": "first_corrected_source_audit_failed",
+      "original_passed": false,
+      "audit_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/audit_final_corrected.json",
+        "sha256": "323cb96f4ff1a844616ecbe724fb8a5a9ec4c0af68fc997e6773c42de6bda28e"
+      },
+      "issues": [
+        "ValueError: Corrected clone contains undeclared untracked files"
+      ],
+      "resolution": "The subsequent frozen source specification explicitly declares and fingerprints eleven tracked release files and two additional regression tests. The final complete v4b independent source/accuracy audit passed; this original negative receipt remains negative."
+    },
+    {
+      "kind": "saved_pose_corrected_v3_cuda_runner_avp_full_ft_accuracy_mismatch",
+      "original_passed": false,
+      "completed_steps": 46,
+      "planned_steps": 49,
+      "started_at_utc": "2026-10-14T15:23:46.895262+00:00",
+      "finished_at_utc": "2026-10-14T15:53:39.258183+00:00",
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/reproduction_run.json",
+        "sha256": "cb3ccb393481402fec229599f5b33feead769d13cdca207bc4e1f96c2c354679"
+      },
+      "control_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda_final_v3_run.json",
+        "sha256": "5a038d349093f268df4dd4075f613fce1c46f7d733b50998f03829ea83947ed2"
+      },
+      "verifier_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cuda-final-v3/avp/verification-full_ft.json",
+        "sha256": "3e4bb8c1627df1da25eb4869ea7c6974e9d55324aa66460847fd2d1b0ca9ab6b"
+      },
+      "setting": "avp",
+      "method": "full_ft",
+      "reference_profile": "paper",
+      "mean": {
+        "mpjpe_mm": 19.942176217834156,
+        "pa_mpjpe_mm": 15.723056573834683,
+        "tip_mpjpe_mm": 36.549730433358086,
+        "aucj": 0.6307687305940987,
+        "pinch_distance_l2_mm": 49.359059131322645,
+        "pinch_frame_pairs": 157.0
+      },
+      "reference": {
+        "units": 3,
+        "mpjpe_mm": 19.99667742186122,
+        "pa_mpjpe_mm": 15.730948108961284,
+        "tip_mpjpe_mm": 36.67234898441368,
+        "aucj": 0.6299805388065574,
+        "pinch_distance_l2_mm": 49.88756491120454
+      },
+      "delta": {
+        "mpjpe_mm": -0.0545012040270656,
+        "pa_mpjpe_mm": -0.007891535126601568,
+        "tip_mpjpe_mm": -0.12261855105559505,
+        "aucj": 0.0007881917875413036,
+        "pinch_distance_l2_mm": -0.5285057798818968
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.000524654984474,
+            "pa_mpjpe_mm": 15.178112623592218,
+            "tip_mpjpe_mm": 35.36842266718546,
+            "aucj": 0.6460353052296496,
+            "pinch_distance_l2_mm": 57.035584833211956,
+            "pinch_frame_pairs": 157.0
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 21.1213535318772,
+            "pa_mpjpe_mm": 16.515638989706833,
+            "tip_mpjpe_mm": 38.783129304647446,
+            "aucj": 0.6141401053064,
+            "pinch_distance_l2_mm": 44.97876288784537,
+            "pinch_frame_pairs": 157.0
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.70465046664079,
+            "pa_mpjpe_mm": 15.475418108205,
+            "tip_mpjpe_mm": 35.49763932824135,
+            "aucj": 0.6321307812462466,
+            "pinch_distance_l2_mm": 46.0628296729106,
+            "pinch_frame_pairs": 157.0
+          }
+        }
+      ],
+      "issues": [
+        "mpjpe_mm: difference -0.054501 exceeds tolerance",
+        "tip_mpjpe_mm: difference -0.122619 exceeds tolerance",
+        "aucj: difference 0.000788 exceeds tolerance",
+        "pinch_distance_l2_mm: difference -0.528506 exceeds tolerance"
+      ],
+      "failure_scope": "Real aggregate paper-accuracy mismatch, not a saved-coordinate receipt consistency failure. Passing partial rows do not qualify a complete run.",
+      "runtime_environment_observation": {
+        "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "matmul_precision": "high"
+      },
+      "resolution": "The matched backend-only diagnostic passed this AVP full-FT comparison with cuDNN 9.19 instead of 9.1, retaining the locked Python/NumPy/Torch and override 1 settings. That establishes sufficiency for unchanged score tolerances in the probe, not exact historical flags. A fresh official pinned own-venv cuDNN 9.19.0.56 installation subsequently passed the complete 49-step run and independent audit; the v3 negative receipts remain negative."
+    },
+    {
+      "kind": "saved_pose_corrected_v3_independent_audit_rejected_incomplete_runner",
+      "original_passed": false,
+      "audit_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/audit_final_v3.json",
+        "sha256": "26821a824eda9fb7eeb4de26416b8b0fe35b4271bb3c623c9cf2d3241a55cfd1"
+      },
+      "audited_at_utc": "2026-10-14T15:53:41.718490+00:00",
+      "issues": [
+        "ValueError: Final runner is incomplete or failed; never aggregate partial progress"
+      ],
+      "audit_control_sha256": "d50ff5ece565c9b97e6b3412ffb001538493c9a72e0627114f08c50dac567bae",
+      "independent_pose_replay_sha256": "7264249e1b0e2038451033dd77928736eacb0c65e2a23d75a9640f5e2e6143ef",
+      "resolution": "The independent auditor rejected the failed 46-step runner and did not aggregate partial CUDA progress. A subsequent complete 49-step frozen v4 runner and independent v4b audit passed; this negative receipt remains negative."
+    },
+    {
+      "kind": "override_zero_locked_full_ft_probe_accuracy_mismatch",
+      "original_passed": false,
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-fp32-probe/reproduction_run.json",
+        "sha256": "10bcb08472a0243ad7ee3b7d1c564d6af4685fd737dd84550fc854e2145d6d83"
+      },
+      "completed_steps": 3,
+      "planned_steps": 4,
+      "details": "See diagnostics: original negative runner and verifier/log hashes are preserved; neither diagnostic qualifies the complete release suite."
+    },
+    {
+      "kind": "historical_interpreter_only_probe_missing_libgl",
+      "original_passed": false,
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-historical-interpreter-probe/reproduction_run.json",
+        "sha256": "b8f008d25b950edb1e8edb25d6829c252be51cec79376708652c7180f177d1b7"
+      },
+      "completed_steps": 0,
+      "planned_steps": 4,
+      "details": "See diagnostics: original negative runner and verifier/log hashes are preserved; neither diagnostic qualifies the complete release suite."
+    },
+    {
+      "kind": "v4_audit_precompletion_checkout_unavailable",
+      "original_passed": false,
+      "audit_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/audit_v4_precompletion.json",
+        "sha256": "882ca8dac47208171ac7ee2d98048663402ee8d5d95e3eaf7e88a461f5b97c93"
+      },
+      "audited_at_utc": "2026-10-14T16:20:17.010894+00:00",
+      "issue_summary": "Source checkout manifest unavailable at control execution time.",
+      "audit_control_sha256": "ba07a24be1a1b0bde7653b5d8dead586ea53f6017a535e470cd54df48d234221",
+      "resolution": "A premature independent control could not access the new validation checkout/source manifest and did not evaluate accuracy. The subsequent complete v4b audit passed; the original premature-control receipt remains negative."
+    },
+    {
+      "kind": "v4_audit_cli_default_protocol_mismatch",
+      "original_passed": false,
+      "audit_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/audit_final_v4.json",
+        "sha256": "7557726faf6ad38c86e8610730a6896b0945e8964068f0f9533f97823ae159e6"
+      },
+      "audited_at_utc": "2026-10-14T16:47:24.255606+00:00",
+      "issue_summary": "ValueError: Baseline prediction tuple missing",
+      "audit_control_sha256": "ba07a24be1a1b0bde7653b5d8dead586ea53f6017a535e470cd54df48d234221",
+      "resolution": "The audit control incorrectly required an explicit --save-predictions argument, although the baseline parser uses BooleanOptionalAction with default=True. Saved exports existed. Correcting only the control interpretation yielded the passing v4b independent audit; no model source, export, reference, or threshold was rerun or changed for this audit correction."
+    },
+    {
+      "kind": "current_cpu_controller_system_python_import_preflight",
+      "original_passed": false,
+      "log": {
+        "path": "eval/results/cci-guide-20261014/queue-cpu-final-v4.log",
+        "sha256": "6d94c976b2e8a06e85d32da744188014ce52cf527b3311e95c6e78a38bd27aac"
+      },
+      "failure": "ModuleNotFoundError: No module named 'h5py'",
+      "scope": "Controller import under the container system Python 3.12 failed before a validation virtual environment or run ledger was created. This is not a model/export/regression-test failure.",
+      "resolution": "The corrected control ran with the qualified v4 virtual-environment Python 3.10 interpreter and a sanitized native-library wrapper. The final own-environment CPU 81-test suite, default 8-step reproduction, and independent replay passed; the original preflight log remains unchanged."
+    }
+  ],
+  "independent_final_audit": {
+    "accuracy_passed": true,
+    "status": "passed",
+    "audited_at_utc": "2026-10-14T16:50:57.787409+00:00",
+    "receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/audit_final_v4b.json",
+      "sha256": "b2639385954307fb023b89a9b794115f1681ac68c34dbde046c749a63f76ecb8"
+    },
+    "issues": [],
+    "audit_control_sha256": "1eaaf2661eb9521f76cde02839254268fa5c513e1b0d10322968293c4f9bbbfe",
+    "structural_audit_sha256": "6b203a8d9f4db3ba3f9563edd5c3af6154cb240e5cd50bb4562968471b5a680f",
+    "independent_pose_replay_sha256": "7264249e1b0e2038451033dd77928736eacb0c65e2a23d75a9640f5e2e6143ef",
+    "scope": "Original cold CPU guide, prior FP32 API validation, fresh locked CPU/CUDA v4 setup/API and complete CUDA paper reproduction with independent raw-GT/saved-coordinate replay.",
+    "independent_cuda_replay": {
+      "verified_rows": 12,
+      "replayed_sessions": 420,
+      "max_abs_saved_receipt_pose_delta_mm": 0.0,
+      "methods": [
+        {
+          "setting": "interhand",
+          "method": "hypernet",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 60,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "interhand",
+          "method": "ridge",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 60,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "interhand",
+          "method": "last_layer",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 60,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "interhand",
+          "method": "full_ft",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 60,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "interhand",
+          "method": "lora",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 60,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "interhand",
+          "method": "best_world_hand_joints_biased",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 60,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "avp",
+          "method": "hypernet",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 9,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "avp",
+          "method": "ridge",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 9,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "avp",
+          "method": "last_layer",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 9,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "avp",
+          "method": "full_ft",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 9,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "avp",
+          "method": "lora",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 12,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        },
+        {
+          "setting": "avp",
+          "method": "best_world_hand_joints_biased",
+          "passed": true,
+          "seed_count": 3,
+          "replayed_sessions": 12,
+          "max_abs_saved_receipt_pose_delta_mm": 0.0
+        }
+      ],
+      "scope": "Independent raw dataset ground truth and persisted full-sequence prediction coordinates; not model-forward bitwise equality or hardware timing."
+    },
+    "current_source_cpu": {
+      "accuracy_passed": true,
+      "receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu_final_v4_run.json",
+        "sha256": "3830e63132b440d720c2b1d4641a6b39358ae41c1eff2879836be2c865c7cc74"
+      },
+      "replayed_sessions": 69,
+      "max_abs_saved_receipt_pose_delta_mm": 0,
+      "pose_audit_sha256": "7264249e1b0e2038451033dd77928736eacb0c65e2a23d75a9640f5e2e6143ef",
+      "structural_audit_sha256": "6b203a8d9f4db3ba3f9563edd5c3af6154cb240e5cd50bb4562968471b5a680f"
+    }
+  },
+  "evidence_note": "Raw receipts, logs, and saved predictions live under ignored eval/results on the validation workspace. This portable artifact publishes measured summaries and receipt hashes, not credentials, licensed MANO payloads, or remote mount paths.",
+  "full_suite_passed": true,
+  "measurement_finished_at_utc": "2026-10-14T17:00:43.928779+00:00",
+  "diagnostics": {
+    "scope": "Matched controls and historical-interpreter observations are diagnostics, not a complete release-uv qualification. No probe changes the paper reference or accuracy thresholds.",
+    "receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/final_diagnostics.json",
+      "sha256": "26a99a03b1ce6a45ce083c47712a411f1946e783da9125c125d99ea7ec8b48d7"
+    },
+    "control_command_receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/finish-diagnostics-command.json",
+      "sha256": "0c8169536131f3a848eb1ed933fbcf267218b54e6d11453c205e61c01e21aaf9"
+    },
+    "observations": [
+      {
+        "label": "locked_override_1",
+        "exit_code": 0,
+        "python": "3.10.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "1.23.5",
+        "h5py": "3.16.0",
+        "override": "1",
+        "nvidia_override": null,
+        "matmul_precision": "high",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "cudnn_version": 90100,
+        "cuda_version": "12.4",
+        "cuda_available": true
+      },
+      {
+        "label": "locked_override_0",
+        "exit_code": 0,
+        "python": "3.10.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "1.23.5",
+        "h5py": "3.16.0",
+        "override": "0",
+        "nvidia_override": null,
+        "matmul_precision": "highest",
+        "matmul_tf32": false,
+        "cudnn_tf32": true,
+        "cudnn_version": 90100,
+        "cuda_version": "12.4",
+        "cuda_available": true
+      },
+      {
+        "label": "historical_interpreter_override_1",
+        "exit_code": 0,
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1",
+        "override": "1",
+        "nvidia_override": null,
+        "matmul_precision": "high",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "cudnn_version": 91900,
+        "cuda_version": "12.4",
+        "cuda_available": true
+      }
+    ],
+    "override_zero_full_ft_probe": {
+      "accuracy_passed": false,
+      "completed_steps": 3,
+      "planned_steps": 4,
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "command": "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0 uv run --frozen --extra cu124 python scripts/reproduce_paper.py --table 2 --methods full_ft --device cuda --conditioning-mode eval --output-dir <fresh-probe-results>",
+      "precision_scope": "Only the cuBLAS TF32 override was changed. The corresponding fresh backend observation reported matmul TF32 false/highest, but cuDNN TF32 remained true; this is not an all-TF32-off control.",
+      "mean": {
+        "mpjpe_mm": 19.984212807483146,
+        "pa_mpjpe_mm": 15.72826359834936,
+        "tip_mpjpe_mm": 36.64173247913519,
+        "aucj": 0.6300754398315659,
+        "pinch_distance_l2_mm": 49.82624962261528,
+        "pinch_frame_pairs": 157.0
+      },
+      "reference": {
+        "units": 3,
+        "mpjpe_mm": 19.99667742186122,
+        "pa_mpjpe_mm": 15.730948108961284,
+        "tip_mpjpe_mm": 36.67234898441368,
+        "aucj": 0.6299805388065574,
+        "pinch_distance_l2_mm": 49.88756491120454
+      },
+      "delta": {
+        "mpjpe_mm": -0.012464614378075112,
+        "pa_mpjpe_mm": -0.002684510611924651,
+        "tip_mpjpe_mm": -0.030616505278487693,
+        "aucj": 9.490102500853137e-05,
+        "pinch_distance_l2_mm": -0.06131528858926316
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.007666036486626,
+            "pa_mpjpe_mm": 15.18931488196055,
+            "tip_mpjpe_mm": 35.40040676792463,
+            "aucj": 0.6458801118140064,
+            "pinch_distance_l2_mm": 56.927344316889524,
+            "pinch_frame_pairs": 157.0
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 21.13748590151469,
+            "pa_mpjpe_mm": 16.53432318319877,
+            "tip_mpjpe_mm": 38.81916031241417,
+            "aucj": 0.6140080999335329,
+            "pinch_distance_l2_mm": 44.71808852283818,
+            "pinch_frame_pairs": 157.0
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.807486484448116,
+            "pa_mpjpe_mm": 15.461152729888758,
+            "tip_mpjpe_mm": 35.70563035706679,
+            "aucj": 0.6303381077471585,
+            "pinch_distance_l2_mm": 47.83331602811813,
+            "pinch_frame_pairs": 157.0
+          }
+        }
+      ],
+      "issues": [
+        "pinch_distance_l2_mm: difference -0.061315 exceeds tolerance"
+      ],
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-fp32-probe/reproduction_run.json",
+        "sha256": "10bcb08472a0243ad7ee3b7d1c564d6af4685fd737dd84550fc854e2145d6d83"
+      },
+      "verification_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-fp32-probe/avp/verification-full_ft.json",
+        "sha256": "6e6eb8622544b2f935392ba31e065c5a490fd5355d8ece9d7dcb2a2fc5777d94"
+      },
+      "control_command_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-fp32-probe-command.json",
+        "sha256": "7983c5dc3f8ce260936d79c699231cc623d604d3691fccc926811abfc342add2"
+      },
+      "interpretation": "Changing the override moved measured full-FT results but did not resolve the release accuracy gate: pinch difference remained -0.06131528858926316 mm versus the unchanged 0.05 mm bound. It does not establish a complete causal explanation."
+    },
+    "historical_interpreter_probe": {
+      "scope": "Historical interpreter only, not a historical full environment reconstruction or a locked-uv qualification.",
+      "accuracy_passed": false,
+      "completed_steps": 0,
+      "planned_steps": 4,
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "failure": "ImportError: libGL.so.1: cannot open shared object file: No such file or directory",
+      "failure_stage": "Training began, but no complete seed export or verifier finished.",
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-historical-interpreter-probe/reproduction_run.json",
+        "sha256": "b8f008d25b950edb1e8edb25d6829c252be51cec79376708652c7180f177d1b7"
+      },
+      "log": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/historical-interpreter-probe.log",
+        "sha256": "e77ede251908a4c8481d77a6038f2386a9e5355be2b1169358d671d2c405e733"
+      },
+      "interpretation": "The historical interpreter reported different Python/NumPy/h5py/cuDNN versions, but this probe produced no qualified aggregate comparison. No single-library or precision-cause claim is established."
+    },
+    "cudnn919_backend_only_probe": {
+      "scope": "Backend-only diagnostic using existing cuDNN libraries, not a frozen release-uv installation or a complete-suite qualification.",
+      "accuracy_passed": true,
+      "runtime": {
+        "python": "3.10.12",
+        "numpy": "1.23.5",
+        "torch": "2.6.0+cu124",
+        "cudnn": 91900,
+        "precision": "high",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "override": "1"
+      },
+      "completed_steps": 4,
+      "planned_steps": 4,
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "started_at_utc": "2026-10-14T16:09:49.781117+00:00",
+      "finished_at_utc": "2026-10-14T16:10:44.886917+00:00",
+      "mean": {
+        "mpjpe_mm": 19.990286479393642,
+        "pa_mpjpe_mm": 15.732335237165293,
+        "tip_mpjpe_mm": 36.64490787519349,
+        "aucj": 0.6299538334454019,
+        "pinch_distance_l2_mm": 49.89459220074798,
+        "pinch_frame_pairs": 157.0
+      },
+      "reference": {
+        "units": 3,
+        "mpjpe_mm": 19.99667742186122,
+        "pa_mpjpe_mm": 15.730948108961284,
+        "tip_mpjpe_mm": 36.67234898441368,
+        "aucj": 0.6299805388065574,
+        "pinch_distance_l2_mm": 49.88756491120454
+      },
+      "delta": {
+        "mpjpe_mm": -0.006390942467579208,
+        "pa_mpjpe_mm": 0.0013871282040085475,
+        "tip_mpjpe_mm": -0.027441109220191606,
+        "aucj": -2.6705361155454632e-05,
+        "pinch_distance_l2_mm": 0.007027289543437121
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.007043913006783,
+            "pa_mpjpe_mm": 15.197415215273699,
+            "tip_mpjpe_mm": 35.387309888998665,
+            "aucj": 0.6459763493547376,
+            "pinch_distance_l2_mm": 57.114869617162995,
+            "pinch_frame_pairs": 157.0
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 21.127189820011456,
+            "pa_mpjpe_mm": 16.523115026454132,
+            "tip_mpjpe_mm": 38.79263624548912,
+            "aucj": 0.6141329846069733,
+            "pinch_distance_l2_mm": 44.76145640679985,
+            "pinch_frame_pairs": 157.0
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.836625705162685,
+            "pa_mpjpe_mm": 15.476475469768047,
+            "tip_mpjpe_mm": 35.75477749109268,
+            "aucj": 0.6297521663744946,
+            "pinch_distance_l2_mm": 47.80745057828108,
+            "pinch_frame_pairs": 157.0
+          }
+        }
+      ],
+      "issues": [],
+      "control_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cudnn_backend_probe.json",
+        "sha256": "744559b35e3c8b49808bef5d405f0b8ff6ac7bfe72dd447dcafd34f980471d14"
+      },
+      "runner_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-cudnn919-probe/reproduction_run.json",
+        "sha256": "3e9e0bdb17bd67df8978908a9af2ae0ba8764b6b93ef3ce82dab346bb17fa88d"
+      },
+      "verification_receipt": {
+        "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/avp-full-ft-cudnn919-probe/avp/verification-full_ft.json",
+        "sha256": "7b0c23d09da33c92abef516719a38a6e70f3b6181e8daf77fb2855af81f2bafd"
+      },
+      "interpretation": "Under the same locked Python 3.10.12, NumPy 1.23.5, Torch 2.6.0+cu124, and TF32 override 1 configuration, loading cuDNN 9.19 instead of 9.1 was sufficient for this three-seed AVP full-FT comparison to pass unchanged score tolerances. This is not an exact historical precision/environment reconstruction. A subsequent official pinned own-venv installation passed the complete 49-step CUDA run and independent audit."
+    }
+  },
+  "instance_lifecycle": {
+    "status": "verified_suspended_zero_active_instances",
+    "stopped": true,
+    "receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cci_stop_receipt.json",
+      "sha256": "26bce4d89d0d4b5d15b2c7e4924e18430167697a528a92417583e9d617a066bf"
+    },
+    "app": "yoco-release-guide-20261014",
+    "stop_exit_code": 0,
+    "stop_acknowledged_at_utc": "2026-10-14T17:01:31Z",
+    "observed_at_utc": "2026-10-14T17:03:21Z",
+    "state": "SUSPENDED",
+    "configured_replicas": 1,
+    "ready_replicas": 0,
+    "active_instances": 0,
+    "instances_total_size": 0,
+    "instances": [],
+    "gpu_allocation_released": true,
+    "scope": "Shutdown verified by both sanitized live CCI app and instance API responses; only the task-owned app was stopped. Configured replicas=1 is its retained resume configuration, not an active allocation."
+  },
+  "final_source": {
+    "base_commit": "5d8604603686bd28580815d0fa18470b753fd859",
+    "source_spec": {
+      "path": "eval/results/cci-guide-20261014/control/uv_cudnn_v4_source_spec.json",
+      "sha256": "500a3c615dc181eaa5abf051f7c155577d7e23f3a3300cdb4d6a56e0dddf3b13"
+    },
+    "consolidated_release_patch": {
+      "path": "eval/results/cci-guide-20261014/control/uv-cudnn-v4-release.patch",
+      "sha256": "8428799bd0d03cac480492ba52cbb4f9a0e464f9df8ae4dac88d5c0cff4aec06"
+    },
+    "control": {
+      "path": "eval/results/cci-guide-20261014/control/run_release_v4.py",
+      "sha256": "e77eb2e8eb18a6f644fd2ed6de2ab54d9f22ae2e0c764fdb7f6e4baf40664177"
+    },
+    "tracked_file_sha256": {
+      "INSTALL.md": "67898c614e3ea1431a0acf92fa667d507f89e9cc4f07f536168b41cba872e85b",
+      "calibration_net/yoco.py": "7978c4e5a5954626376bccac8ff4e21f52b6343492488333b9d1c08998364ae2",
+      "docs/inference.md": "069e28eef38a0124e3ed954bd86abe26777baff4bb280e2d3b80641778556fa4",
+      "reproduction/README.md": "906398da5a928b457ba84cccd4650a066d599ce83573d7c473b181b80727e336",
+      "reproduction/uv_release_results.json": "8935caa02b69cdfc7430a1e8e52c0e799de36acd1b15fc2cacf3241b60e048c0",
+      "scripts/export_hypernet_finetune_predictions.py": "fd183c554456f81666d3cf18abd6e647d4d35eb6f2c503ab9c0d2e9e2fc4c043",
+      "scripts/run_finetune_baselines.py": "fa2d4d4c29afae19f56515922b5e51c5bb60c820db7ba23265e7b956ab3fad30",
+      "scripts/verify_paper_reproduction.py": "d0a3e501e6e8f56713fe10b029c1a47e1786fdc0e82785a85b47a1488fe93733",
+      "tests/test_yoco_api.py": "3d4a6238e024134061c6e50b07cf4b0068acded0bce11a8012d3cb27ca99d059",
+      "pyproject.toml": "f67aef63498d02f5bf108b9da3d7717c9663b375b9ad97005b470764480b1186",
+      "uv.lock": "e7d13431739cdc7cc14670ad01e75134404aa6c3c2b6108066c41f40eb0def13"
+    },
+    "regression_tests": [
+      {
+        "path": "tests/test_metric_receipt_consistency.py",
+        "sha256": "7b27ffbd76f9d5ca4d4515ab66302b95b8036fc402b4d19033e40eff7ad579ca"
+      },
+      {
+        "path": "tests/test_saved_prediction_metrics.py",
+        "sha256": "67245ee763407fd32fdd6a9628993513be0c206b441ff0db4fa8ec2fcdf050b3"
+      }
+    ],
+    "uv_lock_sha256": "e7d13431739cdc7cc14670ad01e75134404aa6c3c2b6108066c41f40eb0def13",
+    "pyproject_sha256": "f67aef63498d02f5bf108b9da3d7717c9663b375b9ad97005b470764480b1186",
+    "cudnn_distribution_pin": "9.19.0.56",
+    "scope": "All eleven frozen tracked release files plus the two declared regression test files in the fresh v4 checkout. Source identity is distinct from original-base provenance and prior failed attempts.",
+    "verified_frozen_source_and_test_file_count": 13
+  },
+  "final_uv_install": {
+    "status": "passed_all_frozen_source_setup_inference_accuracy_and_audit_checks",
+    "started_at_utc": "2026-10-14T16:15:50.541266+00:00",
+    "fresh_source_and_venv": true,
+    "verified_hub_assets_reused": true,
+    "locked_python_and_wheel_caches_reused": true,
+    "second_cold_setup": false,
+    "cu124_platform_prerequisite": {
+      "platform": "Linux x86_64",
+      "minimum_glibc": "2.27",
+      "wheel_platform_tag": "manylinux_2_27",
+      "tested_distribution": "Ubuntu 24.04",
+      "scope": "The pinned official cuDNN 9.19 wheel requires this Linux glibc minimum; the CCI qualification is not a universal platform compatibility guarantee."
+    },
+    "profiles": {
+      "cpu": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cpu",
+        "numpy": "1.23.5",
+        "scipy": "1.10.1",
+        "h5py": "3.16.0",
+        "user_site": false,
+        "cuda_available": false,
+        "cuda_version": null,
+        "cudnn_version": null,
+        "cudnn_distribution": null,
+        "matmul_precision": "high",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "package_imports_within_own_venv": true,
+        "cudnn_libraries_within_own_venv": null,
+        "runtime_log": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/release-v4-04-runtime-cpu.log",
+          "sha256": "4ad8196b25afb9accf409b64826f62528a530577788c030107c980eb5a0f417d"
+        },
+        "tests": {
+          "passed": true,
+          "passed_tests": 81,
+          "log": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/release-v4-05-tests-cpu.log",
+            "sha256": "e3f0538490cf0746d0282e74035e5f3164ac7099c00e4c3a47869e339caece17"
+          }
+        }
+      },
+      "cu124": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "1.23.5",
+        "scipy": "1.10.1",
+        "h5py": "3.16.0",
+        "user_site": false,
+        "cuda_available": true,
+        "cuda_version": "12.4",
+        "cudnn_version": 91900,
+        "cudnn_distribution": "9.19.0.56",
+        "matmul_precision": "high",
+        "matmul_tf32": true,
+        "cudnn_tf32": true,
+        "package_imports_within_own_venv": true,
+        "cudnn_libraries_within_own_venv": true,
+        "runtime_log": {
+          "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/release-v4-08-runtime-cu124.log",
+          "sha256": "242092cc48671fc03a59a55966ef0804b0c8c4f847ece4e87653f2d43f282d0e"
+        },
+        "tests": {
+          "passed": true,
+          "passed_tests": 81,
+          "log": {
+            "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/release-v4-09-tests-cu124.log",
+            "sha256": "35e6e61547ee559f3b99e36a9d4048f1d0601ef5f891a32e422a97a553251fca"
+          }
+        }
+      }
+    },
+    "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
+    "library_scope": "The cu124 runtime asserted its cuDNN 9.19.0.56 distribution and mapped libraries are inside the new virtual environment, not historical LD_LIBRARY_PATH cuDNN libraries.",
+    "distinct_test_count": 81,
+    "test_count_note": "The same 81 tests passed separately in cpu and cu124 profiles, not 162 distinct tests.",
+    "full_suite_passed": true,
+    "control_receipt": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/uv_cudnn_v4_run.json",
+      "sha256": "b5d8877790d82caa9ea2634e5d47c645bb9847987e3d395c86554ff9c4ddf6f3"
+    },
+    "finished_at_utc": "2026-10-14T16:47:21.979546+00:00",
+    "original_source_and_environment_unchanged": true,
+    "failed_runs_preserved": true,
+    "verified_asset_count": 9,
+    "current_source_cpu_proof": {
+      "path": "eval/results/cci-guide-20261014/run-20261014T133400Z/cpu_final_v4_run.json",
+      "sha256": "3830e63132b440d720c2b1d4641a6b39358ae41c1eff2879836be2c865c7cc74"
+    }
+  }
+}

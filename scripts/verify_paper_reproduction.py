@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import platform
 import subprocess
 import sys
@@ -148,6 +149,20 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def metric_receipt_matches(recomputed: float, saved: float) -> bool:
+    """Allow a few float32 reduction ULPs between GPU export and CPU replay."""
+    return (
+        math.isfinite(recomputed)
+        and math.isfinite(saved)
+        and math.isclose(
+            recomputed,
+            saved,
+            rel_tol=8 * float(np.finfo(np.float32).eps),
+            abs_tol=1e-5,
+        )
+    )
 
 
 def geometry_metrics(pred: np.ndarray, gt: np.ndarray, valid: np.ndarray) -> dict:
@@ -316,7 +331,7 @@ def main() -> None:
                     row = {}
                     for key in ("mpjpe_mm", "pa_mpjpe_mm", "tip_mpjpe_mm"):
                         row[key] = float(computed[key])
-                        if abs(row[key] - float(session[key])) > 0.00001:
+                        if not metric_receipt_matches(row[key], float(session[key])):
                             issues.append(f"seed {seed}, {name}: {key} receipt differs")
                     row.update(geometry_metrics(pred, gt[indices], valid[indices]))
                     rows.append(row)

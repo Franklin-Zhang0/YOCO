@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import torch
 
-from calibration_net.yoco import YOCO, _strict_checkpoint_state
+from calibration_net.yoco import YOCO, _inference_precision, _strict_checkpoint_state
 
 
 def fake_inferencer() -> SimpleNamespace:
@@ -209,6 +209,147 @@ class YOCOExampleInputsTest(unittest.TestCase):
             np.savez(path, raw_frames=np.zeros((21, 3)))
             with self.assertRaisesRegex(ValueError, "raw_pairs"):
                 self.module.load_inputs(argparse.Namespace(input=path), 4)
+
+
+class YOCOCUDAPrecisionTest(unittest.TestCase):
+    @staticmethod
+    def snapshot():
+        return {
+            "precision": torch.get_float32_matmul_precision(),
+            "matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
+            "cudnn_tf32": torch.backends.cudnn.allow_tf32,
+            "cudnn_enabled": torch.backends.cudnn.enabled,
+            "cudnn_benchmark": torch.backends.cudnn.benchmark,
+            "cudnn_deterministic": torch.backends.cudnn.deterministic,
+            "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+        }
+
+    def setUp(self):
+        self.original = self.snapshot()
+
+    def tearDown(self):
+        torch.backends.cuda.matmul.allow_tf32 = self.original["matmul_tf32"]
+        torch.set_float32_matmul_precision(self.original["precision"])
+        torch.backends.cudnn.allow_tf32 = self.original["cudnn_tf32"]
+        torch.backends.cudnn.enabled = self.original["cudnn_enabled"]
+        torch.backends.cudnn.benchmark = self.original["cudnn_benchmark"]
+        torch.backends.cudnn.deterministic = self.original["cudnn_deterministic"]
+
+    def configure_caller(self, precision="medium", cudnn_tf32=True):
+        torch.set_float32_matmul_precision(precision)
+        torch.backends.cudnn.allow_tf32 = cudnn_tf32
+        torch.backends.cudnn.enabled = False
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = True
+        return self.snapshot()
+
+    def assert_full_precision(self, caller):
+        active = self.snapshot()
+        self.assertEqual(active["precision"], "highest")
+        self.assertFalse(active["matmul_tf32"])
+        self.assertFalse(active["cudnn_tf32"])
+        for key in (
+            "cudnn_enabled",
+            "cudnn_benchmark",
+            "cudnn_deterministic",
+            "deterministic_algorithms",
+        ):
+            self.assertEqual(active[key], caller[key])
+        self.assertFalse(torch.is_autocast_enabled("cuda"))
+
+    def test_cuda_context_preserves_high_medium_and_untouched_flags(self):
+        for precision in ("high", "medium"):
+            for cudnn_tf32 in (True, False):
+                with self.subTest(precision=precision, cudnn_tf32=cudnn_tf32):
+                    caller = self.configure_caller(precision, cudnn_tf32)
+                    with _inference_precision("cuda"):
+                        self.assert_full_precision(caller)
+                    self.assertEqual(self.snapshot(), caller)
+
+    def test_nested_cuda_context_is_reentrant_and_restores_outer_precision(self):
+        caller = self.configure_caller()
+        with _inference_precision("cuda"):
+            with _inference_precision("cuda"):
+                self.assert_full_precision(caller)
+            self.assert_full_precision(caller)
+        self.assertEqual(self.snapshot(), caller)
+
+    def test_cpu_context_does_not_modify_precision(self):
+        caller = self.configure_caller()
+        with _inference_precision("cpu"):
+            self.assertEqual(self.snapshot(), caller)
+        self.assertEqual(self.snapshot(), caller)
+
+    def test_cuda_autocast_is_disabled_and_restored_without_gpu_operations(self):
+        caller = self.configure_caller()
+        with (
+            mock.patch("torch.cuda.is_available", return_value=True),
+            torch.autocast("cuda"),
+        ):
+            self.assertTrue(torch.is_autocast_enabled("cuda"))
+            with _inference_precision("cuda"):
+                self.assert_full_precision(caller)
+            self.assertTrue(torch.is_autocast_enabled("cuda"))
+        self.assertEqual(self.snapshot(), caller)
+
+    def test_public_calibrate_predict_run_in_full_precision_and_restore(self):
+        caller = self.configure_caller()
+        inferencer = fake_inferencer()
+        inferencer.device = torch.device("cuda")
+        model = YOCO(inferencer, side="right")
+
+        def condition(pairs):
+            self.assert_full_precision(caller)
+            inferencer.last_hyper_input = torch.ones(1, 8)
+
+        def inference(frames, *, batched):
+            self.assert_full_precision(caller)
+            return np.zeros((len(frames), 45), np.float32)
+
+        def reconstruct(theta, betas):
+            self.assert_full_precision(caller)
+            return np.zeros((len(theta), 21, 3), np.float32)
+
+        inferencer.update_condition.side_effect = condition
+        inferencer.inference.side_effect = inference
+        model.calibrate(np.zeros((4, 21, 3)), np.zeros((4, 21, 3)))
+        self.assertEqual(self.snapshot(), caller)
+        with mock.patch.object(model, "_reconstruct_joints", side_effect=reconstruct):
+            result = model.predict(np.zeros((3, 21, 3)), batch_size=2)
+        self.assertEqual(result.theta.shape, (3, 45))
+        self.assertEqual(self.snapshot(), caller)
+
+    def test_calibration_exception_restores_caller_precision(self):
+        caller = self.configure_caller()
+        inferencer = fake_inferencer()
+        inferencer.device = torch.device("cuda")
+        model = YOCO(inferencer, side="right")
+
+        def fail(pairs):
+            self.assert_full_precision(caller)
+            raise RuntimeError("conditioning failed")
+
+        inferencer.update_condition.side_effect = fail
+        with self.assertRaisesRegex(RuntimeError, "conditioning failed"):
+            model.calibrate(np.zeros((4, 21, 3)), np.zeros((4, 21, 3)))
+        self.assertEqual(self.snapshot(), caller)
+        self.assertFalse(model._calibrated)
+
+    def test_prediction_exception_restores_caller_precision(self):
+        caller = self.configure_caller("high")
+        inferencer = fake_inferencer()
+        inferencer.device = torch.device("cuda")
+        model = YOCO(inferencer, side="right")
+        model.calibrate(np.zeros((4, 21, 3)), np.zeros((4, 21, 3)))
+
+        def fail(frames, *, batched):
+            self.assert_full_precision(caller)
+            raise RuntimeError("inference failed")
+
+        inferencer.inference.side_effect = fail
+        with self.assertRaisesRegex(RuntimeError, "inference failed"):
+            model.predict(np.zeros((3, 21, 3)))
+        self.assertEqual(self.snapshot(), caller)
 
 
 if __name__ == "__main__":

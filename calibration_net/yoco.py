@@ -3,12 +3,40 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 import numpy as np
 import torch
+
+_CUDA_INFERENCE_LOCK = RLock()
+
+
+@contextmanager
+def _inference_precision(device: str | torch.device) -> Iterator[None]:
+    if torch.device(device).type != "cuda":
+        yield
+        return
+    # TF32 controls are process-global; serialize this API's CUDA calls and
+    # restore precision last because allow_tf32's setter changes "medium".
+    with _CUDA_INFERENCE_LOCK:
+        precision = torch.get_float32_matmul_precision()
+        matmul_tf32 = torch.backends.cuda.matmul.allow_tf32
+        cudnn_tf32 = torch.backends.cudnn.allow_tf32
+        try:
+            torch.set_float32_matmul_precision("highest")
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
+            with torch.autocast(device_type="cuda", enabled=False):
+                yield
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = matmul_tf32
+            torch.set_float32_matmul_precision(precision)
+            torch.backends.cudnn.allow_tf32 = cudnn_tf32
 
 
 @dataclass(frozen=True)
@@ -178,18 +206,21 @@ class YOCO:
             raise ValueError(
                 f"Calibration requires both arrays to have shape {expected}."
             )
-        self._calibrated = False
-        self._inferencer.model.hyperlora.unmerge_weight()
-        self._inferencer.model.eval()
-        self._inferencer.update_condition(
-            {
-                "world_hand_joints_biased": raw_pairs,
-                "world_hand_joints": target_pairs,
-            }
-        )
-        if self._inferencer.last_hyper_input is None:
-            raise RuntimeError("Checkpoint did not produce calibration conditioning.")
-        self._calibrated = True
+        with _inference_precision(self.device):
+            self._calibrated = False
+            self._inferencer.model.hyperlora.unmerge_weight()
+            self._inferencer.model.eval()
+            self._inferencer.update_condition(
+                {
+                    "world_hand_joints_biased": raw_pairs,
+                    "world_hand_joints": target_pairs,
+                }
+            )
+            if self._inferencer.last_hyper_input is None:
+                raise RuntimeError(
+                    "Checkpoint did not produce calibration conditioning."
+                )
+            self._calibrated = True
         return self
 
     def _reconstruct_joints(
@@ -234,45 +265,46 @@ class YOCO:
         omitting it uses the neutral MANO shape. Output joints are wrist-local,
         palm-aligned, in meters, while ``theta`` contains 45 pose radians.
         """
-        if not self._calibrated:
-            raise RuntimeError(
-                "Call calibrate(raw_pairs, target_pairs) before predict()."
-            )
-        raw_frames = self._joints(raw_frames, "raw_frames")
-        single_frame = raw_frames.ndim == 2
-        if single_frame:
-            raw_frames = raw_frames[None]
-        if (
-            not isinstance(batch_size, int)
-            or isinstance(batch_size, bool)
-            or batch_size < 1
-        ):
-            raise ValueError("batch_size must be a positive integer.")
-        if betas is not None:
-            betas = np.asarray(betas, dtype=np.float32)
-            if betas.shape not in {(10,), (len(raw_frames), 10)}:
-                raise ValueError("betas must have shape (10,) or (N, 10).")
-            if not np.isfinite(betas).all():
-                raise ValueError("betas contains NaN or infinite values.")
+        with _inference_precision(self.device):
+            if not self._calibrated:
+                raise RuntimeError(
+                    "Call calibrate(raw_pairs, target_pairs) before predict()."
+                )
+            raw_frames = self._joints(raw_frames, "raw_frames")
+            single_frame = raw_frames.ndim == 2
+            if single_frame:
+                raw_frames = raw_frames[None]
+            if (
+                not isinstance(batch_size, int)
+                or isinstance(batch_size, bool)
+                or batch_size < 1
+            ):
+                raise ValueError("batch_size must be a positive integer.")
+            if betas is not None:
+                betas = np.asarray(betas, dtype=np.float32)
+                if betas.shape not in {(10,), (len(raw_frames), 10)}:
+                    raise ValueError("betas must have shape (10,) or (N, 10).")
+                if not np.isfinite(betas).all():
+                    raise ValueError("betas contains NaN or infinite values.")
 
-        theta_chunks = []
-        joint_chunks = []
-        for start in range(0, len(raw_frames), batch_size):
-            frames = raw_frames[start : start + batch_size]
-            theta = np.asarray(
-                self._inferencer.inference(frames, batched=True), dtype=np.float32
-            ).reshape(len(frames), 45)
-            chunk_betas = (
-                betas[start : start + len(frames)]
-                if betas is not None and betas.ndim == 2
-                else betas
+            theta_chunks = []
+            joint_chunks = []
+            for start in range(0, len(raw_frames), batch_size):
+                frames = raw_frames[start : start + batch_size]
+                theta = np.asarray(
+                    self._inferencer.inference(frames, batched=True), dtype=np.float32
+                ).reshape(len(frames), 45)
+                chunk_betas = (
+                    betas[start : start + len(frames)]
+                    if betas is not None and betas.ndim == 2
+                    else betas
+                )
+                theta_chunks.append(theta)
+                joint_chunks.append(self._reconstruct_joints(theta, chunk_betas))
+            theta = np.concatenate(theta_chunks)
+            joints = np.concatenate(joint_chunks)
+            return (
+                YOCOResult(theta[0], joints[0])
+                if single_frame
+                else YOCOResult(theta, joints)
             )
-            theta_chunks.append(theta)
-            joint_chunks.append(self._reconstruct_joints(theta, chunk_betas))
-        theta = np.concatenate(theta_chunks)
-        joints = np.concatenate(joint_chunks)
-        return (
-            YOCOResult(theta[0], joints[0])
-            if single_frame
-            else YOCOResult(theta, joints)
-        )

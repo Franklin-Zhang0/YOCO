@@ -28,7 +28,7 @@
     "inference_seeds": [0, 1, 2],
     "calibration_actions": 4,
     "calibration_frame_range": "[0,200)",
-    "evaluation_frame_range": "[200,T), excluding annotated bad frames",
+    "evaluation_frame_range": "All frames in [200,T), with gt_joint_mask applied to metric joints; bad_frame restricts calibration sampling only",
     "side": "right",
     "pred_beta_source": "group",
     "completed_steps": 8,

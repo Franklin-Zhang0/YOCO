@@ -28,7 +28,8 @@ uv run --frozen --extra cpu python scripts/reproduce_paper.py --table 2 --output
 For the original fine-tuning baselines, use the CUDA environment on an H100:
 
 ```bash
-uv run --frozen --extra cu124 python scripts/reproduce_paper.py --table all --methods all --device cuda --output-dir eval/results/all-methods
+export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
+uv run --frozen --extra cu124 python scripts/reproduce_paper.py --table all --methods all --device cuda --conditioning-mode eval --output-dir eval/results/all-methods
 ```
 
 Use a fresh `--output-dir` for every experiment. Existing directories, including
@@ -82,9 +83,11 @@ not the full training corpus.
 | Table 2, no calibration/LoRA fine-tuning | Legacy 4-recording cohort | 5,315 |
 
 Every run uses seeds 0, 1, and 2. Each unit samples K=4 calibration frames
-from `[0,200)` and evaluates the eligible frames in `[200,T)`. The calibration
-RNG is keyed by seed, HDF5 group name, augmentation index, and K. The runner
-does not truncate sessions or choose a single augmentation.
+from `[0,200)` and evaluates all frames in `[200,T)`, applying `gt_joint_mask`
+to metric joints. `bad_frame` restricts calibration candidates, not held-out
+frames. The calibration RNG is keyed by seed, HDF5 group name, augmentation
+index, and K. The runner does not truncate sessions or choose a single
+augmentation.
 
 When no calibration or LoRA is requested for Table 2, the runner invokes
 [`scripts/prepare_table2_legacy_data.py`](../scripts/prepare_table2_legacy_data.py).
@@ -105,6 +108,13 @@ conditioning dropout and selects the separate evaluation-mode references.
 The saved prediction metadata records the mode and inference seed. Do not mix
 the two modes in an output directory.
 
+Use `legacy` on CPU to reproduce the release checkpoint's historical scores,
+including Table 2's rounded MPJPE of 17.75 mm. Use `eval` for YOCO on CUDA:
+its dropout-free results pass the existing evaluation-mode references on an
+H100. Legacy conditioning is device-dependent: the tested CUDA run does not
+pass the CPU legacy Table 2 references. Conditioning mode changes only YOCO, not
+the five baseline protocols, and the two modes are not the same experiment.
+
 Ridge uses an identity prior in MANO-theta space, an unpenalized bias, and
 regularization `1e-3`. The fine-tuning baselines use 200 steps, learning rate
 `1e-4`, no weight decay, LoRA rank/alpha 8/8, dropout 0.1, and gates initialized
@@ -114,10 +124,16 @@ CPU is the reference runtime for the release YOCO accuracy checks. The original
 fine-tuning baseline references were validated on an H100 with CUDA; CPU dropout
 RNG can yield different scores. Select `--device cuda` for those comparisons.
 GPU reproduction still has to pass verification; selecting CUDA by itself does
-not certify an exact hardware/accuracy match. The paper's adaptation-time
-measurements require one H100 and matching unit counts. CPU timings are not
-comparable. Offline pose evaluation does not need ROS, a glove, a robot URDF,
-or `DEX_URDF_PATH`.
+not certify an exact hardware/accuracy match. The tested NGC PyTorch 25.06
+runtime uses the locked cuDNN 9.19.0.56 dependency,
+`TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1`, matmul precision `high`, and TF32 enabled
+for matmul and cuDNN. PyTorch's default cuDNN 9.1 dependency failed the Table 2
+full fine-tuning accuracy check; changing the precision override alone did not
+resolve it. Preserve both the lockfile and the explicit precision setting.
+Keep this paper-export profile separate from the normal inference API's
+temporary FP32 guard. The paper's adaptation-time measurements require one
+H100 and matching unit counts. CPU timings are not comparable. Offline pose
+evaluation does not need ROS, a glove, a robot URDF, or `DEX_URDF_PATH`.
 
 ## Verification
 
@@ -126,8 +142,16 @@ The runner automatically invokes
 [`scripts/verify_paper_reproduction.py`](../scripts/verify_paper_reproduction.py),
 which checks complete units and seeds, calibration/evaluation indices, masked
 joints, source hashes, and metrics recomputed from saved predictions.
-Verification exits nonzero on a mismatch; numerical tolerances are at most
-0.05 mm and 0.0005 AUCJ. Hardware timing is outside its accuracy certificate.
+Verification exits nonzero on a mismatch; aggregate accuracy tolerances are at
+most 0.05 mm and 0.0005 AUCJ. The separate saved-versus-recomputed pose metric
+check allows float32 reduction roundoff (`8 * float32 epsilon` relative,
+`1e-5` mm absolute); this does not change the paper accuracy thresholds.
+Hardware timing is outside its accuracy certificate.
+
+Fine-tuning exports with saved predictions compute pose receipts from those
+same held-out joints and the canonical NumPy ground-truth transform. Their
+`paper_pose_metric_source` is `saved_predictions`; auxiliary losses and timings
+retain the historical held-out pass and are not part of the pose certificate.
 
 YOCO uses the measured `release` reference profile; baselines use the original
 `paper` profile. The expected release values for both conditioning modes are
@@ -169,6 +193,12 @@ not substitutes for running the current entrypoint.
 The current locked uv environment and complete three-seed YOCO runner
 qualification are recorded separately in
 [`uv_release_results.json`](uv_release_results.json).
+
+CCI setup, normal CPU/CUDA inference, and H100 baseline validation are
+recorded separately in
+[`cci_release_results.json`](cci_release_results.json), including source and
+asset fingerprints. Raw validation logs and predictions are not part of the
+repository; the scripts generate fresh receipts when you run them.
 
 ## Other Experiments
 

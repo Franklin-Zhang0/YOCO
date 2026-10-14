@@ -110,6 +110,50 @@ def batch_similarity_align_masked(
     )
 
 
+def compute_joint_metrics(
+    pred_joints: np.ndarray,
+    gt_joints: np.ndarray,
+    valid_joint_mask: np.ndarray | None = None,
+) -> dict[str, float]:
+    pred = np.asarray(pred_joints, dtype=np.float32)
+    gt = np.asarray(gt_joints, dtype=np.float32)
+    if valid_joint_mask is not None:
+        valid_joint_mask = np.asarray(valid_joint_mask, dtype=bool)
+        if valid_joint_mask.shape != pred.shape[:2]:
+            raise ValueError(
+                f"valid_joint_mask shape {valid_joint_mask.shape} does not match "
+                f"joints shape {pred.shape[:2]}"
+            )
+    valid = (
+        np.ones(pred.shape[:2], dtype=bool)
+        if valid_joint_mask is None
+        else valid_joint_mask
+    )
+    if not np.any(valid):
+        raise ValueError("No valid joints left for HyperLoRA metrics")
+    pa_pred = batch_similarity_align_masked(pred, gt, valid_joint_mask).astype(np.float32)
+    err = np.linalg.norm(pred - gt, axis=-1)
+    pa_err = np.linalg.norm(pa_pred - gt, axis=-1)
+    tip_valid = valid[:, TIP_JOINT_INDICES]
+    tip_err = np.linalg.norm(pred[:, TIP_JOINT_INDICES] - gt[:, TIP_JOINT_INDICES], axis=-1)
+    if not np.any(tip_valid):
+        tip_valid = valid
+        tip_err = err
+    mpjpe = float(np.mean(err[valid]))
+    pa_mpjpe = float(np.mean(pa_err[valid]))
+    tip_mpjpe = float(np.mean(tip_err[tip_valid]))
+    return {
+        "mpjpe": mpjpe,
+        "mpjpe_mm": mpjpe * 1000.0,
+        "pa_mpjpe": pa_mpjpe,
+        "pa_mpjpe_mm": pa_mpjpe * 1000.0,
+        "tip_mpjpe": tip_mpjpe,
+        "tip_mpjpe_mm": tip_mpjpe * 1000.0,
+        "num_metric_joints": int(np.sum(valid)),
+        "num_masked_bad_joints": int(valid.size - np.sum(valid)),
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -865,6 +909,29 @@ def run_session(
             calib_idx=calib_idx,
             eval_idx=eval_idx,
         )
+
+        if (
+            not args.no_reconstruction
+            and args.target_source == "dataset"
+            and true_key is not None
+        ):
+            # Paper receipts describe the persisted all-frame forward, not the
+            # independently evaluated batch whose CUDA kernels can differ.
+            true_all_joints = read_array(group, true_key, sample_idx=sample_idx)
+            true_local_joints = np.asarray(transform_joint3d(true_all_joints))
+            metrics.update(
+                compute_joint_metrics(
+                    pred_all_joints[eval_idx],
+                    true_local_joints[eval_idx],
+                    valid_joint_mask_all[eval_idx]
+                    if valid_joint_mask_all is not None
+                    else None,
+                )
+            )
+            metrics["hdf5_true_mpjpe"] = metrics["mpjpe"]
+            metrics["hdf5_true_mpjpe_mm"] = metrics["mpjpe_mm"]
+            metrics["paper_pose_metric_source"] = "saved_predictions"
+            metrics["auxiliary_metric_source"] = "heldout_prediction"
 
     if hasattr(adapted_model, "remove_hooks"):
         adapted_model.remove_hooks()

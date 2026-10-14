@@ -41,10 +41,16 @@ disables conditioning dropout and removes the previous adapter before deriving
 the next one. This intentionally differs from legacy paper evaluation behavior;
 use the reproduction scripts for table comparisons.
 
+Normal CUDA calibration and prediction use full FP32 arithmetic, with TF32 and
+CUDA autocast disabled only during each API call for consistent batching. Caller
+precision settings are restored afterward, including on errors; CPU inference is
+unchanged. Legacy reproduction scripts retain their original precision behavior.
+
 ## Local Example
 
-After downloading the release assets, run a short example on a right-hand AVP
-recording:
+Download the evaluation data as well as the models by running
+`scripts/download_reproduction_assets.py` without `--models-only`. Then run a
+short example on a right-hand AVP recording:
 
 ```bash
 uv run --frozen --extra cpu python scripts/run_yoco.py \

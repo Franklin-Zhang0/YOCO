@@ -55,6 +55,10 @@ dev = ["pytest>=8,<9", "ruff>=0.9", "tomli>=2"]
 required-version = ">=0.8.22"
 environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 conflicts = [[{ extra = "cpu" }, { extra = "cu124" }]]
+# Match the cuDNN backend verified against the historical H100 results.
+override-dependencies = [
+    "nvidia-cudnn-cu12==9.19.0.56; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 
 [tool.uv.sources]
 manopth = { git = "https://github.com/hassony2/manopth", rev = "4f1dcad1201ff1bfca6e065a85f0e3456e1aa32b" }

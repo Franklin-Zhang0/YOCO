@@ -5,6 +5,23 @@ newer. The locked release environment targets Linux x86_64 with Python 3.10.12.
 uv downloads the matching Python runtime when needed; no separate Conda
 environment or manual dependency installation is required.
 
+If repository access is restricted, authenticate with GitHub before cloning
+(HTTPS credentials or SSH). On clusters with restricted internet access, configure
+the standard `HTTP_PROXY` and `HTTPS_PROXY` variables before setup and downloads.
+The lockfile and asset manifest should remain unchanged.
+
+For NGC PyTorch images, remove inherited system-PyTorch directories from
+`LD_LIBRARY_PATH` before using this environment; otherwise Python 3.10 can load
+incompatible libraries from the image's Python 3.12 installation. Preserve
+NVIDIA driver library paths. A Python virtual environment does not isolate
+these native-library search paths.
+
+For the tested NGC PyTorch 25.06 image, keep only its driver-library paths:
+
+```bash
+export LD_LIBRARY_PATH=/usr/local/cuda/compat/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+```
+
 ## CPU
 
 ```bash
@@ -35,10 +52,17 @@ The CPU and CUDA extras are mutually exclusive. Use `--extra cu124` on subsequen
 commands and pass `--device cuda` to inference or evaluation scripts. Requesting
 CUDA on an unavailable device fails explicitly.
 
-CPU accuracy checks have been validated in the clean locked environment. The
-CUDA dependency profile is resolved and locked, but has not been execution-tested
-in this release environment. The paper's fine-tuning baselines and timing
-measurements additionally require the H100 protocol in the reproduction guide.
+The CUDA lock pins `nvidia-cudnn-cu12==9.19.0.56` for the fine-tuning baseline
+accuracy contract. Keep this pin: PyTorch 2.6.0's default cuDNN 9.1 dependency
+does not pass every baseline reference. It does not add CUDA packages to the
+CPU environment.
+
+Both locked profiles have been execution-tested in a clean one-H100 CCI,
+including package isolation, model loading, and the Python and CLI inference
+paths. The paper's fine-tuning baselines and timing measurements additionally
+require the H100 protocol in the reproduction guide. Inference checks alone
+do not certify paper accuracy or adaptation times. Tested runtimes and scoped
+receipts are recorded in the [CCI qualification](reproduction/cci_release_results.json).
 
 ## MANO Assets
 
@@ -56,7 +80,8 @@ export MANO_PATH=/absolute/path/to/mano_models
 ```
 
 Use this environment variable for inference and reproduction commands. No ROS,
-glove, or `DEX_URDF_PATH` is needed for offline use.
+glove, or `DEX_URDF_PATH` is needed for offline use. The CCI qualification lists
+the tested MANO file fingerprints for comparison with your licensed copy.
 
 Return to the [README](README.md) to download pretrained models, or follow the
 [inference](docs/inference.md) and [reproduction](reproduction/README.md) guides.
