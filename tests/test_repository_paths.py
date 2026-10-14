@@ -1,4 +1,6 @@
+import ast
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -45,6 +47,93 @@ class RepositoryPathTests(unittest.TestCase):
                 self.assertNotIn("/Calibration_net.git", text)
         self.assertTrue((ROOT / "calibration_net").is_dir())
         self.assertIn(WEBSITE_URL, (ROOT / "README.md").read_text())
+
+    def test_setup_guides_use_locked_uv_without_manual_install_commands(self):
+        for name in ("README.md", "INSTALL.md"):
+            with self.subTest(file=name):
+                text = (ROOT / name).read_text()
+                self.assertIn("uv sync --frozen --extra cpu", text)
+                self.assertIn("--extra cu124", text)
+                self.assertNotRegex(
+                    text,
+                    r"\b(?:conda\s+(?:create|activate|install)|pip[3]?\s+install)\b",
+                )
+        for name in ("README.md", "INSTALL.md", "reproduction/README.md"):
+            for block in re.findall(
+                r"```bash\n(.*?)```", (ROOT / name).read_text(), re.DOTALL
+            ):
+                for line in block.splitlines():
+                    if re.search(r"\buv\s+(?:run|sync)\b", line):
+                        with self.subTest(file=name, command=line):
+                            self.assertIn("--frozen", line)
+                            self.assertRegex(line, r"--extra (?:cpu|cu124)\b")
+
+    def test_readme_exposes_public_api_and_inference_entrypoint(self):
+        text = (ROOT / "README.md").read_text()
+        python_blocks = re.findall(r"```python\n(.*?)```", text, re.DOTALL)
+        self.assertTrue(python_blocks)
+        parsed = [ast.parse(block) for block in python_blocks]
+        self.assertTrue(
+            any(
+                isinstance(node, ast.ImportFrom)
+                and node.module == "calibration_net.yoco"
+                and any(alias.name == "YOCO" for alias in node.names)
+                for module in parsed
+                for node in ast.walk(module)
+            )
+        )
+        attributes = {
+            node.func.attr
+            for module in parsed
+            for node in ast.walk(module)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        self.assertTrue({"from_pretrained", "calibrate", "predict"} <= attributes)
+        self.assertIn('"assets/models/yoco"', text)
+        self.assertIn('canonicalizer_dir="assets/models/frozen_estimator"', text)
+        self.assertIn("python scripts/run_yoco.py --input observations.npz", text)
+        self.assertIn("[the inference guide](docs/inference.md)", text)
+        for name in (
+            "calibration_net/yoco.py",
+            "scripts/run_yoco.py",
+            "docs/inference.md",
+        ):
+            self.assertTrue((ROOT / name).is_file(), name)
+
+    def test_readme_reproduction_links_scripts_without_exporter_loops(self):
+        text = (ROOT / "README.md").read_text()
+        section = text.split("## Paper Reproduction\n", 1)[1].split("\n## ", 1)[0]
+        self.assertIn(
+            "[`scripts/reproduce_paper.py`](scripts/reproduce_paper.py)", section
+        )
+        self.assertIn("[reproduction guide](reproduction/README.md)", section)
+        self.assertNotIn("```", section)
+        self.assertNotIn("export_hypernet_finetune_predictions.py", text)
+        self.assertNotIn("run_finetune_baselines.py", text)
+        self.assertNotRegex(text, r"(?m)^\s*for\s+(?:seed|method)\s+in\b")
+        for name in ("scripts/reproduce_paper.py", "reproduction/README.md"):
+            self.assertTrue((ROOT / name).is_file(), name)
+
+    def test_readme_retains_correct_metric_and_release_scope(self):
+        text = " ".join((ROOT / "README.md").read_text().split())
+        self.assertRegex(
+            text,
+            r"Tip-PA.*main paper is a typo.*tip_mpjpe_mm.*unaligned fingertip MPJPE",
+        )
+        self.assertIn("rounded MPJPE", text)
+        self.assertIn("not its full original row", text)
+        self.assertIn("private for now", text)
+
+    def test_readme_local_links_resolve(self):
+        text = (ROOT / "README.md").read_text()
+        checked = 0
+        for target in re.findall(r"\]\(([^)]+)\)", text):
+            if urlsplit(target).scheme or target.startswith("#"):
+                continue
+            relative = unquote(urlsplit(target).path)
+            self.assertTrue((ROOT / relative).is_file(), target)
+            checked += 1
+        self.assertGreaterEqual(checked, 4)
 
     def test_website_metadata_and_code_link(self):
         elements = self.website_links()

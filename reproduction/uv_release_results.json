@@ -1,0 +1,188 @@
+{
+  "description": "Fresh uv environment qualification of the shared June 3 YOCO checkpoint on both complete three-seed release datasets.",
+  "accuracy_passed": true,
+  "completed_at": "2026-10-14T19:06:17+08:00",
+  "scope": "Release-checkpoint pose accuracy only; not original full Table 2 YOCO-row reproduction, baseline requalification, or hardware timing.",
+  "setup": {
+    "command": "uv sync --frozen --extra cpu",
+    "runtime": {
+      "uv": "0.8.22",
+      "python": "3.10.12",
+      "torch": "2.6.0+cpu",
+      "numpy": "1.23.5",
+      "h5py": "3.16.0"
+    },
+    "uv_lock_sha256": "bd9408282116a11b2400a3dc20677aa0ad66e5afc901a28c377f7cf78c111b0b",
+    "environment": {
+      "MANO_PATH": "Separately licensed directory containing MANO_LEFT.pkl and MANO_RIGHT.pkl",
+      "OMP_NUM_THREADS": "8",
+      "MKL_NUM_THREADS": "8"
+    }
+  },
+  "run": {
+    "command": "uv run --frozen --extra cpu scripts/reproduce_paper.py --table all --asset-root assets --output-dir eval/results/uv-guide-reproduction-20261014 --device cpu --methods yoco --conditioning-mode legacy",
+    "method": "hypernet",
+    "reference_profile": "release",
+    "conditioning_mode": "legacy",
+    "calibration_seeds": [0, 1, 2],
+    "inference_seeds": [0, 1, 2],
+    "calibration_actions": 4,
+    "calibration_frame_range": "[0,200)",
+    "evaluation_frame_range": "[200,T), excluding annotated bad frames",
+    "side": "right",
+    "pred_beta_source": "group",
+    "completed_steps": 8,
+    "receipt": "eval/results/uv-guide-reproduction-20261014/reproduction_run.json",
+    "receipt_sha256": "44c2bc151a0e6c039195047f7400a149686df2fd7fa287c1dd7e1fc2658f7e90"
+  },
+  "assets": {
+    "manifest": "reproduction/huggingface_release.json",
+    "manifest_sha256": "cfea55c20a646eb3c3d7786729da88dc2a661b59ab1336888cb134a47aa23ed9",
+    "repositories": {
+      "models": {
+        "repo_id": "Franklin0/YOCO",
+        "repo_type": "model",
+        "revision": "d564cd5276cd6203c26389a246ac63f736354d9a"
+      },
+      "datasets": {
+        "repo_id": "Franklin0/YOCO-Reproduction",
+        "repo_type": "dataset",
+        "revision": "a73fb4797c165c3755ee03391c730d1b2cfd7af5"
+      }
+    },
+    "required_files_checked": [
+      "models/frozen_estimator/model.pth",
+      "models/frozen_estimator/config.yaml",
+      "models/frozen_estimator/norm_stats.pkl",
+      "models/yoco/model.pth",
+      "models/yoco/config.yaml",
+      "models/yoco/norm_stats.pkl",
+      "datasets/interhand/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5",
+      "datasets/avp/aligned_avp_glove_val.hdf5"
+    ]
+  },
+  "post_run_validation": {
+    "note": "The process loaded the runner before the final exact-frame and verifier-receipt-hash gates were added. The finalized verify_receipt function was subsequently applied successfully to both completed verifier reports; its command plan is equivalent to the executed plan.",
+    "runner": "scripts/reproduce_paper.py",
+    "runner_sha256_at_post_run_validation": "40c0f868c636ff2e58e840ed5f106efb75ed16a3ede695360870976686de5fc9",
+    "verifier": "scripts/verify_paper_reproduction.py",
+    "verifier_sha256": "0efaab6985e03f4c7361275e63d28cd6f7203f55d0bb738518e17a36c7f6829c",
+    "checks": {
+      "all_six_exports_and_two_verifiers_completed": true,
+      "final_runner_command_plan_matches_executed_plan": true,
+      "eight_required_asset_receipt_hashes_and_sizes_match_manifest": true,
+      "both_final_verification_receipt_checks_passed": true,
+      "exact_seeds_units_and_evaluation_frames_present": true,
+      "conditioning_mode_and_release_reference_profile_match": true,
+      "all_five_metric_deltas_from_release_reference_are_zero": true
+    }
+  },
+  "results": {
+    "interhand": {
+      "accuracy_passed": true,
+      "verification_receipt": "eval/results/uv-guide-reproduction-20261014/interhand/verification.json",
+      "verification_receipt_sha256": "2412a4888a0d3b9bf5538c595e9cbc9d95c20ea93b4e9c43d7bf4f3266afb808",
+      "mean": {
+        "mpjpe_mm": 15.346553611258665,
+        "pa_mpjpe_mm": 10.179063933901489,
+        "tip_mpjpe_mm": 22.583362041041255,
+        "aucj": 0.7065996769037785,
+        "pinch_distance_l2_mm": 34.6303545559446
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 20,
+          "num_eval_frames": 216340,
+          "mean": {
+            "mpjpe_mm": 15.525792259722948,
+            "pa_mpjpe_mm": 10.298768314532936,
+            "tip_mpjpe_mm": 22.88034954108298,
+            "aucj": 0.7034694613518012,
+            "pinch_distance_l2_mm": 35.67156093195081
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 20,
+          "num_eval_frames": 216340,
+          "mean": {
+            "mpjpe_mm": 15.090490318834782,
+            "pa_mpjpe_mm": 10.005849320441484,
+            "tip_mpjpe_mm": 22.050045616924763,
+            "aucj": 0.7109600712276908,
+            "pinch_distance_l2_mm": 34.51225562021136
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 20,
+          "num_eval_frames": 216340,
+          "mean": {
+            "mpjpe_mm": 15.423378255218267,
+            "pa_mpjpe_mm": 10.232574166730046,
+            "tip_mpjpe_mm": 22.819690965116024,
+            "aucj": 0.705369498131843,
+            "pinch_distance_l2_mm": 33.707247115671635
+          }
+        }
+      ]
+    },
+    "avp": {
+      "accuracy_passed": true,
+      "verification_receipt": "eval/results/uv-guide-reproduction-20261014/avp/verification.json",
+      "verification_receipt_sha256": "0be116d31aea120b32ff90bc568c108d400b6d5382e05683273aa58cd1e2fd49",
+      "mean": {
+        "mpjpe_mm": 17.75466464459896,
+        "pa_mpjpe_mm": 13.280289558072885,
+        "tip_mpjpe_mm": 31.182868199215992,
+        "aucj": 0.6564640893968315,
+        "pinch_distance_l2_mm": 41.63664682871765
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 17.81039995451768,
+            "pa_mpjpe_mm": 13.352587508658567,
+            "tip_mpjpe_mm": 31.45556151866913,
+            "aucj": 0.6564224668961769,
+            "pinch_distance_l2_mm": 46.78217942516009
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 17.646437510848045,
+            "pa_mpjpe_mm": 13.244017648200193,
+            "tip_mpjpe_mm": 30.644460891683895,
+            "aucj": 0.6582206569234887,
+            "pinch_distance_l2_mm": 39.982023338476814
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 17.807156468431156,
+            "pa_mpjpe_mm": 13.244263517359892,
+            "tip_mpjpe_mm": 31.44858218729496,
+            "aucj": 0.654749144370829,
+            "pinch_distance_l2_mm": 38.14573772251606
+          }
+        }
+      ]
+    }
+  },
+  "paper_caveats": {
+    "table2_full_original_yoco_row_reproduced": false,
+    "table2_rounded_mpjpe_matches_paper": true,
+    "note": "The release model's Table 2 MPJPE rounds to 17.75 mm. PA-MPJPE, tip MPJPE, AUCJ, and pinch are measured release results, not matches to the entire original paper row; its evaluation-time snapshot is unavailable.",
+    "metric_correction": "Tip-PA in the main paper is a typo for unaligned tip_mpjpe_mm."
+  }
+}

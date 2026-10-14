@@ -1,15 +1,15 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "calibration_net"
 version = "1.0.0"
-description = "Neuron Network for Retargeting"
+description = "YOCO: few-shot calibration for hand motion retargeting"
 authors = [{ name = "Yu Zhang", email = "franklin.yuzhang@gmail.com" }]
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.7,<3.13"
+requires-python = ">=3.10,<3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -17,15 +17,19 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-urls = { "Homepage" = "" }
+urls = { "Homepage" = "https://github.com/Franklin-Zhang0/YOCO" }
 
 dependencies = [
+    "numpy==1.23.5",
+    "scipy==1.10.1",
+    "chumpy==0.70",
+    "manopth==0.0.1",
+    "opencv-python-headless==4.8.1.78",
+    "huggingface-hub==2.2.0",
+    "PyYAML==6.0.3",
     "datasets",
     "transformers",
     "Omegaconf",
@@ -34,11 +38,47 @@ dependencies = [
     "viser",
     "flask",
     "pyzmq",
-    "h5py",
+    "h5py==3.16.0",
     "colorama",
     "tyro",
     "yourdfpy",
 ]
+
+[project.optional-dependencies]
+cpu = ["torch==2.6.0", "torchvision==0.21.0"]
+cu124 = ["torch==2.6.0", "torchvision==0.21.0"]
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "ruff>=0.9", "tomli>=2"]
+
+[tool.uv]
+required-version = ">=0.8.22"
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+conflicts = [[{ extra = "cpu" }, { extra = "cu124" }]]
+
+[tool.uv.sources]
+manopth = { git = "https://github.com/hassony2/manopth", rev = "4f1dcad1201ff1bfca6e065a85f0e3456e1aa32b" }
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu124", extra = "cu124" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu124", extra = "cu124" },
+]
+
+[tool.uv.extra-build-dependencies]
+chumpy = ["pip==26.2.1", "setuptools==80.10.2", "wheel==0.48.0"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

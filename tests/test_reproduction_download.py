@@ -52,19 +52,23 @@ class ReleaseDownloadTests(unittest.TestCase):
 
     def test_rejects_mismatched_cache(self):
         self.manifest["files"][0]["sha256"] = "0" * 64
-        with patch(
-            "scripts.download_reproduction_assets.hf_hub_download",
-            return_value=str(self.payload),
-        ), self.assertRaises(ValueError):
+        with (
+            patch(
+                "scripts.download_reproduction_assets.hf_hub_download",
+                return_value=str(self.payload),
+            ),
+            self.assertRaises(ValueError),
+        ):
             download_assets(self.manifest, self.root / "assets")
 
     def test_does_not_overwrite_existing_invalid_file(self):
         target = self.root / "assets/models/yoco/model.pth"
         target.parent.mkdir(parents=True)
         target.write_bytes(b"user-owned-file")
-        with patch(
-            "scripts.download_reproduction_assets.hf_hub_download"
-        ) as fetch, self.assertRaises(ValueError):
+        with (
+            patch("scripts.download_reproduction_assets.hf_hub_download") as fetch,
+            self.assertRaises(ValueError),
+        ):
             download_assets(self.manifest, self.root / "assets")
         self.assertEqual(target.read_bytes(), b"user-owned-file")
         fetch.assert_not_called()
@@ -104,21 +108,46 @@ class ReleaseDownloadTests(unittest.TestCase):
 
     def test_private_release_requires_authentication(self):
         self.manifest["private"] = True
-        with patch(
-            "scripts.download_reproduction_assets.get_token", return_value=None
-        ), self.assertRaisesRegex(ValueError, "Private assets require"):
+        with (
+            patch("scripts.download_reproduction_assets.get_token", return_value=None),
+            self.assertRaisesRegex(ValueError, "Private assets require"),
+        ):
             download_assets(self.manifest, self.root / "assets")
 
     def test_private_token_is_passed_to_hub(self):
         self.manifest["private"] = True
+        with (
+            patch(
+                "scripts.download_reproduction_assets.get_token",
+                return_value="test-token",
+            ),
+            patch(
+                "scripts.download_reproduction_assets.hf_hub_download",
+                return_value=str(self.payload),
+            ) as fetch,
+        ):
+            download_assets(self.manifest, self.root / "assets")
+            self.assertEqual(fetch.call_args.kwargs["token"], "test-token")
+
+    def test_models_only_skips_dataset_repository(self):
+        self.manifest["files"].append(
+            dict(
+                self.manifest["files"][0],
+                repository="datasets",
+                path="avp/validation.hdf5",
+                local_path="datasets/avp/validation.hdf5",
+            )
+        )
         with patch(
-            "scripts.download_reproduction_assets.get_token", return_value="test-token"
-        ), patch(
             "scripts.download_reproduction_assets.hf_hub_download",
             return_value=str(self.payload),
         ) as fetch:
-            download_assets(self.manifest, self.root / "assets")
-            self.assertEqual(fetch.call_args.kwargs["token"], "test-token")
+            paths = download_assets(
+                self.manifest, self.root / "assets", models_only=True
+            )
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(fetch.call_count, 1)
+            self.assertFalse((self.root / "assets/datasets").exists())
 
 
 if __name__ == "__main__":

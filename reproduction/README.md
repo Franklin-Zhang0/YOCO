@@ -1,0 +1,178 @@
+# Reproduction Protocol
+
+The complete release experiment is implemented in
+[`scripts/reproduce_paper.py`](../scripts/reproduce_paper.py). It exports all
+three seeds and then verifies their saved predictions. No training of the YOCO
+checkpoint is needed. Follow the repository's environment and asset setup first.
+
+## Entry Point
+
+The runner defaults to both tables, YOCO only, CPU, and seeded legacy
+conditioning. `--table 1` selects InterHand; `--table 2` selects AVP/glove.
+`--methods all` additionally evaluates the five original paper baselines.
+Individual methods are `yoco`, `ridge`, `last_layer`, `full_ft`, `lora`, and
+`no_calibration`. Run `scripts/reproduce_paper.py --help` for all options.
+
+After setup, run the shared release checkpoint on both datasets:
+
+```bash
+uv run --frozen --extra cpu python scripts/reproduce_paper.py --table all
+```
+
+Select one table and an explicit fresh result directory as needed:
+
+```bash
+uv run --frozen --extra cpu python scripts/reproduce_paper.py --table 2 --output-dir eval/results/table2
+```
+
+For the original fine-tuning baselines, use the CUDA environment on an H100:
+
+```bash
+uv run --frozen --extra cu124 python scripts/reproduce_paper.py --table all --methods all --device cuda --output-dir eval/results/all-methods
+```
+
+Use a fresh `--output-dir` for every experiment. Existing directories, including
+empty ones, are rejected. The runner checks each required model/configuration/
+normalization/data file against the immutable release manifest before launching.
+It never modifies source assets. `--dry-run` prints the commands without loading
+local assets or running evaluations; it is not reproduction evidence.
+
+The standard asset root is `assets/`; override it with `--asset-root`.
+The pinned download entrypoint is
+[`scripts/download_reproduction_assets.py`](../scripts/download_reproduction_assets.py).
+The checkpoints and datasets are currently private on Hugging Face and require
+an authorized account. Download and verify them before running experiments.
+`MANO_PATH` must contain your separately licensed `MANO_LEFT.pkl` and
+`MANO_RIGHT.pkl`; neither is redistributed.
+
+## Checkpoint And Data Contracts
+
+The default checkpoint is the June 3 depth-4 YOCO model, shared by both tables:
+K=4, LoRA rank/alpha 32/32, and eight flow steps. The May 18 frozen estimator is
+the canonicalizer and initialization for every baseline. Each checkpoint requires
+`model.pth`, `config.yaml`, and `norm_stats.pkl`, with their saved architecture
+and normalization unchanged. Only load trusted pickle-based assets.
+
+| Asset under `assets/` | Purpose |
+| --- | --- |
+| `models/yoco/` | Shared release YOCO checkpoint |
+| `models/frozen_estimator/` | Canonicalizer and baseline initialization |
+| `datasets/interhand/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5` | Table 1 prepared validation set |
+| `datasets/avp/aligned_avp_glove_val.hdf5` | Table 2 three-recording validation cohort |
+| `datasets/avp/aligned_avp_glove_train_new.hdf5` | Additional recording for legacy Table 2 baselines |
+
+Raw InterHand downloads and the unmarked `InterHand_retargeted_30fps_biased_super.hdf5`
+are not substitutes for the prepared validation set. Preserve group names,
+augmentation order, the 21-joint ordering, group MANO betas, `gt_joint_mask`, and
+`bad_frame` annotations. `--canonicalizer-extractor-path` relocates the saved
+canonicalizer path in memory; checkpoint files are not edited.
+
+The optional historical Table 1 checkpoint in `models/historical_table1/`
+preserves the May 26 depth-2, rank/alpha-8 model used for the original Table 1
+row. It is not the runner's default and must not be used to certify the original
+Table 2 YOCO row. The asset bundle contains evaluation data and checkpoints,
+not the full training corpus.
+
+## Sampling And Cohorts
+
+| Setting | Evaluation units | Evaluation frames per seed |
+| --- | --- | ---: |
+| Table 1, all methods | 20 right-hand bias variants | 216,340 |
+| Table 2, YOCO/Ridge/last-layer/full fine-tuning | 3 right-hand recordings | 4,128 |
+| Table 2, no calibration/LoRA fine-tuning | Legacy 4-recording cohort | 5,315 |
+
+Every run uses seeds 0, 1, and 2. Each unit samples K=4 calibration frames
+from `[0,200)` and evaluates the eligible frames in `[200,T)`. The calibration
+RNG is keyed by seed, HDF5 group name, augmentation index, and K. The runner
+does not truncate sessions or choose a single augmentation.
+
+When no calibration or LoRA is requested for Table 2, the runner invokes
+[`scripts/prepare_table2_legacy_data.py`](../scripts/prepare_table2_legacy_data.py).
+It copies validation groups `1,2,3` and `train_new` group `0` into output groups
+`0,1,2,3`, respectively, under the new result directory. Renaming these groups
+changes the calibration RNG and therefore the experiment. The source files
+remain untouched. This method-specific cohort is historical table behavior,
+not a uniform-cohort comparison. The later five-recording shared-calibration
+dataset is a different experiment.
+
+## Conditioning And Baselines
+
+YOCO sets both calibration and inference seeds explicitly. The latter seeds
+Python, NumPy, and PyTorch before model initialization and conditioning.
+`--conditioning-mode legacy` retains the historical exporter's first-unit
+dropout and sequential LoRA state. `--conditioning-mode eval` disables
+conditioning dropout and selects the separate evaluation-mode references.
+The saved prediction metadata records the mode and inference seed. Do not mix
+the two modes in an output directory.
+
+Ridge uses an identity prior in MANO-theta space, an unpenalized bias, and
+regularization `1e-3`. The fine-tuning baselines use 200 steps, learning rate
+`1e-4`, no weight decay, LoRA rank/alpha 8/8, dropout 0.1, and gates initialized
+at 0. All baselines start from the frozen estimator, not from YOCO.
+
+CPU is the reference runtime for the release YOCO accuracy checks. The original
+fine-tuning baseline references were validated on an H100 with CUDA; CPU dropout
+RNG can yield different scores. Select `--device cuda` for those comparisons.
+GPU reproduction still has to pass verification; selecting CUDA by itself does
+not certify an exact hardware/accuracy match. The paper's adaptation-time
+measurements require one H100 and matching unit counts. CPU timings are not
+comparable. Offline pose evaluation does not need ROS, a glove, a robot URDF,
+or `DEX_URDF_PATH`.
+
+## Verification
+
+Each export writes `seed_<N>/<method>/k4/metrics.json` and `predictions.hdf5`.
+The runner automatically invokes
+[`scripts/verify_paper_reproduction.py`](../scripts/verify_paper_reproduction.py),
+which checks complete units and seeds, calibration/evaluation indices, masked
+joints, source hashes, and metrics recomputed from saved predictions.
+Verification exits nonzero on a mismatch; numerical tolerances are at most
+0.05 mm and 0.0005 AUCJ. Hardware timing is outside its accuracy certificate.
+
+YOCO uses the measured `release` reference profile; baselines use the original
+`paper` profile. The expected release values for both conditioning modes are
+stored in [`release_reference.json`](release_reference.json). Method-specific
+receipts are `verification.json` for YOCO and `verification-<method>.json` for
+baselines. The runner additionally records its command plan, verified assets,
+completed steps, and success/failure in `reproduction_run.json`. A launch,
+dry run, or incomplete receipt is not a successful reproduction.
+
+Pose and AUCJ metrics are averaged over units within each seed, then over seeds.
+Table 2 baseline pinch scores are weighted by valid pinch-event counts within
+each seed; YOCO uses unit means. Pooling frames across recordings gives a
+different result.
+
+| Metric | Definition |
+| --- | --- |
+| MPJPE | Unaligned mean joint error, mm |
+| PA-MPJPE | Procrustes-aligned mean joint error, mm |
+| `tip_mpjpe_mm` | Unaligned error at joints 4, 8, 12, 16, and 20, mm |
+| AUCJ | Normalized PCK area over 0-50 mm, using 101 thresholds |
+| Pinch | Predicted thumb-to-fingertip distance on valid GT pinches below 10 mm |
+
+**Paper correction:** "Tip-PA" in the main paper is a typo for
+**`tip_mpjpe_mm`**, not a Procrustes-aligned fingertip metric. Pinch is not the
+absolute predicted-versus-GT distance error.
+
+The June 3 release checkpoint improves all five measured Table 1 accuracy
+means. For Table 2 it matches the paper's rounded MPJPE (17.75 mm), **not the
+full original YOCO row**. That evaluation-time checkpoint is unavailable;
+later weights from the same training run are not substitutes. Passing the
+`release` profile certifies the selected checkpoint's measured results,
+not exact reproduction of the unavailable original Table 2 snapshot.
+
+Historical receipts are in [`table1_results.json`](table1_results.json),
+[`table2_results.json`](table2_results.json), and
+[`release_results.json`](release_results.json). They are provenance evidence,
+not substitutes for running the current entrypoint.
+
+The current locked uv environment and complete three-seed YOCO runner
+qualification are recorded separately in
+[`uv_release_results.json`](uv_release_results.json).
+
+## Other Experiments
+
+Pair-count experiments require the checkpoint trained for each K in
+`1,2,4,8,16`; changing K on the K=4 model is not the same experiment. Other
+learned calibration methods require their own checkpoints. Table 3 requires
+physical robot trials and cannot be reproduced by offline pose export.

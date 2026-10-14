@@ -29,7 +29,11 @@ def check_payload(path: Path, item: dict) -> None:
 
 
 def download_assets(
-    manifest: dict, output_dir: Path, *, include_historical: bool = False
+    manifest: dict,
+    output_dir: Path,
+    *,
+    include_historical: bool = False,
+    models_only: bool = False,
 ) -> list[Path]:
     if manifest.get("status") != "published":
         raise ValueError("The Hugging Face release has not been published yet.")
@@ -39,6 +43,8 @@ def download_assets(
     root = output_dir.resolve()
     downloaded = []
     for item in manifest["files"]:
+        if models_only and item["repository"] != "models":
+            continue
         if item.get("optional") and not include_historical:
             continue
         repository = manifest["repositories"][item["repository"]]
@@ -88,19 +94,25 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, default=ROOT / "assets")
     parser.add_argument("--include-historical", action="store_true")
+    parser.add_argument(
+        "--models-only",
+        action="store_true",
+        help="Download model files without the prepared evaluation datasets.",
+    )
     args = parser.parse_args()
     try:
         paths = download_assets(
             json.loads(args.manifest.read_text()),
             args.output_dir,
             include_historical=args.include_historical,
+            models_only=args.models_only,
         )
     except HfHubHTTPError as error:
         status = error.response.status_code if error.response is not None else "unknown"
         parser.exit(
             1,
             f"Hub request failed (HTTP {status}); check authentication and access "
-            "to both release repositories.\n",
+            "to the selected release repositories.\n",
         )
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, f"Asset download failed: {error}\n")
