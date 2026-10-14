@@ -4,8 +4,9 @@
 # Set MANO_PATH environment variable (required for MANO forward kinematics)
 # export MANO_PATH="${MANO_PATH:-/path/to/mano_v1_2/models}"
 expname="hyperlora_8_pairs"
-LOAD_PATH=/data/250010203/franklin/project/hand_teleop/Calibration_net/expdata/test_combined_cnn_mlp_leaky_global_mixer/test_combined_cnn_mlp_leaky_global_mixer_20260111_134713/best
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+LOAD_PATH="${LOAD_PATH:-$REPO_ROOT/expdata/test_combined_cnn_mlp_leaky_global_mixer/test_combined_cnn_mlp_leaky_global_mixer_20260111_134713/best}"
 echo "Script directory: $SCRIPT_DIR"
 # DATA_PATH=/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_signed_aug_shape,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_aug_shape.hdf5 \
 DATA_PATH=/data/250010203/franklin/data/hand_keypoint_data/InterHand/train/hdf5/omnihand/InterHand_retargeted_30fps_signed_aug_shape_biased.hdf5,/data/250010203/franklin/data/hand_keypoint_data/vr_collected/hdf5/avp_15min_20251020_000547_aug_shape_biased.hdf5
@@ -33,7 +34,7 @@ python -m calibration_net.policy.train \
     trainer.save_path=$SCRIPT_DIR/../expdata/$expname \
     trainer.calibnet_warmup_epochs=0 \
     trainer.device=cuda \
-    trainer.load_path=$LOAD_PATH \
+    "trainer.load_path=$LOAD_PATH" \
     trainer.loss_type=mse \
     model.iknet_cfg.enabled=False \
     model.type=Combined_CNN_MLP_MIXER \

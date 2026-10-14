@@ -20,7 +20,7 @@ Publish this directory from the `release/yoco-website` branch:
 2. In the repository's **Settings → Pages**, select **Deploy from a branch**.
 3. Select **release/yoco-website** and **/docs**, then save.
 
-The standard project URL is https://franklin-zhang0.github.io/Calibration_net/. The `.nojekyll` file keeps the site static. All CSS, JavaScript, figures, PDFs, and videos are local, and asset paths are relative so the page also works under the repository URL prefix.
+The standard project URL is https://franklin-zhang0.github.io/YOCO/. The `.nojekyll` file keeps the site static. All CSS, JavaScript, figures, PDFs, and videos are local, and asset paths are relative so the page also works under the repository URL prefix.
 
 ## Content and sources
 

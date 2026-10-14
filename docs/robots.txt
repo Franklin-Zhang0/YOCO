@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://franklin-zhang0.github.io/Calibration_net/sitemap.xml
+Sitemap: https://franklin-zhang0.github.io/YOCO/sitemap.xml

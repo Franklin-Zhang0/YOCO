@@ -1,8 +1,8 @@
 # Installation Instructions
 ## Conda Environment Setup
 ```bash
-git clone https://github.com/Franklin-Zhang0/Calibration_net.git
-cd Calibration_net
+git clone --branch release/yoco-website https://github.com/Franklin-Zhang0/YOCO.git
+cd YOCO
 git clone https://github.com/hassony2/manopth.git
 ```
 

@@ -4,7 +4,7 @@
 # Set MANO_PATH environment variable (required for MANO forward kinematics)
 # export MANO_PATH="${MANO_PATH:-/path/to/mano_v1_2/models}"
 expname="hyperlora_8_pairs_nosub_peak3e-5_tipdis-5e-3_mse_0.01_rank8_complexer_more_lora"
-# LOAD_PATH=/data/250010203/franklin/project/hand_teleop/Calibration_net/expdata/test_combined_cnn_mlp_leaky_global_mixer/test_combined_cnn_mlp_leaky_global_mixer_20260111_134713/best
+# LOAD_PATH=expdata/test_combined_cnn_mlp_leaky_global_mixer/test_combined_cnn_mlp_leaky_global_mixer_20260111_134713/best
 LOAD_PATH=expdata/combined_cnn_mlp_leaky_global_mixer_scheduler_composite/combined_cnn_mlp_leaky_global_mixer_scheduler_composite_20260308_205854/best
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 echo "Script directory: $SCRIPT_DIR"

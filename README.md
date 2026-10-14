@@ -4,7 +4,7 @@
 
 Yu Zhang, Yunqi Li, Yushi Du, Yi Ma, Yanchao Yang
 
-[Paper](docs/assets/papers/yoco.pdf) | [Project website](docs/index.html)
+[Paper](docs/assets/papers/yoco.pdf) | [Project website](https://franklin-zhang0.github.io/YOCO/)
 
 YOCO generates session-specific LoRA updates for a frozen MANO hand-pose
 estimator from a few paired raw/reference poses, without test-time fine-tuning.
@@ -21,8 +21,8 @@ Clone the release branch and use Python 3.10 with NumPy 1.23.5 for the legacy
 upstream MANO/chumpy stack:
 
 ```bash
-git clone --branch release/yoco-website https://github.com/Franklin-Zhang0/Calibration_net.git
-cd Calibration_net
+git clone --branch release/yoco-website https://github.com/Franklin-Zhang0/YOCO.git
+cd YOCO
 conda create -n yoco python=3.10 -y
 conda activate yoco
 python -m pip install torch==2.6.0 torchvision==0.21.0 \
@@ -57,6 +57,8 @@ dependency. The paper's adaptation-time measurements require one H100; CPU
 timings are not comparable.
 Offline reproduction does not require ROS, a glove, a robot URDF, or
 `DEX_URDF_PATH`.
+
+The repository is named YOCO; the Python package remains `calibration_net`.
 
 ## Download Models And Data
 
