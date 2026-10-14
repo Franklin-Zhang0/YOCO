@@ -24,6 +24,7 @@ class BaselineConfig:
     lora_dropout: float = 0.1
     lora_use_gates: bool = True
     lora_gate_init: float = 0.0
+    ridge_alpha: float = 1e-3
 
 
 class StaticLoRAAdapter(nn.Module):
@@ -134,6 +135,67 @@ class ResidualLinearBaseline(nn.Module):
         return base_pred + self.residual(x.reshape(x.shape[0], -1))
 
 
+class RidgeCorrectionBaseline(nn.Module):
+    def __init__(self, base_model: nn.Module, output_size: int, alpha: float):
+        super().__init__()
+        if alpha < 0.0:
+            raise ValueError("ridge_alpha must be non-negative")
+        self.base_model = base_model
+        self.output_size = int(output_size)
+        self.alpha = float(alpha)
+        for param in self.base_model.parameters():
+            param.requires_grad = False
+        self.register_buffer("matrix", torch.eye(self.output_size))
+        self.register_buffer("bias", torch.zeros(self.output_size))
+
+    def _base_predict(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():
+            if hasattr(self.base_model, "predict"):
+                return self.base_model.predict(x)
+            result = self.base_model(x)
+            return result["pred_y"] if isinstance(result, dict) else result
+
+    def _apply_ridge(self, base_pred: torch.Tensor) -> torch.Tensor:
+        flat = base_pred.reshape(-1, base_pred.shape[-1])
+        return (flat @ self.matrix + self.bias).reshape(base_pred.shape)
+
+    def fit_closed_form(self, x: torch.Tensor, y: torch.Tensor) -> list[float]:
+        if y.shape[-1] != self.output_size:
+            raise ValueError("Ridge target dimensions do not match output_size")
+        base_pred = self._base_predict(x)
+        if base_pred.shape[-1] != y.shape[-1]:
+            raise ValueError("Ridge source and target dimensions differ")
+        initial_loss = float(F.mse_loss(base_pred, y).detach().cpu())
+        src = base_pred.reshape(-1, base_pred.shape[-1]).detach().double()
+        dst = y.reshape(-1, y.shape[-1]).detach().double()
+        ones = torch.ones((src.shape[0], 1), dtype=src.dtype, device=src.device)
+        design = torch.cat([src, ones], dim=1)
+        regularizer = self.alpha * torch.eye(
+            design.shape[1], dtype=src.dtype, device=src.device
+        )
+        regularizer[-1, -1] = 0.0
+        # Penalize the linear map toward identity; leave the bias unpenalized.
+        prior = torch.zeros(
+            (design.shape[1], dst.shape[1]), dtype=src.dtype, device=src.device
+        )
+        prior[: dst.shape[1]] = torch.eye(
+            dst.shape[1], dtype=src.dtype, device=src.device
+        )
+        system = design.T @ design + regularizer
+        rhs = design.T @ dst + regularizer @ prior
+        try:
+            coeff = torch.linalg.solve(system, rhs)
+        except RuntimeError:
+            coeff = torch.linalg.pinv(system) @ rhs
+        self.matrix.copy_(coeff[:-1].to(dtype=self.matrix.dtype))
+        self.bias.copy_(coeff[-1].to(dtype=self.bias.dtype))
+        corrected = self._apply_ridge(base_pred)
+        return [initial_loss, float(F.mse_loss(corrected, y).detach().cpu())]
+
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        return self._apply_ridge(self._base_predict(x))
+
+
 def configure_baseline_model(
     model: nn.Module,
     method: str,
@@ -145,6 +207,7 @@ def configure_baseline_model(
     lora_dropout: float = 0.1,
     lora_use_gates: bool = True,
     lora_gate_init: float = 0.0,
+    ridge_alpha: float = 1e-3,
 ) -> nn.Module:
     method = method.lower()
     if method == "lora":
@@ -162,6 +225,9 @@ def configure_baseline_model(
         for param in model.parameters():
             param.requires_grad = True
         return model
+
+    if method == "ridge":
+        return RidgeCorrectionBaseline(model, output_size, ridge_alpha)
 
     if method == "residual_linear":
         return ResidualLinearBaseline(model, input_shape=input_shape, output_size=output_size)
@@ -184,7 +250,7 @@ def configure_baseline_model(
 
     raise ValueError(
         f"Unknown baseline method '{method}'. Expected lora, full_ft, "
-        "residual_linear, or last_layer."
+        "residual_linear, last_layer, or ridge."
     )
 
 
@@ -245,6 +311,10 @@ def adapt_model(
     show_progress: bool = False,
     progress_desc: str = "adapt",
 ) -> tuple[list[float], float]:
+    if isinstance(model, RidgeCorrectionBaseline):
+        start = perf_counter()
+        model.eval()
+        return model.fit_closed_form(x, y), perf_counter() - start
     params = [p for p in model.parameters() if p.requires_grad]
     if not params:
         raise RuntimeError("No trainable parameters for baseline adaptation")

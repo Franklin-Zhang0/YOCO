@@ -1,0 +1,119 @@
+{
+  "status": "published",
+  "private": true,
+  "repositories": {
+    "models": {
+      "repo_id": "Franklin0/YOCO",
+      "repo_type": "model",
+      "revision": "d564cd5276cd6203c26389a246ac63f736354d9a"
+    },
+    "datasets": {
+      "repo_id": "Franklin0/YOCO-Reproduction",
+      "repo_type": "dataset",
+      "revision": "a73fb4797c165c3755ee03391c730d1b2cfd7af5"
+    }
+  },
+  "files": [
+    {
+      "repository": "models",
+      "path": "yoco/model.pth",
+      "local_path": "models/yoco/model.pth",
+      "bytes": 1158149788,
+      "sha256": "9375fdc446b0db93cce4989c5c2a0598eeff7ea3cbe176821ada305a38ff63a4",
+      "optional": false
+    },
+    {
+      "repository": "models",
+      "path": "yoco/config.yaml",
+      "local_path": "models/yoco/config.yaml",
+      "bytes": 4960,
+      "sha256": "03a8012de74d7f4489f3b73c8fec984d46d2e1654781ac5e7ca3f8b866438262",
+      "optional": false
+    },
+    {
+      "repository": "models",
+      "path": "yoco/norm_stats.pkl",
+      "local_path": "models/yoco/norm_stats.pkl",
+      "bytes": 938,
+      "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e",
+      "optional": false
+    },
+    {
+      "repository": "models",
+      "path": "frozen_estimator/model.pth",
+      "local_path": "models/frozen_estimator/model.pth",
+      "bytes": 9521362,
+      "sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2",
+      "optional": false
+    },
+    {
+      "repository": "models",
+      "path": "frozen_estimator/config.yaml",
+      "local_path": "models/frozen_estimator/config.yaml",
+      "bytes": 3279,
+      "sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e",
+      "optional": false
+    },
+    {
+      "repository": "models",
+      "path": "frozen_estimator/norm_stats.pkl",
+      "local_path": "models/frozen_estimator/norm_stats.pkl",
+      "bytes": 938,
+      "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e",
+      "optional": false
+    },
+    {
+      "repository": "models",
+      "path": "historical_table1/model.pth",
+      "local_path": "models/historical_table1/model.pth",
+      "bytes": 357988821,
+      "sha256": "bc85bc13c71c51a36ba930a7a60ebd15966510015985e9546a709f0d8b2362e2",
+      "optional": true
+    },
+    {
+      "repository": "models",
+      "path": "historical_table1/config.yaml",
+      "local_path": "models/historical_table1/config.yaml",
+      "bytes": 4726,
+      "sha256": "0c035f0f80b530552d1cf0b4f3d886a12f2dc693109d986ae3b71f511e9f6155",
+      "optional": true
+    },
+    {
+      "repository": "models",
+      "path": "historical_table1/norm_stats.pkl",
+      "local_path": "models/historical_table1/norm_stats.pkl",
+      "bytes": 938,
+      "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e",
+      "optional": true
+    },
+    {
+      "repository": "datasets",
+      "path": "interhand/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5",
+      "local_path": "datasets/interhand/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5",
+      "bytes": 209115976,
+      "sha256": "b9dd84f8bdce4caa60c59e7bf070bd55724969069185a0074813887b26b9fa29",
+      "optional": false
+    },
+    {
+      "repository": "datasets",
+      "path": "avp/aligned_avp_glove_val.hdf5",
+      "local_path": "datasets/avp/aligned_avp_glove_val.hdf5",
+      "bytes": 8148896,
+      "sha256": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937",
+      "optional": false
+    },
+    {
+      "repository": "datasets",
+      "path": "avp/aligned_avp_glove_train_new.hdf5",
+      "local_path": "datasets/avp/aligned_avp_glove_train_new.hdf5",
+      "bytes": 8042816,
+      "sha256": "bd2163402dae2fbeb362fea9483f2b7dad576f1f7f8ba5cc32734ce745e480d5",
+      "optional": false
+    }
+  ],
+  "collection": {
+    "slug": "Franklin0/yoco-reproduction-6acf4f2f1580be300065ce25",
+    "url": "https://huggingface.co/collections/Franklin0/yoco-reproduction-6acf4f2f1580be300065ce25",
+    "private": true
+  }
+}

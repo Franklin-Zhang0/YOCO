@@ -1,0 +1,53 @@
+{
+  "description": "June 3 depth-4 rank/alpha-32 K=4 release checkpoint; these are measured release scores, not replacements for the published paper row.",
+  "device": "cpu",
+  "calibration_seeds": [0, 1, 2],
+  "inference_seeds": [0, 1, 2],
+  "checkpoint_sha256": "9375fdc446b0db93cce4989c5c2a0598eeff7ea3cbe176821ada305a38ff63a4",
+  "checkpoint_config_sha256": "03a8012de74d7f4489f3b73c8fec984d46d2e1654781ac5e7ca3f8b866438262",
+  "base_checkpoint_sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2",
+  "base_config_sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e",
+  "normalization_sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e",
+  "dataset_sha256": {
+    "interhand": "b9dd84f8bdce4caa60c59e7bf070bd55724969069185a0074813887b26b9fa29",
+    "avp": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937"
+  },
+  "references": {
+    "interhand": {
+      "legacy": {
+        "units": 20,
+        "mpjpe_mm": 15.346553611258665,
+        "pa_mpjpe_mm": 10.179063933901489,
+        "tip_mpjpe_mm": 22.583362041041255,
+        "aucj": 0.7065996769037785,
+        "pinch_distance_l2_mm": 34.6303545559446
+      },
+      "eval": {
+        "units": 20,
+        "mpjpe_mm": 15.359531699990233,
+        "pa_mpjpe_mm": 10.156050301156938,
+        "tip_mpjpe_mm": 22.536284460996587,
+        "aucj": 0.7064148986829456,
+        "pinch_distance_l2_mm": 34.330097089211144
+      }
+    },
+    "avp": {
+      "legacy": {
+        "units": 3,
+        "mpjpe_mm": 17.75466464459896,
+        "pa_mpjpe_mm": 13.280289558072885,
+        "tip_mpjpe_mm": 31.182868199215992,
+        "aucj": 0.6564640893968315,
+        "pinch_distance_l2_mm": 41.63664682871765
+      },
+      "eval": {
+        "units": 3,
+        "mpjpe_mm": 17.863090460499127,
+        "pa_mpjpe_mm": 13.240556646552351,
+        "tip_mpjpe_mm": 31.19077554179562,
+        "aucj": 0.6542527022221232,
+        "pinch_distance_l2_mm": 41.149383617771996
+      }
+    }
+  }
+}

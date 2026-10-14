@@ -123,7 +123,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--method",
         required=True,
-        choices=["lora", "full_ft", "residual_linear", "last_layer"],
+        choices=["lora", "full_ft", "residual_linear", "last_layer", "ridge"],
     )
     parser.add_argument(
         "--num-calib-actions",
@@ -138,6 +138,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--ridge-alpha", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default=None)
     parser.add_argument(
@@ -731,6 +732,7 @@ def run_session(
         lora_dropout=args.lora_dropout,
         lora_use_gates=args.lora_use_gates,
         lora_gate_init=args.lora_gate_init,
+        ridge_alpha=args.ridge_alpha,
     )
 
     torch.manual_seed(args.seed)
@@ -745,6 +747,7 @@ def run_session(
         lora_dropout=baseline.lora_dropout,
         lora_use_gates=baseline.lora_use_gates,
         lora_gate_init=baseline.lora_gate_init,
+        ridge_alpha=baseline.ridge_alpha,
     ).to(device)
 
     x_calib = to_tensor(x_proc[calib_idx], device)
@@ -792,6 +795,7 @@ def run_session(
         "lora_dropout": float(args.lora_dropout),
         "lora_use_gates": bool(args.lora_use_gates),
         "lora_gate_init": float(args.lora_gate_init),
+        "ridge_alpha": float(args.ridge_alpha),
         "target_modules": " ".join(args.target_modules),
         "trainable_params": int(trainable_parameter_count(adapted_model)),
         "adaptation_time_sec": float(adaptation_time),

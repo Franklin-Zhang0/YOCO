@@ -1,0 +1,765 @@
+{
+  "scope": "Table 2 offline pose accuracy; identical adaptation timing is not certified",
+  "branch": "release/yoco-website",
+  "commit": "b1280dd01b11552c78377f00388e98b337ccba9d",
+  "uncommitted_changes": true,
+  "full_table_accuracy_passed": false,
+  "verified_baseline_rows": 5,
+  "baseline_accuracy_checks_passed": 25,
+  "metric_label_correction": "Tip-PA in the main paper is a typo for tip_mpjpe_mm (unaligned fingertip error).",
+  "protocol": {
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "k": 4,
+    "calibration_prefix_frames": 200,
+    "evaluation": "remaining frames after index 200",
+    "right_hand_only": true,
+    "pose_and_aucj_aggregation": "recording mean within seed, then seed mean",
+    "baseline_pinch_aggregation": "pinch-event weighted mean within seed, then seed mean",
+    "yoco_pinch_aggregation": "recording mean within seed, then seed mean",
+    "cohort_warning": "No-calibration and LoRA use four recordings; other rows use three. This reproduces the paper but is not a uniform-cohort comparison."
+  },
+  "rows": {
+    "ridge": {
+      "accuracy_passed": true,
+      "mean": {
+        "mpjpe_mm": 24.711753966079815,
+        "pa_mpjpe_mm": 19.20898196597894,
+        "tip_mpjpe_mm": 45.493229395813415,
+        "aucj": 0.5728383440318353,
+        "pinch_distance_l2_mm": 57.53540972893911,
+        "pinch_frame_pairs": 157
+      },
+      "reference": {
+        "units": 3,
+        "mpjpe_mm": 24.713979206151436,
+        "pa_mpjpe_mm": 19.210771339280246,
+        "tip_mpjpe_mm": 45.49791229267915,
+        "aucj": 0.5729476551997741,
+        "pinch_distance_l2_mm": 57.539183377523585
+      },
+      "delta": {
+        "mpjpe_mm": -0.0022252400716205045,
+        "pa_mpjpe_mm": -0.0017893733013067958,
+        "tip_mpjpe_mm": -0.004682896865737973,
+        "aucj": -0.00010931116793877482,
+        "pinch_distance_l2_mm": -0.0037736485844774847
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 21.59601015349229,
+            "pa_mpjpe_mm": 17.50223400692145,
+            "tip_mpjpe_mm": 40.35940021276474,
+            "aucj": 0.6121596911788109,
+            "pinch_distance_l2_mm": 61.921193043897105,
+            "pinch_frame_pairs": 157
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 27.586791043480236,
+            "pa_mpjpe_mm": 20.99812465409438,
+            "tip_mpjpe_mm": 50.51876728733381,
+            "aucj": 0.5336855525613402,
+            "pinch_distance_l2_mm": 47.38223815723589,
+            "pinch_frame_pairs": 157
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 24.952460701266926,
+            "pa_mpjpe_mm": 19.126587236920994,
+            "tip_mpjpe_mm": 45.60152068734169,
+            "aucj": 0.5726697883553546,
+            "pinch_distance_l2_mm": 63.30279798568434,
+            "pinch_frame_pairs": 157
+          }
+        }
+      ],
+      "aggregation": {
+        "pose_and_aucj": "recording mean within seed, then seed mean",
+        "pinch": "pinch-event weighted mean within seed, then seed mean"
+      },
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      },
+      "receipt": "eval/results/paper-reproduction-20261013-h100/avp/verification-ridge.json",
+      "archived_protocol_checked": true
+    },
+    "last_layer": {
+      "accuracy_passed": true,
+      "mean": {
+        "mpjpe_mm": 18.85736009313,
+        "pa_mpjpe_mm": 14.672608528700138,
+        "tip_mpjpe_mm": 33.88184433182081,
+        "aucj": 0.6431581274132405,
+        "pinch_distance_l2_mm": 43.626554201616095,
+        "pinch_frame_pairs": 157
+      },
+      "reference": {
+        "units": 3,
+        "mpjpe_mm": 18.857674673199654,
+        "pa_mpjpe_mm": 14.672527477003177,
+        "tip_mpjpe_mm": 33.88295674489604,
+        "aucj": 0.6432835832679212,
+        "pinch_distance_l2_mm": 43.63226699158391
+      },
+      "delta": {
+        "mpjpe_mm": -0.00031458006965223717,
+        "pa_mpjpe_mm": 0.00008105169696115411,
+        "tip_mpjpe_mm": -0.001112413075233576,
+        "aucj": -0.00012545585468071163,
+        "pinch_distance_l2_mm": -0.005712789967816434
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 18.4670090675354,
+            "pa_mpjpe_mm": 14.484703540802002,
+            "tip_mpjpe_mm": 33.64519029855728,
+            "aucj": 0.6506648431670158,
+            "pinch_distance_l2_mm": 48.93193231570493,
+            "pinch_frame_pairs": 157
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.41805270810922,
+            "pa_mpjpe_mm": 15.083795102934042,
+            "tip_mpjpe_mm": 35.44404357671738,
+            "aucj": 0.6343813464371343,
+            "pinch_distance_l2_mm": 37.41356804720156,
+            "pinch_frame_pairs": 157
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 18.687018503745396,
+            "pa_mpjpe_mm": 14.449326942364374,
+            "tip_mpjpe_mm": 32.55629912018776,
+            "aucj": 0.6444281926355716,
+            "pinch_distance_l2_mm": 44.53416224194181,
+            "pinch_frame_pairs": 157
+          }
+        }
+      ],
+      "aggregation": {
+        "pose_and_aucj": "recording mean within seed, then seed mean",
+        "pinch": "pinch-event weighted mean within seed, then seed mean"
+      },
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      },
+      "receipt": "eval/results/paper-reproduction-20261013-h100/avp/verification-last_layer.json",
+      "archived_protocol_checked": true
+    },
+    "full_ft": {
+      "accuracy_passed": true,
+      "mean": {
+        "mpjpe_mm": 19.990287307235928,
+        "pa_mpjpe_mm": 15.732335133685005,
+        "tip_mpjpe_mm": 36.64490787519349,
+        "aucj": 0.6299538334454019,
+        "pinch_distance_l2_mm": 49.894592690113505,
+        "pinch_frame_pairs": 157
+      },
+      "reference": {
+        "units": 3,
+        "mpjpe_mm": 19.99667742186122,
+        "pa_mpjpe_mm": 15.730948108961284,
+        "tip_mpjpe_mm": 36.67234898441368,
+        "aucj": 0.6299805388065574,
+        "pinch_distance_l2_mm": 49.88756491120454
+      },
+      "delta": {
+        "mpjpe_mm": -0.006390114625293819,
+        "pa_mpjpe_mm": 0.0013870247237210975,
+        "tip_mpjpe_mm": -0.027441109220191606,
+        "aucj": -0.000026705361155454632,
+        "pinch_distance_l2_mm": 0.0070277789089630005
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.007045154770214,
+            "pa_mpjpe_mm": 15.197414594391981,
+            "tip_mpjpe_mm": 35.387309888998665,
+            "aucj": 0.6459763493547376,
+            "pinch_distance_l2_mm": 57.11486967050346,
+            "pinch_frame_pairs": 157
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 21.127189820011456,
+            "pa_mpjpe_mm": 16.523115647335846,
+            "tip_mpjpe_mm": 38.79263624548912,
+            "aucj": 0.6141329846069733,
+            "pinch_distance_l2_mm": 44.761456143324544,
+            "pinch_frame_pairs": 157
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 3,
+          "num_eval_frames": 4128,
+          "mean": {
+            "mpjpe_mm": 19.836626946926117,
+            "pa_mpjpe_mm": 15.476475159327189,
+            "tip_mpjpe_mm": 35.75477749109268,
+            "aucj": 0.6297521663744946,
+            "pinch_distance_l2_mm": 47.80745225651249,
+            "pinch_frame_pairs": 157
+          }
+        }
+      ],
+      "aggregation": {
+        "pose_and_aucj": "recording mean within seed, then seed mean",
+        "pinch": "pinch-event weighted mean within seed, then seed mean"
+      },
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      },
+      "receipt": "eval/results/paper-reproduction-20261013-h100/avp/verification-full_ft.json",
+      "archived_protocol_checked": true
+    },
+    "lora": {
+      "accuracy_passed": true,
+      "mean": {
+        "mpjpe_mm": 18.717731814831495,
+        "pa_mpjpe_mm": 13.936964251721898,
+        "tip_mpjpe_mm": 33.232747577130795,
+        "aucj": 0.6480126597150079,
+        "pinch_distance_l2_mm": 53.99708776762992,
+        "pinch_frame_pairs": 173.25
+      },
+      "reference": {
+        "units": 4,
+        "mpjpe_mm": 18.716793972998857,
+        "pa_mpjpe_mm": 13.936204027363408,
+        "tip_mpjpe_mm": 33.22961072747906,
+        "aucj": 0.6481532503579448,
+        "pinch_distance_l2_mm": 54.00893179777725
+      },
+      "delta": {
+        "mpjpe_mm": 0.0009378418326377869,
+        "pa_mpjpe_mm": 0.0007602243584905466,
+        "tip_mpjpe_mm": 0.0031368496517316657,
+        "aucj": -0.00014059064293692192,
+        "pinch_distance_l2_mm": -0.011844030147329931
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 4,
+          "num_eval_frames": 5315,
+          "mean": {
+            "mpjpe_mm": 19.908147398382425,
+            "pa_mpjpe_mm": 14.691013377159834,
+            "tip_mpjpe_mm": 36.207824014127254,
+            "aucj": 0.6289528779194167,
+            "pinch_distance_l2_mm": 56.257166247347214,
+            "pinch_frame_pairs": 173.25
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 4,
+          "num_eval_frames": 5315,
+          "mean": {
+            "mpjpe_mm": 18.15355336293578,
+            "pa_mpjpe_mm": 13.517746003344655,
+            "tip_mpjpe_mm": 31.748306937515736,
+            "aucj": 0.6570303645549108,
+            "pinch_distance_l2_mm": 51.52578388560902,
+            "pinch_frame_pairs": 173.25
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 4,
+          "num_eval_frames": 5315,
+          "mean": {
+            "mpjpe_mm": 18.09149468317628,
+            "pa_mpjpe_mm": 13.602133374661207,
+            "tip_mpjpe_mm": 31.742111779749393,
+            "aucj": 0.658054736670696,
+            "pinch_distance_l2_mm": 54.208313169933504,
+            "pinch_frame_pairs": 173.25
+          }
+        }
+      ],
+      "aggregation": {
+        "pose_and_aucj": "recording mean within seed, then seed mean",
+        "pinch": "pinch-event weighted mean within seed, then seed mean"
+      },
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      },
+      "receipt": "eval/results/paper-reproduction-20261013-legacy/avp/verification-lora.json",
+      "archived_protocol_checked": true
+    },
+    "best_world_hand_joints_biased": {
+      "accuracy_passed": true,
+      "mean": {
+        "mpjpe_mm": 20.487140864133835,
+        "pa_mpjpe_mm": 14.630196848884225,
+        "tip_mpjpe_mm": 36.21952515095472,
+        "aucj": 0.6101411029055555,
+        "pinch_distance_l2_mm": 51.382143937148065,
+        "pinch_frame_pairs": 173.25
+      },
+      "reference": {
+        "units": 4,
+        "mpjpe_mm": 20.48727124929428,
+        "pa_mpjpe_mm": 14.629777520895004,
+        "tip_mpjpe_mm": 36.219934932887554,
+        "aucj": 0.6101386594008282,
+        "pinch_distance_l2_mm": 51.38509364161657
+      },
+      "delta": {
+        "mpjpe_mm": -0.000130385160446167,
+        "pa_mpjpe_mm": 0.0004193279892206192,
+        "tip_mpjpe_mm": -0.00040978193283081055,
+        "aucj": 0.0000024435047272231003,
+        "pinch_distance_l2_mm": -0.0029497044685058427
+      },
+      "per_seed": [
+        {
+          "seed": 0,
+          "num_units": 4,
+          "num_eval_frames": 5315,
+          "mean": {
+            "mpjpe_mm": 20.487140864133835,
+            "pa_mpjpe_mm": 14.630196848884225,
+            "tip_mpjpe_mm": 36.21952515095472,
+            "aucj": 0.6101411029055555,
+            "pinch_distance_l2_mm": 51.38214393714806,
+            "pinch_frame_pairs": 173.25
+          }
+        },
+        {
+          "seed": 1,
+          "num_units": 4,
+          "num_eval_frames": 5315,
+          "mean": {
+            "mpjpe_mm": 20.487140864133835,
+            "pa_mpjpe_mm": 14.630196848884225,
+            "tip_mpjpe_mm": 36.21952515095472,
+            "aucj": 0.6101411029055555,
+            "pinch_distance_l2_mm": 51.38214393714806,
+            "pinch_frame_pairs": 173.25
+          }
+        },
+        {
+          "seed": 2,
+          "num_units": 4,
+          "num_eval_frames": 5315,
+          "mean": {
+            "mpjpe_mm": 20.487140864133835,
+            "pa_mpjpe_mm": 14.630196848884225,
+            "tip_mpjpe_mm": 36.21952515095472,
+            "aucj": 0.6101411029055555,
+            "pinch_distance_l2_mm": 51.38214393714806,
+            "pinch_frame_pairs": 173.25
+          }
+        }
+      ],
+      "aggregation": {
+        "pose_and_aucj": "recording mean within seed, then seed mean",
+        "pinch": "pinch-event weighted mean within seed, then seed mean"
+      },
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      },
+      "receipt": "eval/results/paper-reproduction-20261013-legacy/avp/verification-best_world_hand_joints_biased.json",
+      "archived_protocol_checked": true
+    }
+  },
+  "yoco": {
+    "accuracy_passed": false,
+    "historical_reference": {
+      "units": 3,
+      "mpjpe_mm": 17.751970224910313,
+      "pa_mpjpe_mm": 13.140390316645304,
+      "tip_mpjpe_mm": 31.73461080425315,
+      "aucj": 0.6572197596585589,
+      "pinch_distance_l2_mm": 42.786240577697754
+    },
+    "historical_model_path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/best",
+    "snapshot_inference": {
+      "epoch": 4,
+      "step": 5956,
+      "basis": "Archived evaluation completed at 2026-05-29 04:08 UTC, between validation/save at 04:01 (epoch 4) and 04:35 (epoch 5). Later validation improvements overwrite best/.",
+      "historical_payload_hash_recorded": false
+    },
+    "checkpoint_search": {
+      "root": "/franklin/franklin/YOCO",
+      "model_pth_files_examined": 569,
+      "matching_depth4_rank8_complete_directories": [
+        "best",
+        "latest"
+      ],
+      "earlier_relaunch_snapshot_found": false,
+      "incomplete_precursor_error": "unexpected EOF, expected 392178 more bytes"
+    },
+    "available_best_legacy_export": {
+      "accuracy_passed": false,
+      "mean": {
+        "mpjpe_mm": 17.84835673040814,
+        "pa_mpjpe_mm": 13.32894940343168,
+        "tip_mpjpe_mm": 32.0176070349084,
+        "aucj": 0.6556460323044677,
+        "pinch_distance_l2_mm": 42.07444805569119,
+        "pinch_frame_pairs": 157
+      },
+      "delta": {
+        "mpjpe_mm": 0.09638650549782568,
+        "pa_mpjpe_mm": 0.1885590867863769,
+        "tip_mpjpe_mm": 0.28299623065525026,
+        "aucj": -0.0015737273540912255,
+        "pinch_distance_l2_mm": -0.7117925220065615
+      },
+      "issues": [
+        "mpjpe_mm: difference 0.096387 exceeds tolerance",
+        "pa_mpjpe_mm: difference 0.188559 exceeds tolerance",
+        "tip_mpjpe_mm: difference 0.282996 exceeds tolerance",
+        "aucj: difference -0.001574 exceeds tolerance",
+        "pinch_distance_l2_mm: difference -0.711793 exceeds tolerance"
+      ],
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      },
+      "assets": [
+        {
+          "path": "/hand_keypoint_data/avp_glove_aligned/aligned_avp_glove_val.hdf5",
+          "bytes": 8148896,
+          "sha256": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937"
+        },
+        {
+          "path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/best/model.pth",
+          "bytes": 413963362,
+          "sha256": "4b6abcea7627bf8b99c6626d083bc326b8f89a17aff1aada0c8010961d1e6c5c"
+        },
+        {
+          "path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/best/config.yaml",
+          "bytes": 4795,
+          "sha256": "084c832304edab49d70dec4ee86f2fbd4c08e3812381d0d1735b0e44f0b4a37a"
+        },
+        {
+          "path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/best/norm_stats.pkl",
+          "bytes": 938,
+          "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+        },
+        {
+          "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/model.pth",
+          "bytes": 9521362,
+          "sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2"
+        },
+        {
+          "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/config.yaml",
+          "bytes": 3279,
+          "sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e"
+        },
+        {
+          "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/norm_stats.pkl",
+          "bytes": 938,
+          "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+        }
+      ]
+    },
+    "available_best_eval_reset_diagnostic": {
+      "accuracy_passed": false,
+      "mean": {
+        "mpjpe_mm": 17.92172321842776,
+        "pa_mpjpe_mm": 13.23829549882147,
+        "tip_mpjpe_mm": 32.149700861838134,
+        "aucj": 0.6543082780756254,
+        "pinch_distance_l2_mm": 43.83669408162435,
+        "pinch_frame_pairs": 157
+      },
+      "delta": {
+        "mpjpe_mm": 0.16975299351744866,
+        "pa_mpjpe_mm": 0.0979051821761665,
+        "tip_mpjpe_mm": 0.4150900575849832,
+        "aucj": -0.0029114815829335283,
+        "pinch_distance_l2_mm": 1.0504535039265974
+      },
+      "issues": [
+        "mpjpe_mm: difference 0.169753 exceeds tolerance",
+        "pa_mpjpe_mm: difference 0.097905 exceeds tolerance",
+        "tip_mpjpe_mm: difference 0.415090 exceeds tolerance",
+        "aucj: difference -0.002911 exceeds tolerance",
+        "pinch_distance_l2_mm: difference 1.050454 exceeds tolerance"
+      ],
+      "runtime": {
+        "python": "3.12.12",
+        "torch": "2.6.0+cu124",
+        "numpy": "2.3.5",
+        "h5py": "3.15.1"
+      }
+    },
+    "available_latest_eval_diagnostic": {
+      "accuracy_passed": false,
+      "mean": {
+        "mpjpe_mm": 18.11122169925107,
+        "pa_mpjpe_mm": 13.188577257096767,
+        "tip_mpjpe_mm": 32.459152241547905,
+        "aucj": 0.6504418905599713,
+        "pinch_distance_l2_mm": 43.3353293273184,
+        "pinch_frame_pairs": 157
+      },
+      "delta": {
+        "mpjpe_mm": 0.3592514743407591,
+        "pa_mpjpe_mm": 0.048186940451463656,
+        "tip_mpjpe_mm": 0.7245414372947536,
+        "aucj": -0.0067778690985876855,
+        "pinch_distance_l2_mm": 0.549088749620644
+      },
+      "issues": [
+        "mpjpe_mm: difference 0.359251 exceeds tolerance",
+        "tip_mpjpe_mm: difference 0.724541 exceeds tolerance",
+        "aucj: difference -0.006778 exceeds tolerance",
+        "pinch_distance_l2_mm: difference 0.549089 exceeds tolerance"
+      ],
+      "runtime": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cpu",
+        "numpy": "1.23.5",
+        "h5py": "3.16.0"
+      },
+      "assets": [
+        {
+          "path": "/hand_keypoint_data/avp_glove_aligned/aligned_avp_glove_val.hdf5",
+          "bytes": 8148896,
+          "sha256": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937"
+        },
+        {
+          "path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/latest/model.pth",
+          "bytes": 413963362,
+          "sha256": "f93d33537b0ebdf80e74ddc4fdd900b7b0ce6e5be6e6c1c9d586229dd84271fd"
+        },
+        {
+          "path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/latest/config.yaml",
+          "bytes": 4795,
+          "sha256": "084c832304edab49d70dec4ee86f2fbd4c08e3812381d0d1735b0e44f0b4a37a"
+        },
+        {
+          "path": "/franklin/franklin/YOCO/expdata/fair_hyperlora_rounds/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/latest/norm_stats.pkl",
+          "bytes": 938,
+          "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+        },
+        {
+          "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/model.pth",
+          "bytes": 9521362,
+          "sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2"
+        },
+        {
+          "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/config.yaml",
+          "bytes": 3279,
+          "sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e"
+        },
+        {
+          "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/norm_stats.pkl",
+          "bytes": 938,
+          "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+        }
+      ]
+    },
+    "checkpoint_load": {
+      "missing_keys": [],
+      "unexpected_keys": []
+    },
+    "conditioning": {
+      "default": "eval",
+      "paper_compatibility_flag": "--legacy-conditioning",
+      "calibration_seed_does_not_seed_legacy_dropout": true,
+      "repeat_test_eval_theta_max_delta": 0,
+      "repeat_test_legacy_theta_max_delta": 0.08093249052762985,
+      "legacy_fixed_rng_compatibility_test": "Passed: pred_theta, pred_joints, calibration indices, and evaluation indices match the original exporter bitwise under fixed Torch RNG."
+    },
+    "available_best_default_eval": {
+      "accuracy_passed": false,
+      "mean": {
+        "mpjpe_mm": 18.116960715916424,
+        "pa_mpjpe_mm": 13.189632135132948,
+        "tip_mpjpe_mm": 32.459985257850754,
+        "aucj": 0.6503829642641793,
+        "pinch_distance_l2_mm": 43.059718484679856,
+        "pinch_frame_pairs": 157
+      },
+      "delta": {
+        "mpjpe_mm": 0.36499049100611103,
+        "pa_mpjpe_mm": 0.049241818487644196,
+        "tip_mpjpe_mm": 0.7253744535976026,
+        "aucj": -0.006836795394379647,
+        "pinch_distance_l2_mm": 0.2734779069821016
+      },
+      "issues": [
+        "mpjpe_mm: difference 0.364990 exceeds tolerance",
+        "tip_mpjpe_mm: difference 0.725374 exceeds tolerance",
+        "aucj: difference -0.006837 exceeds tolerance",
+        "pinch_distance_l2_mm: difference 0.273478 exceeds tolerance"
+      ],
+      "runtime": {
+        "python": "3.10.12",
+        "torch": "2.6.0+cpu",
+        "numpy": "1.23.5",
+        "h5py": "3.16.0"
+      }
+    }
+  },
+  "h100_jobs": [
+    {
+      "id": "pt-prghni87",
+      "state": "SUCCEEDED",
+      "worker_phase": "Succeeded",
+      "methods": [
+        "ridge",
+        "last_layer",
+        "full_ft"
+      ],
+      "marker": "eval/results/paper-reproduction-20261013-h100/DONE.txt"
+    },
+    {
+      "id": "pt-icntpjhn",
+      "state": "SUCCEEDED",
+      "worker_phase": "Succeeded",
+      "methods": [
+        "lora",
+        "best_world_hand_joints_biased"
+      ],
+      "marker": "eval/results/paper-reproduction-20261013-legacy/DONE.txt"
+    }
+  ],
+  "mount_proof": {
+    "dataset": {
+      "type": "PV_AOSS",
+      "name": "hand_keypoint_data",
+      "mount_path": "/hand_keypoint_data"
+    },
+    "workspace": {
+      "type": "PV_AFS",
+      "id": "01995892-d478-76d8-aec7-13fd8284477e",
+      "mount_path": "/data"
+    }
+  },
+  "initial_attempt": {
+    "job_id": "pt-yblsuivf",
+    "state": "FAILED",
+    "stage": "before evaluation",
+    "cause": "OpenCV import lacked libGL.so.1",
+    "resolution": "Retried with the existing GL runtime path. Clean setup uses headless OpenCV instead."
+  },
+  "clean_setup": {
+    "python": "3.10.12",
+    "torch": "2.6.0+cpu",
+    "numpy": "1.23.5",
+    "h5py": "3.16.0",
+    "opencv": "4.8.1",
+    "chumpy": "0.70",
+    "manopth_commit": "4f1dcad1201ff1bfca6e065a85f0e3456e1aa32b",
+    "manopth_local_patches": false,
+    "pip_check_passed": true,
+    "table2_no_calibration_accuracy_passed": true,
+    "receipt": "eval/results/paper-reproduction-20261013-py310/avp/verification-best_world_hand_joints_biased.json"
+  },
+  "legacy_dataset_provenance": {
+    "purpose": "Table 2 no-calibration and LoRA compatibility cohort",
+    "inputs": [
+      {
+        "path": "/hand_keypoint_data/avp_glove_aligned/aligned_avp_glove_val.hdf5",
+        "bytes": 8148896,
+        "sha256": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937"
+      },
+      {
+        "path": "/hand_keypoint_data/avp_glove_aligned/aligned_avp_glove_train_new.hdf5",
+        "bytes": 8042816,
+        "sha256": "bd2163402dae2fbeb362fea9483f2b7dad576f1f7f8ba5cc32734ce745e480d5"
+      }
+    ],
+    "mapping": [
+      {
+        "output_group": "0",
+        "source": "val",
+        "source_group": "1",
+        "frames": 1853
+      },
+      {
+        "output_group": "1",
+        "source": "val",
+        "source_group": "2",
+        "frames": 1471
+      },
+      {
+        "output_group": "2",
+        "source": "val",
+        "source_group": "3",
+        "frames": 1404
+      },
+      {
+        "output_group": "3",
+        "source": "train_new",
+        "source_group": "0",
+        "frames": 1387
+      }
+    ],
+    "output": {
+      "path": "/data/250010203/franklin/project/hand_teleop/Calibration_net/release-reproduction/eval/results/paper-reproduction-20261013-legacy/assets/avp_glove_table2_legacy.hdf5",
+      "bytes": 8350072,
+      "sha256": "5617fab38cf865465986fe447b227be82f406bd88e766777d05cf37b17630e8b"
+    }
+  },
+  "source_sha256": {
+    "README.md": "bc05afc84ca1123c6a6847228291a4faa0d978df2eb317b9eccadce405228e8b",
+    "scripts/prepare_table2_legacy_data.py": "d907fb75a54cd178f0a986e3ffe9a835e0851a55b4ebdcf94deda18b4e2a830d",
+    "scripts/verify_paper_reproduction.py": "3ed201f34cc00db1d1d8b6e2dc0106b6759f906636327707b3e6543032a07839",
+    "scripts/export_hypernet_finetune_predictions.py": "a5cf499cab1fa4e892009d7f84c7825de57a8709b25b433a55bc82ae1c8ab3bf"
+  }
+}

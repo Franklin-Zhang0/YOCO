@@ -1,0 +1,247 @@
+{
+  "source_commit": "b1280dd01b11552c78377f00388e98b337ccba9d",
+  "branch": "release/yoco-website",
+  "date": "2026-10-12",
+  "scope": "All six Table 1 accuracy rows, not bitwise equality or exact timing equality",
+  "h100_job": {
+    "id": "pt-qocbk56f",
+    "state": "SUCCEEDED",
+    "workspace": "p15-dexterous-eye-hand-coordina",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "data_mount": {
+      "type": "PV_AOSS",
+      "bucket": "hand_keypoint_data",
+      "path": "/hand_keypoint_data"
+    }
+  },
+  "protocol": {
+    "K": 4,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "calibration_frames": "[0,200)",
+    "evaluation_frames": "[200,T)",
+    "side": "right",
+    "bias_variants": 20,
+    "betas": "group",
+    "tolerance_mm": 0.05,
+    "tolerance_aucj": 0.0005
+  },
+  "rows": [
+    {
+      "method": "best_world_hand_joints_biased",
+      "device": "H100",
+      "mean": {
+        "mpjpe_mm": 21.520538814365864,
+        "pa_mpjpe_mm": 16.550588700920343,
+        "tip_mpjpe_mm": 37.14782511815429,
+        "aucj": 0.6105279292836414,
+        "pinch_distance_l2_mm": 48.488594245910654,
+        "pinch_frame_pairs": 160.0
+      },
+      "reference": {
+        "units": 20,
+        "mpjpe_mm": 21.520181838423014,
+        "pa_mpjpe_mm": 16.55017198063433,
+        "tip_mpjpe_mm": 37.147013656795025,
+        "aucj": 0.6105334799302076,
+        "pinch_distance_l2_mm": 48.49084075540304
+      },
+      "delta": {
+        "mpjpe_mm": 0.0003569759428501129,
+        "pa_mpjpe_mm": 0.00041672028601169586,
+        "tip_mpjpe_mm": 0.0008114613592624664,
+        "aucj": -5.550646566154782e-06,
+        "pinch_distance_l2_mm": -0.0022465094923873608
+      },
+      "receipt": "eval/results/paper-reproduction-20261012-h100/interhand/verification-best_world_hand_joints_biased.json",
+      "units_per_seed": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "method": "ridge",
+      "device": "CPU",
+      "mean": {
+        "mpjpe_mm": 17.620009028663237,
+        "pa_mpjpe_mm": 13.000295295690497,
+        "tip_mpjpe_mm": 28.276521619409323,
+        "aucj": 0.6763634077456375,
+        "pinch_distance_l2_mm": 45.35532964070638,
+        "pinch_frame_pairs": 160.0
+      },
+      "reference": {
+        "units": 20,
+        "mpjpe_mm": 17.620393276835483,
+        "pa_mpjpe_mm": 13.000382762100722,
+        "tip_mpjpe_mm": 28.277084914346535,
+        "aucj": 0.6763577845855742,
+        "pinch_distance_l2_mm": 45.35369820271929
+      },
+      "delta": {
+        "mpjpe_mm": -0.00038424817224580465,
+        "pa_mpjpe_mm": -8.746641022483459e-05,
+        "tip_mpjpe_mm": -0.0005632949372120777,
+        "aucj": 5.62316006336161e-06,
+        "pinch_distance_l2_mm": 0.001631437987086315
+      },
+      "receipt": "eval/results/paper-reproduction-20261012/interhand/verification-ridge.json",
+      "units_per_seed": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "method": "last_layer",
+      "device": "H100",
+      "mean": {
+        "mpjpe_mm": 16.621724469587207,
+        "pa_mpjpe_mm": 12.014994972075025,
+        "tip_mpjpe_mm": 25.922023070355255,
+        "aucj": 0.6922015927552287,
+        "pinch_distance_l2_mm": 39.17878052393595,
+        "pinch_frame_pairs": 160.0
+      },
+      "reference": {
+        "units": 20,
+        "mpjpe_mm": 16.62146127782762,
+        "pa_mpjpe_mm": 12.014720981116929,
+        "tip_mpjpe_mm": 25.921316041300695,
+        "aucj": 0.6922072981470931,
+        "pinch_distance_l2_mm": 39.17637433235844
+      },
+      "delta": {
+        "mpjpe_mm": 0.00026319175958633423,
+        "pa_mpjpe_mm": 0.00027399095809599316,
+        "tip_mpjpe_mm": 0.0007070290545598823,
+        "aucj": -5.7053918643967805e-06,
+        "pinch_distance_l2_mm": 0.0024061915775064335
+      },
+      "receipt": "eval/results/paper-reproduction-20261012-h100/interhand/verification-last_layer.json",
+      "units_per_seed": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "method": "full_ft",
+      "device": "H100",
+      "mean": {
+        "mpjpe_mm": 18.108466096843284,
+        "pa_mpjpe_mm": 12.766387142861882,
+        "tip_mpjpe_mm": 29.20911417653163,
+        "aucj": 0.6681712761328926,
+        "pinch_distance_l2_mm": 37.0752363840739,
+        "pinch_frame_pairs": 160.0
+      },
+      "reference": {
+        "units": 20,
+        "mpjpe_mm": 18.109690475588042,
+        "pa_mpjpe_mm": 12.76903495917954,
+        "tip_mpjpe_mm": 29.21202201396227,
+        "aucj": 0.6681493015529849,
+        "pinch_distance_l2_mm": 37.11298452690244
+      },
+      "delta": {
+        "mpjpe_mm": -0.0012243787447587806,
+        "pa_mpjpe_mm": -0.0026478163176584246,
+        "tip_mpjpe_mm": -0.0029078374306372723,
+        "aucj": 2.197457990771312e-05,
+        "pinch_distance_l2_mm": -0.037748142828540665
+      },
+      "receipt": "eval/results/paper-reproduction-20261012-h100/interhand/verification-full_ft.json",
+      "units_per_seed": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "method": "lora",
+      "device": "H100",
+      "mean": {
+        "mpjpe_mm": 16.383707787220676,
+        "pa_mpjpe_mm": 11.674330895766616,
+        "tip_mpjpe_mm": 25.33402203892668,
+        "aucj": 0.694365014629785,
+        "pinch_distance_l2_mm": 37.28303658167521,
+        "pinch_frame_pairs": 160.0
+      },
+      "reference": {
+        "units": 20,
+        "mpjpe_mm": 16.3837846989433,
+        "pa_mpjpe_mm": 11.674652803497311,
+        "tip_mpjpe_mm": 25.334295102705557,
+        "aucj": 0.6943662499757043,
+        "pinch_distance_l2_mm": 37.28338532770673
+      },
+      "delta": {
+        "mpjpe_mm": -7.691172262269674e-05,
+        "pa_mpjpe_mm": -0.00032190773069551426,
+        "tip_mpjpe_mm": -0.0002730637788772583,
+        "aucj": -1.2353459193370497e-06,
+        "pinch_distance_l2_mm": -0.0003487460315199087
+      },
+      "receipt": "eval/results/paper-reproduction-20261012-h100/interhand/verification-lora.json",
+      "units_per_seed": [
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "method": "hypernet",
+      "device": "H100",
+      "mean": {
+        "mpjpe_mm": 15.633595827966928,
+        "pa_mpjpe_mm": 10.454217592875162,
+        "tip_mpjpe_mm": 23.286522707591455,
+        "aucj": 0.7016829466943563,
+        "pinch_distance_l2_mm": 34.86643308003743,
+        "pinch_frame_pairs": 160.0
+      },
+      "reference": {
+        "units": 20,
+        "mpjpe_mm": 15.63970100445052,
+        "pa_mpjpe_mm": 10.454345230634013,
+        "tip_mpjpe_mm": 23.28891794507702,
+        "aucj": 0.7015746623637008,
+        "pinch_distance_l2_mm": 34.89984022453427
+      },
+      "delta": {
+        "mpjpe_mm": -0.00610517648359199,
+        "pa_mpjpe_mm": -0.00012763775885105133,
+        "tip_mpjpe_mm": -0.00239523748556536,
+        "aucj": 0.0001082843306554615,
+        "pinch_distance_l2_mm": -0.03340714449684157
+      },
+      "receipt": "eval/results/paper-reproduction-20261012-h100/interhand/verification.json",
+      "units_per_seed": [
+        20,
+        20,
+        20
+      ]
+    }
+  ],
+  "yoco_h100_conditioning_seconds": {
+    "per_seed": [
+      10.059195462614298,
+      9.29067050293088,
+      9.58330387994647
+    ],
+    "mean": 9.644389948497215,
+    "archived_mean": 11.159530035530528
+  },
+  "remaining_unverified": [
+    "Table 2 exact checkpoint identity",
+    "Clean environment installation",
+    "Physical robot trials",
+    "Other appendix experiments"
+  ]
+}

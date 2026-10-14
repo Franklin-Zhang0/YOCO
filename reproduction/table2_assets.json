@@ -1,0 +1,95 @@
+{
+  "scope": "Required assets for Table 2 pose-accuracy reproduction",
+  "frozen_estimator": {
+    "directory": "combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best",
+    "files": [
+      {
+        "file": "model.pth",
+        "bytes": 9521362,
+        "sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2"
+      },
+      {
+        "file": "config.yaml",
+        "bytes": 3279,
+        "sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e"
+      },
+      {
+        "file": "norm_stats.pkl",
+        "bytes": 938,
+        "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+      }
+    ]
+  },
+  "datasets": [
+    {
+      "file": "aligned_avp_glove_val.hdf5",
+      "bytes": 8148896,
+      "sha256": "918952ba7596666c7a3ca244610e1e8e219cd66c3b457c1956fa6711b0257937"
+    },
+    {
+      "file": "aligned_avp_glove_train_new.hdf5",
+      "bytes": 8042816,
+      "sha256": "bd2163402dae2fbeb362fea9483f2b7dad576f1f7f8ba5cc32734ce745e480d5"
+    }
+  ],
+  "legacy_four_recording_cohort": {
+    "preparer": "scripts/prepare_table2_legacy_data.py",
+    "mapping": [
+      {
+        "output_group": "0",
+        "source": "val",
+        "source_group": "1",
+        "frames": 1853
+      },
+      {
+        "output_group": "1",
+        "source": "val",
+        "source_group": "2",
+        "frames": 1471
+      },
+      {
+        "output_group": "2",
+        "source": "val",
+        "source_group": "3",
+        "frames": 1404
+      },
+      {
+        "output_group": "3",
+        "source": "train_new",
+        "source_group": "0",
+        "frames": 1387
+      }
+    ],
+    "note": "Rebuild logical groups; the generated HDF5 file need not be byte-identical to the historical file."
+  },
+  "mano": [
+    {
+      "file": "MANO_LEFT.pkl",
+      "bytes": 3821391,
+      "sha256": "c4022f7083f2ca7c78b2b3d595abbab52debd32b09d372b16923a801f0ea6a30"
+    },
+    {
+      "file": "MANO_RIGHT.pkl",
+      "bytes": 3821356,
+      "sha256": "45d60aa3b27ef9107a7afd4e00808f307fd91111e1cfa35afd5c4a62de264767"
+    }
+  ],
+  "yoco": {
+    "directory": "fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_ditdepth4_5090_relaunch_20260529_013300_20260529_013416/best",
+    "architecture": {
+      "k": 4,
+      "rank": 8,
+      "alpha": 8,
+      "dit_depth": 4,
+      "dit_steps": 8
+    },
+    "qualified_payload_available": false,
+    "historical_payload_sha256": null,
+    "required_files": [
+      "model.pth",
+      "config.yaml",
+      "norm_stats.pkl"
+    ],
+    "note": "Requires the evaluation-time snapshot. Current best/latest are not qualified substitutes."
+  }
+}

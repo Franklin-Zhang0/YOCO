@@ -33,3 +33,4 @@ venv/
 .worktrees/
 .pytest_cache/
 .ruff_cache/
+assets/

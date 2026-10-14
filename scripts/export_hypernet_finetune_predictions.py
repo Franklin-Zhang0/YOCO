@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -73,7 +74,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-calib-actions", type=int, default=4)
     parser.add_argument("--sample-idx", type=int, default=-1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--inference-seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed Python, NumPy, and Torch before model initialization and "
+            "conditioning. --seed independently controls calibration sampling."
+        ),
+    )
     parser.add_argument("--device", default=None)
+    parser.add_argument(
+        "--legacy-conditioning",
+        action="store_true",
+        help=(
+            "Preserve the paper exporter's initial training-mode conditioning. "
+            "This enables dropout on the first unit; use --inference-seed "
+            "for repeatability. Normal exports "
+            "use evaluation mode before conditioning."
+        ),
+    )
     parser.add_argument(
         "--calib-selection",
         default="random",
@@ -602,6 +622,10 @@ def train_hyper_lora_params(
 
 def main() -> None:
     args = parse_args()
+    if args.inference_seed is not None:
+        random.seed(args.inference_seed)
+        np.random.seed(args.inference_seed)
+        torch.manual_seed(args.inference_seed)
     device = resolve_torch_device(args.device)
     rows_by_variant: dict[str, list[dict[str, Any]]] = {variant: [] for variant in args.variants}
     run_start_by_variant: dict[str, float] = {variant: perf_counter() for variant in args.variants}
@@ -721,6 +745,8 @@ def main() -> None:
                     output_dir = Path(args.output_dir) / variant / f"k{args.num_calib_actions}"
                     predictions_path = output_dir / "predictions.hdf5"
 
+                    if not args.legacy_conditioning:
+                        inferencer.model.eval()
                     condition_start = perf_counter()
                     inferencer.update_condition(paired_poses=paired_poses)
                     conditioning_time = perf_counter() - condition_start
@@ -817,6 +843,14 @@ def main() -> None:
                             "method": variant,
                             "num_calib_actions": int(args.num_calib_actions),
                             "model_dir": str(args.model_dir),
+                            "conditioning_mode": (
+                                "legacy" if args.legacy_conditioning else "eval"
+                            ),
+                            "inference_seed": (
+                                args.inference_seed
+                                if args.inference_seed is not None
+                                else -1
+                            ),
                             "calib_selection": args.calib_selection,
                             "exclude_calib_from_eval": bool(args.exclude_calib_from_eval),
                             "calibration_num": int(args.calibration_num),
@@ -834,6 +868,10 @@ def main() -> None:
                             "side": side,
                             "sample_idx": int(sample_idx),
                             "method": variant,
+                            "conditioning_mode": (
+                                "legacy" if args.legacy_conditioning else "eval"
+                            ),
+                            "inference_seed": args.inference_seed,
                             "num_calib_actions": int(args.num_calib_actions),
                             "num_calib_samples": int(len(calib_idx)),
                             "num_eval_samples": int(len(eval_idx)),

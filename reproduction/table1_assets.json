@@ -1,0 +1,57 @@
+{
+  "scope": "Table 1 YOCO accuracy reproduction",
+  "source_commit": "b1280dd01b11552c78377f00388e98b337ccba9d",
+  "runtime": {
+    "python": "3.12.12",
+    "torch": "2.6.0+cu124",
+    "numpy": "2.3.5",
+    "h5py": "3.15.1"
+  },
+  "assets": [
+    {
+      "path": "/hand_keypoint_data/hand_keypoint_data/InterHand/val/hdf5/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5",
+      "bytes": 209115976,
+      "sha256": "b9dd84f8bdce4caa60c59e7bf070bd55724969069185a0074813887b26b9fa29"
+    },
+    {
+      "path": "/hand_keypoint_data/ckpts/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_20260526_154015_20260526_154035/model.pth",
+      "bytes": 357988821,
+      "sha256": "bc85bc13c71c51a36ba930a7a60ebd15966510015985e9546a709f0d8b2362e2"
+    },
+    {
+      "path": "/hand_keypoint_data/ckpts/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_20260526_154015_20260526_154035/config.yaml",
+      "bytes": 4726,
+      "sha256": "0c035f0f80b530552d1cf0b4f3d886a12f2dc693109d986ae3b71f511e9f6155"
+    },
+    {
+      "path": "/hand_keypoint_data/ckpts/fair_ditflow_5ds_biasmix_round6_all_lora_worldgt_reject005_glvnd_dit8_e16_pa500_gkp100_sparse_pair_ablation4_20260526_154015_20260526_154035/norm_stats.pkl",
+      "bytes": 938,
+      "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+    },
+    {
+      "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/model.pth",
+      "bytes": 9521362,
+      "sha256": "34446d30c09bf2d11e705c71f758bdac107af1385eaa81e49f33e899341ef8c2"
+    },
+    {
+      "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/config.yaml",
+      "bytes": 3279,
+      "sha256": "e27a73663d06f0715ee4868695c01ee232ec5e7c31c915711bcce207b937d53e"
+    },
+    {
+      "path": "/hand_keypoint_data/ckpts/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel/combined_cnn_mlp_leaky_global_mixer_scheduler_no_rel_20260518_132945/best/norm_stats.pkl",
+      "bytes": 938,
+      "sha256": "06977b6945d967aee5e022a418bdf5e9244765bdb6021da12d694ef44297599e"
+    },
+    {
+      "path": "/data/250010203/franklin/project/hand_teleop/manopth/mano/models/MANO_LEFT.pkl",
+      "bytes": 3821391,
+      "sha256": "c4022f7083f2ca7c78b2b3d595abbab52debd32b09d372b16923a801f0ea6a30"
+    },
+    {
+      "path": "/data/250010203/franklin/project/hand_teleop/manopth/mano/models/MANO_RIGHT.pkl",
+      "bytes": 3821356,
+      "sha256": "45d60aa3b27ef9107a7afd4e00808f307fd91111e1cfa35afd5c4a62de264767"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-14",
+  "branch": "release/yoco-website",
+  "source_base_commit": "b1280dd01b11552c78377f00388e98b337ccba9d",
+  "source_changes_verified_before_commit": true,
+  "scope": "Offline accuracy for the selected June 3 checkpoint, not an exact reproduction of all original Table 2 columns or hardware timings",
+  "metric_label_correction": "Tip-PA in the main paper is a typo for tip_mpjpe_mm (unaligned fingertip error).",
+  "asset_manifest": "reproduction/huggingface_release.json",
+  "reference_profile": "release",
+  "runtime": {
+    "python": "3.10.12",
+    "torch": "2.6.0+cpu",
+    "numpy": "1.23.5",
+    "h5py": "3.16.0",
+    "huggingface_hub": "2.2.0",
+    "manopth_commit": "4f1dcad1201ff1bfca6e065a85f0e3456e1aa32b",
+    "OMP_NUM_THREADS": 8,
+    "MKL_NUM_THREADS": 8
+  },
+  "hub_round_trip": {
+    "all_repositories_and_collection_private": true,
+    "anonymous_access_rejected": true,
+    "files_downloaded_and_sha256_verified": 12,
+    "bytes_downloaded_and_sha256_verified": 1750983438,
+    "models_commit": "d564cd5276cd6203c26389a246ac63f736354d9a",
+    "datasets_commit": "a73fb4797c165c3755ee03391c730d1b2cfd7af5",
+    "mano_model_files_included": false
+  },
+  "protocol": {
+    "K": 4,
+    "calibration_seeds": [0, 1, 2],
+    "inference_seeds": [0, 1, 2],
+    "calibration_frames": "[0,200)",
+    "evaluation_frames": "[200,T)",
+    "side": "right",
+    "conditioning_mode": "legacy",
+    "aggregation": "recording means within each seed, then the mean across seeds",
+    "tolerance_mm": 0.05,
+    "tolerance_aucj": 0.0005
+  },
+  "downloaded_asset_reproduction": {
+    "interhand": {
+      "accuracy_passed": true,
+      "units_per_seed": [20, 20, 20],
+      "evaluation_frames_per_seed": [216340, 216340, 216340],
+      "mean": {
+        "mpjpe_mm": 15.346553611258665,
+        "pa_mpjpe_mm": 10.179063933901489,
+        "tip_mpjpe_mm": 22.583362041041255,
+        "aucj": 0.7065996769037785,
+        "pinch_distance_l2_mm": 34.6303545559446
+      },
+      "max_release_reference_delta": 0.0
+    },
+    "avp": {
+      "accuracy_passed": true,
+      "units_per_seed": [3, 3, 3],
+      "evaluation_frames_per_seed": [4128, 4128, 4128],
+      "mean": {
+        "mpjpe_mm": 17.75466464459896,
+        "pa_mpjpe_mm": 13.280289558072885,
+        "tip_mpjpe_mm": 31.182868199215992,
+        "aucj": 0.6564640893968315,
+        "pinch_distance_l2_mm": 41.63664682871765
+      },
+      "max_release_reference_delta": 0.0,
+      "matches_original_table2_rounded_mpjpe": true,
+      "matches_full_original_table2_row": false
+    }
+  },
+  "additional_checks": {
+    "eval_conditioning_avp_all_three_seeds_passed": true,
+    "eval_conditioning_avp_max_reference_delta": 0.0,
+    "seeded_cli_matches_previous_selected_checkpoint_exports_bitwise": true,
+    "sessions_compared_bitwise": 69,
+    "arrays_compared": ["pred_theta", "pred_joints", "calib_idx", "eval_idx"],
+    "verifier_rejects_wrong_conditioning_mode": true,
+    "verifier_rejects_wrong_inference_seed": true,
+    "verifier_rejects_changed_checkpoint_configuration": true,
+    "legacy_table2_mapping_verified": true,
+    "legacy_table2_recordings": 4,
+    "legacy_table2_source_datasets_preserved": 72,
+    "focused_unit_tests_passed": 13
+  }
+}
