@@ -167,6 +167,14 @@ class RepositoryPathTests(unittest.TestCase):
         for name in ("scripts/reproduce_paper.py", "reproduction/README.md"):
             self.assertTrue((ROOT / name).is_file(), name)
 
+    def test_release_guides_offer_one_yoco_checkpoint(self):
+        for name in ("README.md", "reproduction/README.md", "docs/inference.md"):
+            with self.subTest(file=name):
+                text = (ROOT / name).read_text()
+                self.assertNotIn("historical_table1", text)
+                self.assertNotIn("--include-historical", text)
+        self.assertIn("| YOCO, depth 4 |", (ROOT / "README.md").read_text())
+
     def test_readme_retains_correct_metric_and_release_scope(self):
         text = " ".join((ROOT / "README.md").read_text().split())
         self.assertRegex(

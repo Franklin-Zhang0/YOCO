@@ -4,7 +4,7 @@
 
 Yu Zhang, Yunqi Li, Yushi Du, Yi Ma, Yanchao Yang
 
-[Paper](https://arxiv.org/abs/2610.11657) | [Website](https://franklin-zhang0.github.io/YOCO/) | [Hugging Face](https://huggingface.co/collections/Franklin0/yoco-reproduction-6acf4f2f1580be300065ce25)
+[Paper](https://arxiv.org/abs/2610.11657) | [Website](https://franklin-zhang0.github.io/YOCO/) | [Hugging Face](https://huggingface.co/collections/Franklin0/yoco-6acf4f2f1580be300065ce25)
 
 YOCO calibrates a hand-pose estimator from just four paired poses. A hypernetwork
 generates session-specific LoRA updates in one forward pass, without test-time
@@ -40,24 +40,27 @@ YOCO; its Python package remains `calibration_net`.
 
 ## Pretrained Models
 
+One YOCO checkpoint serves both evaluation tables, with a frozen estimator for
+canonicalization and baseline initialization.
+
 | Model | Calibration Pairs | LoRA Rank | Download |
 | --- | ---: | ---: | --- |
-| YOCO, depth 4 (June 3 release) | 4 | 32 | [Model bundle](https://huggingface.co/Franklin0/YOCO/tree/main/yoco) |
+| YOCO, depth 4 | 4 | 32 | [Model bundle](https://huggingface.co/Franklin0/YOCO/tree/main/yoco) |
 | Frozen estimator / canonicalizer | - | - | [Model bundle](https://huggingface.co/Franklin0/YOCO/tree/main/frozen_estimator) |
-| YOCO, depth 2 (historical Table 1) | 4 | 8 | [Optional bundle](https://huggingface.co/Franklin0/YOCO/tree/main/historical_table1) |
 
-The [collection](https://huggingface.co/collections/Franklin0/yoco-reproduction-6acf4f2f1580be300065ce25),
-models, and [prepared evaluation data](https://huggingface.co/datasets/Franklin0/YOCO-Reproduction)
-are **private for now**. Authenticate with an account granted access:
+The model bundles and
+[prepared evaluation data](https://huggingface.co/datasets/Franklin0/YOCO-Reproduction)
+are publicly downloadable. The
+[collection](https://huggingface.co/collections/Franklin0/yoco-6acf4f2f1580be300065ce25)
+is **private for now**.
 
 ```bash
-HF_ENDPOINT=https://huggingface.co uv run --frozen --extra cpu hf auth login
 uv run --frozen --extra cpu python scripts/download_reproduction_assets.py --models-only
 ```
 
-Alternatively, set `HF_TOKEN`. The downloader pins immutable revisions and
-verifies file sizes and SHA256 hashes. Remove `--models-only` to include the
-evaluation data; add `--include-historical` for the optional Table 1 model.
+Authentication is optional; set `HF_TOKEN` for authenticated Hub requests.
+The downloader pins immutable revisions and verifies file sizes and SHA256
+hashes. Remove `--models-only` to include the evaluation data.
 MANO files are not included. Only load trusted checkpoints.
 
 ## Use YOCO
@@ -102,9 +105,9 @@ the [reproduction guide](reproduction/README.md).
 **Paper correction:** "Tip-PA" in the main paper is a typo. It should be
 **`tip_mpjpe_mm`**, the unaligned fingertip MPJPE in millimeters.
 
-The shared June 3 checkpoint improves the original Table 1 accuracy means and
-matches Table 2's rounded MPJPE, **not its full original row**. The reproduction
-guide distinguishes the verified release results from the original paper targets.
+The default CPU run verifies YOCO's release reference values, including
+Table 2's rounded MPJPE, **not its full original row**. Baselines use the paper's
+accuracy references. Hardware timings are outside the accuracy check.
 
 ## License
 

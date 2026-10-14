@@ -32,7 +32,6 @@ def download_assets(
     manifest: dict,
     output_dir: Path,
     *,
-    include_historical: bool = False,
     models_only: bool = False,
 ) -> list[Path]:
     if manifest.get("status") != "published":
@@ -44,8 +43,6 @@ def download_assets(
     downloaded = []
     for item in manifest["files"]:
         if models_only and item["repository"] != "models":
-            continue
-        if item.get("optional") and not include_historical:
             continue
         repository = manifest["repositories"][item["repository"]]
         revision = repository["revision"]
@@ -93,7 +90,6 @@ def main() -> None:
         "--manifest", type=Path, default=ROOT / "reproduction/huggingface_release.json"
     )
     parser.add_argument("--output-dir", type=Path, default=ROOT / "assets")
-    parser.add_argument("--include-historical", action="store_true")
     parser.add_argument(
         "--models-only",
         action="store_true",
@@ -104,7 +100,6 @@ def main() -> None:
         paths = download_assets(
             json.loads(args.manifest.read_text()),
             args.output_dir,
-            include_historical=args.include_historical,
             models_only=args.models_only,
         )
     except HfHubHTTPError as error:

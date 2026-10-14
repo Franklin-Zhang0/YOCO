@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -83,23 +84,51 @@ class ReleaseDownloadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             download_assets(self.manifest, self.root / "assets")
 
-    def test_optional_historical_assets(self):
-        self.manifest["files"][0]["optional"] = True
-        self.assertEqual(download_assets(self.manifest, self.root / "assets"), [])
-        with patch(
-            "scripts.download_reproduction_assets.hf_hub_download",
-            return_value=str(self.payload),
-        ):
+    def test_release_contains_one_yoco_model_and_required_canonicalizer(self):
+        root = Path(__file__).resolve().parents[1]
+        manifest = json.loads(
+            (root / "reproduction/huggingface_release.json").read_text()
+        )
+        reference = json.loads(
+            (root / "reproduction/release_reference.json").read_text()
+        )
+        models = {
+            item["path"]: item
+            for item in manifest["files"]
+            if item["repository"] == "models"
+        }
+        self.assertEqual(
+            set(models),
+            {
+                f"{directory}/{filename}"
+                for directory in ("yoco", "frozen_estimator")
+                for filename in ("model.pth", "config.yaml", "norm_stats.pkl")
+            },
+        )
+        self.assertEqual(
+            models["yoco/model.pth"]["sha256"], reference["checkpoint_sha256"]
+        )
+        self.assertEqual(
+            models["yoco/config.yaml"]["sha256"], reference["checkpoint_config_sha256"]
+        )
+        self.assertEqual(
+            models["frozen_estimator/model.pth"]["sha256"],
+            reference["base_checkpoint_sha256"],
+        )
+        self.assertEqual(
+            models["frozen_estimator/config.yaml"]["sha256"],
+            reference["base_config_sha256"],
+        )
+        for directory in ("yoco", "frozen_estimator"):
             self.assertEqual(
-                len(
-                    download_assets(
-                        self.manifest,
-                        self.root / "assets",
-                        include_historical=True,
-                    )
-                ),
-                1,
+                models[f"{directory}/norm_stats.pkl"]["sha256"],
+                reference["normalization_sha256"],
             )
+        self.assertEqual(len(manifest["files"]), 9)
+        local_paths = {item["local_path"] for item in manifest["files"]}
+        self.assertEqual(len(local_paths), 9)
+        self.assertTrue(all(f"models/{path}" in local_paths for path in models))
+        self.assertFalse(any(item.get("optional") for item in manifest["files"]))
 
     def test_rejects_unpublished_release(self):
         self.manifest["status"] = "pending_publication"

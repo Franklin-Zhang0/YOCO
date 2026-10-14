@@ -13,7 +13,7 @@ conditioning. `--table 1` selects InterHand; `--table 2` selects AVP/glove.
 Individual methods are `yoco`, `ridge`, `last_layer`, `full_ft`, `lora`, and
 `no_calibration`. Run `scripts/reproduce_paper.py --help` for all options.
 
-After setup, run the shared release checkpoint on both datasets:
+After setup, evaluate the release checkpoint on both datasets:
 
 ```bash
 uv run --frozen --extra cpu python scripts/reproduce_paper.py --table all
@@ -41,22 +41,24 @@ local assets or running evaluations; it is not reproduction evidence.
 The standard asset root is `assets/`; override it with `--asset-root`.
 The pinned download entrypoint is
 [`scripts/download_reproduction_assets.py`](../scripts/download_reproduction_assets.py).
-The checkpoints and datasets are currently private on Hugging Face and require
-an authorized account. Download and verify them before running experiments.
+The model bundles and prepared datasets are publicly downloadable on Hugging
+Face; authentication with `HF_TOKEN` is optional. The collection remains private
+for now. Download and verify the assets before running experiments.
 `MANO_PATH` must contain your separately licensed `MANO_LEFT.pkl` and
 `MANO_RIGHT.pkl`; neither is redistributed.
 
 ## Checkpoint And Data Contracts
 
-The default checkpoint is the June 3 depth-4 YOCO model, shared by both tables:
-K=4, LoRA rank/alpha 32/32, and eight flow steps. The May 18 frozen estimator is
-the canonicalizer and initialization for every baseline. Each checkpoint requires
+The release provides one depth-4 YOCO checkpoint for both tables: K=4,
+LoRA rank/alpha 32/32, and eight flow steps. The frozen estimator is the
+canonicalizer and initialization for every baseline. Each model bundle requires
 `model.pth`, `config.yaml`, and `norm_stats.pkl`, with their saved architecture
-and normalization unchanged. Only load trusted pickle-based assets.
+and normalization unchanged. Only load trusted pickle-based assets. The bundle
+contains evaluation data and pretrained models, not the full training corpus.
 
 | Asset under `assets/` | Purpose |
 | --- | --- |
-| `models/yoco/` | Shared release YOCO checkpoint |
+| `models/yoco/` | Release YOCO checkpoint for both tables |
 | `models/frozen_estimator/` | Canonicalizer and baseline initialization |
 | `datasets/interhand/InterHand_retargeted_30fps_biased_super_mano_fk20cm_bad_joint_marked.hdf5` | Table 1 prepared validation set |
 | `datasets/avp/aligned_avp_glove_val.hdf5` | Table 2 three-recording validation cohort |
@@ -68,19 +70,13 @@ augmentation order, the 21-joint ordering, group MANO betas, `gt_joint_mask`, an
 `bad_frame` annotations. `--canonicalizer-extractor-path` relocates the saved
 canonicalizer path in memory; checkpoint files are not edited.
 
-The optional historical Table 1 checkpoint in `models/historical_table1/`
-preserves the May 26 depth-2, rank/alpha-8 model used for the original Table 1
-row. It is not the runner's default and must not be used to certify the original
-Table 2 YOCO row. The asset bundle contains evaluation data and checkpoints,
-not the full training corpus.
-
 ## Sampling And Cohorts
 
 | Setting | Evaluation units | Evaluation frames per seed |
 | --- | --- | ---: |
 | Table 1, all methods | 20 right-hand bias variants | 216,340 |
 | Table 2, YOCO/Ridge/last-layer/full fine-tuning | 3 right-hand recordings | 4,128 |
-| Table 2, no calibration/LoRA fine-tuning | Legacy 4-recording cohort | 5,315 |
+| Table 2, no calibration/LoRA fine-tuning | 4-recording baseline cohort | 5,315 |
 
 Every run uses seeds 0, 1, and 2. Each unit samples K=4 calibration frames
 from `[0,200)` and evaluates all frames in `[200,T)`, applying `gt_joint_mask`
@@ -94,9 +90,8 @@ When no calibration or LoRA is requested for Table 2, the runner invokes
 It copies validation groups `1,2,3` and `train_new` group `0` into output groups
 `0,1,2,3`, respectively, under the new result directory. Renaming these groups
 changes the calibration RNG and therefore the experiment. The source files
-remain untouched. This method-specific cohort is historical table behavior,
-not a uniform-cohort comparison. The later five-recording shared-calibration
-dataset is a different experiment.
+remain untouched. This method-specific cohort follows the original baseline
+protocol; it is not a uniform-cohort comparison.
 
 ## Conditioning And Baselines
 
@@ -108,12 +103,12 @@ conditioning dropout and selects the separate evaluation-mode references.
 The saved prediction metadata records the mode and inference seed. Do not mix
 the two modes in an output directory.
 
-Use `legacy` on CPU to reproduce the release checkpoint's historical scores,
-including Table 2's rounded MPJPE of 17.75 mm. Use `eval` for YOCO on CUDA:
-its dropout-free results pass the existing evaluation-mode references on an
-H100. Legacy conditioning is device-dependent: the tested CUDA run does not
-pass the CPU legacy Table 2 references. Conditioning mode changes only YOCO, not
-the five baseline protocols, and the two modes are not the same experiment.
+Use `legacy` on CPU for the CPU release references, including Table 2's rounded
+MPJPE of 17.75 mm. Use `eval` for YOCO on CUDA and its evaluation-mode references.
+Both modes use the same release checkpoint. Conditioning scores are
+device-dependent; CPU legacy references do not certify a CUDA legacy run.
+Conditioning mode changes only YOCO, not the five baseline protocols, and the
+two modes are not the same experiment.
 
 Ridge uses an identity prior in MANO-theta space, an unpenalized bias, and
 regularization `1e-3`. The fine-tuning baselines use 200 steps, learning rate
@@ -127,9 +122,8 @@ GPU reproduction still has to pass verification; selecting CUDA by itself does
 not certify an exact hardware/accuracy match. The tested NGC PyTorch 25.06
 runtime uses the locked cuDNN 9.19.0.56 dependency,
 `TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1`, matmul precision `high`, and TF32 enabled
-for matmul and cuDNN. PyTorch's default cuDNN 9.1 dependency failed the Table 2
-full fine-tuning accuracy check; changing the precision override alone did not
-resolve it. Preserve both the lockfile and the explicit precision setting.
+for matmul and cuDNN. Preserve both the lockfile and the explicit precision
+setting.
 Keep this paper-export profile separate from the normal inference API's
 temporary FP32 guard. The paper's adaptation-time measurements require one
 H100 and matching unit counts. CPU timings are not comparable. Offline pose
@@ -178,27 +172,18 @@ different result.
 **`tip_mpjpe_mm`**, not a Procrustes-aligned fingertip metric. Pinch is not the
 absolute predicted-versus-GT distance error.
 
-The June 3 release checkpoint improves all five measured Table 1 accuracy
-means. For Table 2 it matches the paper's rounded MPJPE (17.75 mm), **not the
-full original YOCO row**. That evaluation-time checkpoint is unavailable;
-later weights from the same training run are not substitutes. Passing the
-`release` profile certifies the selected checkpoint's measured results,
-not exact reproduction of the unavailable original Table 2 snapshot.
+Passing the `release` profile certifies this model's measured results for the
+selected conditioning mode and cohort. CPU legacy conditioning matches
+Table 2's rounded MPJPE (17.75 mm), **not the full original YOCO row**. The
+accuracy checks do not certify exact reproduction of every original paper
+number or its hardware timings.
 
-Historical receipts are in [`table1_results.json`](table1_results.json),
-[`table2_results.json`](table2_results.json), and
-[`release_results.json`](release_results.json). They are provenance evidence,
-not substitutes for running the current entrypoint.
-
-The current locked uv environment and complete three-seed YOCO runner
-qualification are recorded separately in
-[`uv_release_results.json`](uv_release_results.json).
-
-CCI setup, normal CPU/CUDA inference, and H100 baseline validation are
-recorded separately in
-[`cci_release_results.json`](cci_release_results.json), including source and
-asset fingerprints. Raw validation logs and predictions are not part of the
-repository; the scripts generate fresh receipts when you run them.
+Release qualification and source/asset fingerprints are recorded in
+[`release_results.json`](release_results.json),
+[`uv_release_results.json`](uv_release_results.json), and
+[`cci_release_results.json`](cci_release_results.json). Raw validation logs and
+predictions are not part of the repository; running the scripts generates fresh
+receipts.
 
 ## Other Experiments
 
